@@ -18,8 +18,10 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       const zipContents = await zip.loadAsync(file);
       const extractedBooks = [];
       const jsonFiles = [];
+      let maxVersesData = {};
+      let bibleMetaData = {};
       let projectName = "";
-
+      
       console.log("Zip contents:", zipContents.files);
 
       for (const relativePath in zipContents.files) {
@@ -35,16 +37,48 @@ const DragAndDrop = ({ onFilesExtracted }) => {
 
           if (relativePath.endsWith(".json")) {
             const fileData = await file.async("string");
-            jsonFiles.push({ name: file.name, content: JSON.parse(fileData) });
+            const parsedContent = JSON.parse(fileData);
+            jsonFiles.push({ name: file.name, content: parsedContent });
+            // if (
+            //   pathParts[1] === "audio" &&
+            //   file.name.endsWith("versification.json")
+            // ) 
+            if (
+              pathParts[1] === "ingredients" &&
+              file.name.endsWith("versification.json")
+            ) 
+            {
+              const maxVerses = parsedContent["maxVerses"];
+              maxVersesData =
+                typeof maxVerses === "string"
+                  ? JSON.parse(maxVerses)
+                  : maxVerses;
+            }
+            if (pathParts[1] === "metadata.json") {
+              const localizedBibles = parsedContent["localizedNames"];
+              bibleMetaData =
+                typeof localizedBibles === "string"
+                  ? JSON.parse(localizedBibles)
+                  : localizedBibles;
+            }
             continue;
           }
 
           // Only process audio files
-          if (pathParts[1] === "audio" && pathParts[2] === "ingredients" && isAudioFile(file.name)) {
-            const bookName = pathParts[3];
-            const chapterName = pathParts[4];
-            const audioFileName = pathParts[5];
-
+          // if (
+          //   pathParts[1] === "audio" &&
+          //   pathParts[2] === "ingredients" &&
+          //   isAudioFile(file.name)
+          // )
+          if (
+            pathParts[1] === "ingredients" &&
+            isAudioFile(file.name)
+          ) 
+          {
+            const bookName = pathParts[2];
+            const chapterName = pathParts[3];
+            const audioFileName = pathParts[4];
+            console.log("audio file", file);
             const fileData = await file.async("blob");
 
             let existingBook = extractedBooks.find(
@@ -74,7 +108,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       console.log("Extracted books:", extractedBooks);
       console.log("Stored JSON files:", jsonFiles);
 
-      onFilesExtracted(extractedBooks, jsonFiles, projectName);
+      onFilesExtracted(extractedBooks, jsonFiles, projectName, maxVersesData, bibleMetaData);
     } catch (error) {
       console.error("Error extracting zip file:", error);
     }
@@ -123,7 +157,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       ) : (
         <p>
           {fileName
-            ? `Uploaded File: ${fileName}`
+            ? `Uploaded File: ${fileName}, Please wait`
             : "Drag and drop a zip file here, or click to select"}
         </p>
       )}
