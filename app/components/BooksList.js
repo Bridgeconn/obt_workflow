@@ -95,7 +95,7 @@ const BooksList = ({
       </Typography>
 
       <Typography variant="h6" gutterBottom>
-        Audios Found:
+        Books Found:
       </Typography>
 
       <FormControl component="fieldset" sx={{ marginTop: { xs: 1, sm: 2 } }}>

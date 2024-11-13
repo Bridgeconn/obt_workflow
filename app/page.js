@@ -66,6 +66,7 @@ export default function Home() {
   };
 
   function validateBooks(books, maxVersesData) {
+    console.log("max verses", maxVersesData)
     for (const book of books) {
       const bookName = book.bookName;
       const maxChapters = maxVersesData[bookName];

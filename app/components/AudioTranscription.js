@@ -11,7 +11,12 @@ import {
   TableRow,
   Paper,
   Button,
+  Modal,
+  TextField,
+  IconButton,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+
 import api from "../store/apiConfig";
 import { processUSFM } from "../utils/usfmProcessor";
 import { AudioCodecDetector } from "../utils/audioCodecDetector";
@@ -31,6 +36,9 @@ const AudioTranscription = ({
   const [currentVerse, setCurrentVerse] = useState(null);
   const [chapterStatuses, setChapterStatuses] = useState({});
   const [selectedLanguage, setSelectedLanguage] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [chapterContent, setChapterContent] = useState([]);
+  const [editedVerses, setEditedVerses] = useState({});
 
   const handleLanguageChange = (language) => {
     setSelectedLanguage(language);
@@ -55,6 +63,7 @@ const AudioTranscription = ({
           if (match) {
             const bookChapterKey = `${match[1]}-${match[2]}`;
             statuses[bookChapterKey] = statuses[bookChapterKey] || "done";
+            //it should show done for already processed chapter but currently, showing "not started" (logic refinement needed)
           }
         }
       }
@@ -80,6 +89,86 @@ const AudioTranscription = ({
     }
   }, [currentVerse]);
 
+  useEffect(() => {
+    if (chapterContent.length > 0) {
+      console.log("Chapter content has been updated", chapterContent);
+    }
+  }, [chapterContent]);
+
+  useEffect(() => {
+    if (Object.keys(editedVerses).length > 0) {
+      console.log("Edited verses have been updated", editedVerses);
+    }
+  }, [editedVerses]);
+
+  const handleChapterClick = async (chapter) => {
+    const chapterKey = `${selectedBook}-${chapter.chapterNumber}`;
+
+    if (chapterStatuses[chapterKey] === "Done") {
+      console.log("coming inside done");
+
+      const keys = await projectInstance.keys();
+      const filteredKeys = keys.filter((key) => key.startsWith(chapterKey));
+
+      if (filteredKeys.length === 0) {
+        Swal.fire(
+          "Content Unavailable",
+          `Transcription for this chapter is not available`,
+          "error"
+        );
+        return;
+      }
+
+      const verses = await Promise.all(
+        chapter.verses.map(async (verse) => {
+          const { verseNumber } = extractChapterVerse(verse.audioFileName);
+          const verseKey = `${chapterKey}-${verseNumber}`;
+          console.log("verse key inside handleChapterClick", verseKey);
+
+          const transcribedData = await projectInstance.getItem(verseKey);
+          const transcribedText = transcribedData?.transcribedText || "";
+          console.log(
+            "transcribed text inside handleChapterClick",
+            transcribedText
+          );
+
+          return {
+            chapterNumber: chapter.chapterNumber,
+            verseNumber: verseNumber,
+            text: transcribedText || "",
+          };
+        })
+      );
+      setEditedVerses({});
+      setChapterContent(verses);
+      setModalOpen(true);
+    }
+  };
+
+  const handleTextChange = (chapterNumber, verseNumber, newText) => {
+    const chapterVerseKey = `${chapterNumber}-${verseNumber}`;
+    setEditedVerses((prev) => ({
+      ...prev,
+      [chapterVerseKey]: newText,
+    }));
+  };
+
+  const handleCloseModal = async () => {
+    for (const verse of chapterContent) {
+      const editedText =
+        editedVerses[`${verse.chapterNumber}-${verse.verseNumber}`] ||
+        verse.text;
+      const storageKey = `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`;
+      await projectInstance.setItem(storageKey, {
+        book: selectedBook,
+        chapter: verse.chapterNumber,
+        verse: verse.verseNumber,
+        transcribedText: editedText,
+      });
+    }
+    setModalOpen(false);
+  };
+
   // Extract chapter and verse from the audioFileName
   const extractChapterVerse = (audioFileName) => {
     const match = audioFileName.match(/^(\d+)_(\d+)/);
@@ -94,6 +183,11 @@ const AudioTranscription = ({
   // Function to handle transcription for a verse
   const handleTranscribe = async (verse) => {
     setProcessing(true);
+    if (!selectedLanguage) {
+      Swal.fire("Error", "Please select a language", "error");
+      setProcessing(false);
+      return;
+    }
     let bookChapterKey;
     if (currentChapter) {
       bookChapterKey = `${selectedBook}-${currentChapter.chapterNumber}`;
@@ -243,6 +337,8 @@ const AudioTranscription = ({
           "success"
         );
         setProcessing(false);
+        setCurrentVerse(null);
+        setCurrentChapter(null);
       }
     }
   };
@@ -274,7 +370,7 @@ const AudioTranscription = ({
         Transcribing Audio Files for {selectedBook}
       </Typography>
 
-      <LanguageDropdown onLanguageChange={handleLanguageChange}/>
+      <LanguageDropdown onLanguageChange={handleLanguageChange} />
 
       <TableContainer
         component={Paper}
@@ -292,6 +388,7 @@ const AudioTranscription = ({
                   border: "1px solid #ddd",
                   padding: "10px",
                   fontSize: "16px",
+                  width: "20%",
                 }}
               >
                 Chapter
@@ -301,6 +398,7 @@ const AudioTranscription = ({
                   border: "1px solid #ddd",
                   padding: "10px",
                   fontSize: "16px",
+                  width: "60%",
                 }}
               >
                 Verses
@@ -310,6 +408,7 @@ const AudioTranscription = ({
                   border: "1px solid #ddd",
                   padding: "10px",
                   fontSize: "16px",
+                  width: "20%",
                 }}
               >
                 Status
@@ -332,7 +431,25 @@ const AudioTranscription = ({
                       fontSize: "16px",
                     }}
                   >
-                    {chapterNumber}
+                    <Button
+                      variant="contained"
+                      sx={{
+                        backgroundColor:
+                          chapterStatuses[chapterKey] === "Done"
+                            ? "green"
+                            : "white",
+                        color:
+                          chapterStatuses[chapterKey] === "Done"
+                            ? "white"
+                            : "black",
+                        fontSize: { xs: "8px", sm: "12px", md: "14px" },
+                        width: "auto",
+                      }}
+                      disabled={chapterStatuses[chapterKey] !== "Done"}
+                      onClick={() => handleChapterClick(chapter)}
+                    >
+                      Chapter {chapterNumber}
+                    </Button>
                   </TableCell>
                   <TableCell
                     sx={{
@@ -384,25 +501,119 @@ const AudioTranscription = ({
         </Table>
       </TableContainer>
 
-      <Button
-        variant="contained"
-        color="primary"
-        onClick={startTranscription}
-        disabled={processing}
-        sx={{ marginTop: "20px" }}
+      <Modal
+        open={modalOpen}
+        onClose={handleCloseModal}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "auto",
+        }}
       >
-        Transcript
-      </Button>
+        <Box
+          sx={{
+            position: "relative",
+            width: "90%",
+            maxHeight: "60vh",
+            overflowY: "auto",
+            maxWidth: 800,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            padding: 3,
+          }}
+        >
+          <IconButton
+            onClick={handleCloseModal}
+            sx={{
+              position: "absolute",
+              top: "10px",
+              right: "10px",
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+          <Typography variant="h6" sx={{ marginBottom: "10px" }}>
+            {selectedBook} - Chapter {chapterContent[0]?.chapterNumber}
+          </Typography>
+          {chapterContent.map((verse) => (
+            <Box
+              key={verse.verseNumber}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                marginBottom: "10px",
+                flexWrap: "nowrap",
+              }}
+            >
+              <Typography
+                sx={{
+                  marginRight: "10px",
+                  whiteSpace: { xs: "normal", sm: "nowrap" },
+                }}
+              >
+                Verse {verse.verseNumber}:
+              </Typography>
+              <TextField
+                fullWidth
+                variant="outlined"
+                value={
+                  editedVerses[`${verse.chapterNumber}-${verse.verseNumber}`] ||
+                  verse.text
+                }
+                onChange={(e) =>
+                  handleTextChange(
+                    verse.chapterNumber,
+                    verse.verseNumber,
+                    e.target.value
+                  )
+                }
+              />
+            </Box>
+          ))}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginTop: "20px",
+            }}
+          >
+            <Button variant="contained" onClick={handleCloseModal}>
+              Close
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
 
-      <Button
-        variant="outlined"
-        color="secondary"
-        onClick={downloadUSFM}
-        disabled={processing}
-        sx={{ marginTop: "20px", marginLeft: "10px" }}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", sm: "row" },
+          alignItems: "center",
+          justifyContent: { xs: "center", sm: "flex-start" },
+        }}
       >
-        Download USFM
-      </Button>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={startTranscription}
+          disabled={processing}
+          sx={{ marginTop: "20px" }}
+        >
+          Transcript
+        </Button>
+
+        <Button
+          variant="outlined"
+          color="secondary"
+          onClick={downloadUSFM}
+          disabled={processing}
+          sx={{ marginTop: "20px", marginLeft: "10px" }}
+        >
+          Download USFM
+        </Button>
+      </Box>
     </Box>
   );
 };
