@@ -43,8 +43,3 @@ export async function convertAudioFile(file, inputFileName, targetFormat) {
     throw error;
   }
 }
-
-// const isCurrentVerse = currentVerseDetails
-//                       //   ? currentVerseDetails.chapterNumber === chapterNumber &&
-//                       //   currentVerseDetails.verseNumber === verseNumber
-//                       // : false;

@@ -21,7 +21,6 @@ import api from "../store/apiConfig";
 import { processUSFM } from "../utils/usfmProcessor";
 import { AudioCodecDetector } from "../utils/audioCodecDetector";
 import LanguageDropdown from "../components/LanguageDropdown";
-// import { OpusToWavConverter } from "../utils/opusToWavConverter";
 
 const AudioTranscription = ({
   projectInstance,
@@ -47,29 +46,70 @@ const AudioTranscription = ({
   // Load transcription statuses from local storage
   const loadTranscriptionStatuses = async () => {
     const keys = await projectInstance.keys();
-    console.log("keys", keys);
     const statuses = {};
-
+    
+    // First, initialize all chapters as "Not Started"
     bookData.chapters.forEach((chapter) => {
       const bookChapterKey = `${selectedBook}-${chapter.chapterNumber}`;
       statuses[bookChapterKey] = "Not Started";
     });
-
+  
+    const chapterVersesMap = {};
+    
     for (const key of keys) {
-      if (key.startsWith(`${selectedBook}`)) {
-        const status = await projectInstance.getItem(key);
-        if (status) {
-          const match = key.match(/^(.+)-(\d+)-/);
-          if (match) {
-            const bookChapterKey = `${match[1]}-${match[2]}`;
-            statuses[bookChapterKey] = statuses[bookChapterKey] || "done";
-            //it should show done for already processed chapter but currently, showing "not started" (logic refinement needed)
+      // Only process keys that match the book-chapter-verse format
+      const match = key.match(/^([^-]+)-(\d+)-(\d+)$/);
+      if (match && match[1] === selectedBook) {
+        const chapter = match[2];
+        if (!chapterVersesMap[chapter]) {
+          chapterVersesMap[chapter] = [];
+        }
+        chapterVersesMap[chapter].push({
+          key: key,
+          verse: match[3]
+        });
+      }
+    }
+  
+    // Process each chapter
+    for (const chapter of bookData.chapters) {
+      const chapterNumber = String(chapter.chapterNumber);
+      const bookChapterKey = `${selectedBook}-${chapter.chapterNumber}`;
+      const chapterVerses = chapterVersesMap[chapterNumber] || [];
+  
+      if (chapterVerses.length > 0) {
+        try {
+          // Get data for all verses in this chapter
+          const verseDataPromises = chapterVerses.map(({ key }) => 
+            projectInstance.getItem(key)
+          );
+          
+          const verseData = await Promise.all(verseDataPromises);
+          
+          const allVersesTranscribed = verseData.every(data => 
+            data && 
+            data.transcribedText && 
+            data.transcribedText.trim() !== '' &&
+            data.book === selectedBook &&
+            String(data.chapter) === chapterNumber
+          );
+          
+          const expectedVerseCount = chapter.verses.length;
+          const actualTranscribedCount = chapterVerses.length;
+  
+          if (allVersesTranscribed && expectedVerseCount === actualTranscribedCount) {
+            statuses[bookChapterKey] = "Done";
+          } else if (actualTranscribedCount > 0) {
+            statuses[bookChapterKey] = "In Progress";
           }
+        } catch (error) {
+          console.error(`Error checking chapter ${chapterNumber} status:`, error);
+          statuses[bookChapterKey] = "Error";
         }
       }
     }
-
-    console.log("statuses", statuses);
+  
+    console.log("Updated chapter statuses:", statuses);
     setChapterStatuses(statuses);
   };
 
@@ -199,14 +239,12 @@ const AudioTranscription = ({
 
     try {
       const formData = new FormData();
-      // const converter = new OpusToWavConverter();
       console.log("file mime type", verse.file.type);
       const codec = await AudioCodecDetector.detectCodec(verse.file);
       console.log("Detected codec:", codec);
       let file;
       let targetFormat;
       if (codec === "Opus") {
-        // const wavBlob = await converter.convertOpusToWav(verse.file);
         const { convertAudioFile } = await import("../utils/audioConversion");
         if (verse.audioFileName.endsWith(".mp3")) {
           targetFormat = "mp3";
