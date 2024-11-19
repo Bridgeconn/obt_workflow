@@ -17,7 +17,7 @@ Follow these steps to set up the project locally:
 
    ```bash
    git clone https://github.com/Bridgeconn/scribe_stt.git
-   cd scribe_stt
+   cd scribe_stt/UI
    ```
 
 2. **Install Dependencies**

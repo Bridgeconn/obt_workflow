@@ -5,21 +5,18 @@ import Swal from "sweetalert2";
 import { Container, Box, Button } from "@mui/material";
 import DragAndDrop from "./components/DragAndDrop";
 import BooksList from "./components/BooksList";
-import AudioTranscription from "./components/AudioTranscription";
 
 export default function Home() {
   const [files, setFiles] = useState([]);
   const [jsonFiles, setJsonFiles] = useState([]);
   const [maxVerses, setMaxVerses] = useState(null);
   const [bibleMetaData, setBibleMetadata] = useState(null);
-  const [selectedBook, setSelectedBook] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [bookData, setBookData] = useState(null);
   const [projectDB, setProjectDB] = useState(null);
-
 
   useEffect(() => {
     if (projectName) {
+      console.log("project name", projectName)
       const dbInstance = localforage.createInstance({
         name: projectName,
         storeName: "transcriptions",
@@ -66,7 +63,7 @@ export default function Home() {
   };
 
   function validateBooks(books, maxVersesData) {
-    console.log("max verses", maxVersesData)
+    console.log("max verses", maxVersesData);
     for (const book of books) {
       const bookName = book.bookName;
       const maxChapters = maxVersesData[bookName];
@@ -112,36 +109,7 @@ export default function Home() {
     });
   }
 
-  const handleBookSelection = (event) => {
-    setSelectedBook(event.target.value);
-  };
-
-  const handleProcessing = () => {
-    const selectedData = files.find(
-      ({ bookName }) => bookName === selectedBook
-    );
-    if (selectedData) {
-      setBookData(selectedData);
-    }
-  };
-
-  const handleTranscriptionComplete = (storageKey, 
-    { book, chapter, verse, transcribedText }
-  ) => {
-    const transcriptionData = {
-      book: book,
-      chapter: chapter,
-      verse: verse,
-      transcribedText: transcribedText,
-    };
-
-    const transcriptionKey = `${book}-${chapter}-${verse}`;
-  
-    projectDB
-      .setItem(transcriptionKey, transcriptionData)
-      .then(() => console.log(`Stored transcription for ${transcriptionKey} in project ${projectName}`))
-      .catch((err) => console.error(`Failed to store transcription: ${err}`));
-  };
+  console.log("project instance in page.js", projectDB)
 
   return (
     <Container
@@ -168,55 +136,13 @@ export default function Home() {
         >
           <DragAndDrop onFilesExtracted={handleFilesExtracted} />
         </Box>
-      ) : bookData ? (
-        <Box
-          sx={{
-            width: "80vw",
-            height: "auto",
-            padding: 2,
-            border: "2px solid #888",
-            borderRadius: "8px",
-            backgroundColor: "#f9f9f9",
-          }}
-        >
-        
-          <AudioTranscription
-            projectInstance={projectDB}
-            projectName={projectName}
-            selectedBook={selectedBook}
-            bookData={bookData}
-            bibleMetaData={bibleMetaData}
-            onTranscriptionComplete={handleTranscriptionComplete}
-          />
-        </Box>
       ) : (
-        <Box
-          sx={{
-            width: "80vw",
-            height: "auto",
-            padding: 4,
-            border: "2px solid #888",
-            borderRadius: "8px",
-            backgroundColor: "#f9f9f9",
-          }}
-        >
           <BooksList
+            projectInstance={projectDB}
             files={files}
-            selectedBooks={selectedBook}
-            handleBookSelection={handleBookSelection}
             projectName={projectName}
-            jsonFiles={jsonFiles}
+            bibleMetaData={bibleMetaData}
           />
-          <Button
-            variant="contained"
-            color="primary"
-            sx={{ marginTop: "20px", padding: "8px 16px" }}
-            onClick={handleProcessing}
-            disabled={!selectedBook}
-          >
-            Process
-          </Button>
-        </Box>
       )}
     </Container>
   );
