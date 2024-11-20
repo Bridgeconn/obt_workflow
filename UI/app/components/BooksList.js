@@ -25,7 +25,13 @@ import { processUSFM } from "../utils/usfmProcessor";
 import LanguageDropdown from "../components/LanguageDropdown";
 import useAudioTranscription from "./useAudioTranscription";
 
-const BooksList = ({ projectInstance, files, projectName, bibleMetaData }) => {
+const BooksList = ({
+  projectInstance,
+  files,
+  projectName,
+  bibleMetaData,
+  sourceLang,
+}) => {
   const [processing, setProcessing] = useState(false);
   const [books, setBooks] = useState([]);
   const [bookData, setBookData] = useState(null);
@@ -454,12 +460,22 @@ const BooksList = ({ projectInstance, files, projectName, bibleMetaData }) => {
     processUSFM(projectInstance, book.name, bibleMetaData);
   };
 
+  const handleSpeechConversion = () => {
+    console.log("text to audio conversion component will be called here");
+    setModalOpen(false);
+  }
+
   return (
     <Card sx={styles.cardRoot}>
       <Box sx={styles.header}>
-        <Typography variant="h4" sx={styles.headerTitle}>
-          {projectName}
-        </Typography>
+        <Box sx={styles.TitleContainer}>
+          <Typography variant="h4" sx={styles.headerTitle}>
+            {projectName}
+          </Typography>
+          <Typography variant="h6">
+            [source - {sourceLang ? sourceLang : "Not found"}]
+          </Typography>
+        </Box>
         <LanguageDropdown onLanguageChange={handleLanguageChange} />
       </Box>
 
@@ -646,6 +662,9 @@ const BooksList = ({ projectInstance, files, projectName, bibleMetaData }) => {
                 ? "Disapprove"
                 : "Approve"}
             </Button>
+            <Button variant="contained" onClick={handleSpeechConversion}>
+              Convert to speech
+            </Button>
           </Box>
         </Box>
       </Modal>
@@ -654,7 +673,7 @@ const BooksList = ({ projectInstance, files, projectName, bibleMetaData }) => {
         sx={{
           display: "flex",
           justifyContent: "flex-end",
-          marginTop: "40px"
+          marginTop: "40px",
         }}
       >
         <Button variant="contained" sx={styles.downloadButton}>

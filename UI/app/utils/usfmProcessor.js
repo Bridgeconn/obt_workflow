@@ -1,4 +1,5 @@
 import Swal from "sweetalert2";
+import LocalizedNames from "../store/localizedNames.json";
 
 export const processUSFM = async (projectInstance, selectedBook, bibleMetaData) => {
   console.log("project instance", projectInstance);
@@ -22,7 +23,8 @@ export const processUSFM = async (projectInstance, selectedBook, bibleMetaData) 
     return a.chapter - b.chapter; // Sort by chapter
   });
   console.log("sorted data", sortedData)
-  const metaData = bibleMetaData[selectedBook]
+  // const metaData = bibleMetaData[selectedBook]
+  const metaData = LocalizedNames[selectedBook]
   const usfmContent = generateUSFMContent(sortedData, selectedBook, metaData);
 
   // Create a Blob and trigger download

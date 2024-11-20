@@ -18,6 +18,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       let maxVersesData = {};
       let bibleMetaData = {};
       let projectName = "";
+      let sourceLanguage = "";
 
       console.log("Zip contents:", zipContents.files);
 
@@ -84,6 +85,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
                   typeof localizedBibles === "string"
                     ? JSON.parse(localizedBibles)
                     : localizedBibles;
+                sourceLanguage = parsedContent["languages"][0]?.name?.en
               } catch (e) {
                 console.error("Error parsing metadata JSON:", e);
               }
@@ -118,7 +120,8 @@ const DragAndDrop = ({ onFilesExtracted }) => {
         jsonFiles,
         projectName,
         maxVersesData,
-        bibleMetaData
+        bibleMetaData,
+        sourceLanguage
       );
     } catch (error) {
       console.error("Error extracting zip file:", error);

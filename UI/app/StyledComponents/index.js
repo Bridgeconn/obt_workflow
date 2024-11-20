@@ -16,12 +16,16 @@ export const ChapterCircle = styled(Box)(({ theme, status, onClick }) => ({
   "&:hover": {
     transform: "scale(1.05)",
   },
-  ...(status === "Transcribed" ||
-    (status === "Disapproved" && {
-      backgroundColor: "#e8f5e9",
-      border: "2px solid black",
-      color: "#2e7d32",
-    })),
+  ...(status === "Transcribed" && {
+    backgroundColor: "#e8f5e9",
+    border: "2px solid black",
+    color: "#2e7d32",
+  }),
+  ...(status === "Disapproved" && {
+    backgroundColor: "#e8f5e9",
+    border: "2px solid black",
+    color: "#2e7d32",
+  }),
   ...(status === "inProgress" && {
     backgroundColor: "#fff3e0",
     color: "#ef6c00",
@@ -68,6 +72,12 @@ export const styles = {
     alignItems: "center",
     mb: 4,
     px: 2,
+  },
+  TitleContainer: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 2
   },
   headerTitle: {
     color: "#9c27b0",

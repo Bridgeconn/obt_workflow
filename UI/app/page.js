@@ -13,6 +13,7 @@ export default function Home() {
   const [bibleMetaData, setBibleMetadata] = useState(null);
   const [projectName, setProjectName] = useState("");
   const [projectDB, setProjectDB] = useState(null);
+  const [sourceLang, setSourceLang] = useState("");
 
   useEffect(() => {
     if (projectName) {
@@ -30,13 +31,14 @@ export default function Home() {
     jsonFiles,
     projectName,
     maxVersesData,
-    bibleMetaData
+    bibleMetaData,
+    sourceLanguage
   ) => {
     setJsonFiles(jsonFiles);
     setProjectName(projectName);
     setMaxVerses(maxVersesData);
     setBibleMetadata(bibleMetaData);
-
+    setSourceLang(sourceLanguage);
     validateBooks(extractedFiles, maxVersesData);
     const sortedBooks = sortBooks(extractedFiles);
     setFiles(sortedBooks);
@@ -142,6 +144,7 @@ export default function Home() {
             files={files}
             projectName={projectName}
             bibleMetaData={bibleMetaData}
+            sourceLang={sourceLang}
           />
       )}
     </Container>
