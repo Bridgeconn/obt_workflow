@@ -26,7 +26,16 @@ export const ChapterCircle = styled(Box)(({ theme, status, onClick }) => ({
     border: "2px solid black",
     color: "#2e7d32",
   }),
+  ...(status === "Converted" && {
+    backgroundColor: "#c8e6c9",
+    border: "2px solid #388e3c",
+    color: "#1b5e20",
+}),
   ...(status === "inProgress" && {
+    backgroundColor: "#fff3e0",
+    color: "#ef6c00",
+  }),
+  ...(status === "converting" && {
     backgroundColor: "#fff3e0",
     color: "#ef6c00",
   }),

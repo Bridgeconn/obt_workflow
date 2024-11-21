@@ -1,41 +1,42 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import api from "../store/apiConfig"
+// import api from "../store/apiConfig"
 import Select from "react-select";
 import { CircularProgress, Box } from "@mui/material";
+import languages from "../store/languages.json";
 
 const LanguageDropdown = ({ onLanguageChange }) => {
   const [selectedLanguage, setSelectedLanguage] = useState(null);
   const [loadingLanguages, setLoadingLanguages] = useState(false);
-  const [languages, setLanguages] = useState([]);
+  // const [languages, setLanguages] = useState([]);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // useEffect(() => {
+  //   fetchData();
+  // }, []);
 
-  const fetchData = async () => {
-    try {
-      setLoadingLanguages(true);
-     const response = await api.get("/ai/model", {
-      params: {
-        model_name: "mms-1b-all",
-        skip: 0,
-        limit: 1,
-      },
-    });
+  // const fetchData = async () => {
+  //   try {
+  //     setLoadingLanguages(true);
+  //    const response = await api.get("/ai/model", {
+  //     params: {
+  //       model_name: "mms-1b-all",
+  //       skip: 0,
+  //       limit: 1,
+  //     },
+  //   });
 
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        setLanguages(response.data[0].languages);
-      } else {
-        setLanguages([]);
-      }
-    } catch (error) {
-      console.error("Error fetching data:", error);
-      setLanguages([]);
-    } finally {
-      setLoadingLanguages(false);
-    }
-  };
+  //     if (Array.isArray(response.data) && response.data.length > 0) {
+  //       setLanguages(response.data[0].languages);
+  //     } else {
+  //       setLanguages([]);
+  //     }
+  //   } catch (error) {
+  //     console.error("Error fetching data:", error);
+  //     setLanguages([]);
+  //   } finally {
+  //     setLoadingLanguages(false);
+  //   }
+  // };
 
   const handleLanguageChange = (selectedOption) => {
     setSelectedLanguage(selectedOption);
@@ -43,8 +44,8 @@ const LanguageDropdown = ({ onLanguageChange }) => {
   };
 
   const options = languages.map((language) => ({
-    value: language.lang_code,
-    label: language.lang_name,
+    value: language.source_language,
+    label: language.language_name,
   }));
 
   return (

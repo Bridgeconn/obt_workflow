@@ -14,6 +14,9 @@ import {
 import DownloadIcon from "@mui/icons-material/Download";
 import { Modal, TextField } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import PlayCircleIcon from "@mui/icons-material/PlayCircle";
+import PauseCircleIcon from "@mui/icons-material/PauseCircle";
+import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import {
   ChapterCircle,
   StyledTableRow,
@@ -24,6 +27,7 @@ import Swal from "sweetalert2";
 import { processUSFM } from "../utils/usfmProcessor";
 import LanguageDropdown from "../components/LanguageDropdown";
 import useAudioTranscription from "./useAudioTranscription";
+import TextToAudioConversion from "./TextToAudioConversion";
 
 const BooksList = ({
   projectInstance,
@@ -32,9 +36,9 @@ const BooksList = ({
   bibleMetaData,
   sourceLang,
 }) => {
-  const [processing, setProcessing] = useState(false);
   const [books, setBooks] = useState([]);
   const [bookData, setBookData] = useState(null);
+  const [chapterData, setChapterData] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState("");
   const [chapterStatuses, setChapterStatuses] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
@@ -42,6 +46,7 @@ const BooksList = ({
   const [editedVerses, setEditedVerses] = useState({});
   const [selectedBook, setSelectedBook] = useState("");
   const [selectedChapter, setSelectedChapter] = useState(null);
+  const [playingAudio, setPlayingAudio] = useState(null);
 
   useEffect(() => {
     if (files.length != 0) {
@@ -59,6 +64,7 @@ const BooksList = ({
         })),
         status: "pending",
         completed: [],
+        converted: [],
         inProgress: [],
         approved: [],
         failed: [],
@@ -147,6 +153,12 @@ const BooksList = ({
                 statuses[bookChapterKey] = "inProgress";
               }
             }
+            const allVersesConverted = verseData.every(
+              (data) => data && data.generatedAudio
+            );
+            if (allVersesConverted) {
+              statuses[bookChapterKey] = "Converted";
+            }
           } catch (error) {
             console.error(
               `Error checking status for ${book.bookName} chapter ${chapterNumber}:`,
@@ -173,14 +185,23 @@ const BooksList = ({
             statuses[`${book.name}-${chapter.chapterNumber}`] === "Approved"
         );
 
+        const allChaptersConverted = book.displayChapters.every(
+          (chapter) =>
+            statuses[`${book.name}-${chapter.chapterNumber}`] === "Converted"
+        );
+
         let status = book.status;
-        if (allChaptersApproved) {
+        if (allChaptersConverted) {
+          status = "Done";
+        } else if (allChaptersApproved) {
           status = "Approved";
         } else if (allChaptersTranscribed) {
           status = "Transcribed";
         }
 
-        return allChaptersApproved || allChaptersTranscribed
+        return allChaptersApproved ||
+          allChaptersTranscribed ||
+          allChaptersConverted
           ? { ...book, status, hasDownload: true }
           : book;
       })
@@ -195,6 +216,7 @@ const BooksList = ({
     }
     //fallback  checks
     if (book.completed.includes(chapter.chapterNumber)) return "Transcribed";
+    if (book.converted.includes(chapter.chapterNumber)) return "Converted";
     if (book.inProgress.includes(chapter.chapterNumber)) return "inProgress";
     if (book.approved.includes(chapter.chapterNumber)) return "Approved";
     if (book.failed.includes(chapter.chapterNumber)) return "Failed";
@@ -212,10 +234,25 @@ const BooksList = ({
     if (book.status === "inProgress") {
       for (const chapter of book.displayChapters) {
         if (
-          String(chapter.chapterNumber) === String(currentChapter.chapterNumber)
+          String(chapter.chapterNumber) ===
+          String(currentChapter?.chapterNumber)
         ) {
           const { verseNumber } = extractChapterVerse(
-            currentVerse.audioFileName
+            currentVerse?.audioFileName
+          );
+
+          return `[${verseNumber} out of ${chapter.verses.length}]`;
+        }
+      }
+    }
+    if (book.status === "converting") {
+      for (const chapter of book.displayChapters) {
+        if (
+          String(chapter.chapterNumber) ===
+          String(processingChapter?.chapterNumber)
+        ) {
+          const { verseNumber } = extractChapterVerse(
+            processingVerse?.audioFileName
           );
 
           return `[${verseNumber} out of ${chapter.verses.length}]`;
@@ -224,6 +261,9 @@ const BooksList = ({
     }
     if (book.approved.length === book.totalChapters) {
       return "Approved";
+    }
+    if (book.converted.length === book.totalChapters) {
+      return "Done";
     }
     return book.status;
   };
@@ -284,12 +324,13 @@ const BooksList = ({
   };
 
   const handleLanguageChange = (language) => {
+    console.log("selected language", language);
     setSelectedLanguage(language);
   };
 
-  const isReady = projectInstance && selectedLanguage && bookData;
+  const isBookReady = projectInstance && selectedLanguage && bookData;
 
-  const { startTranscription, currentChapter, currentVerse } =
+  const { startTranscription, currentChapter, currentVerse, isTranscribing } =
     useAudioTranscription({
       projectInstance,
       selectedBook: bookData?.bookName,
@@ -297,21 +338,19 @@ const BooksList = ({
       bookData,
       selectedLanguage,
       setChapterStatuses,
-      setProcessing,
       extractChapterVerse,
     });
 
   useEffect(() => {
-    if (isReady && bookData) {
+    if (isBookReady && bookData) {
       startTranscription(bookData.chapters[0]);
     }
-  }, [isReady, bookData]);
+  }, [isBookReady, bookData]);
 
   const processBook = (name) => {
     const selectedData = files.find(({ bookName }) => bookName === name);
     if (!selectedLanguage) {
       Swal.fire("Error", "Please select a language", "error");
-      setProcessing(false);
       return;
     }
     if (selectedData) {
@@ -326,7 +365,9 @@ const BooksList = ({
     if (
       chapterStatuses[chapterKey] === "Transcribed" ||
       chapterStatuses[chapterKey] === "Approved" ||
-      chapterStatuses[chapterKey] === "Disapproved"
+      chapterStatuses[chapterKey] === "Disapproved" ||
+      chapterStatuses[chapterKey] === "Converted" ||
+      chapterStatuses[chapterKey] === "converting"
     ) {
       const keys = await projectInstance.keys();
       const filteredKeys = keys.filter((key) => key.startsWith(chapterKey));
@@ -352,6 +393,7 @@ const BooksList = ({
             chapterNumber: chapter.chapterNumber,
             verseNumber: verseNumber,
             text: transcribedText || "",
+            generatedAudio: transcribedData?.generatedAudio,
           };
         })
       );
@@ -370,11 +412,8 @@ const BooksList = ({
       const storageKey = `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`;
       const existingData = await projectInstance.getItem(storageKey);
       await projectInstance.setItem(storageKey, {
-        book: selectedBook,
-        chapter: verse.chapterNumber,
-        verse: verse.verseNumber,
+        ...existingData,
         transcribedText: editedText,
-        isApproved: existingData?.isApproved,
       });
     }
     setModalOpen(false);
@@ -391,10 +430,9 @@ const BooksList = ({
           `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
         ] || verse.text;
       const storageKey = `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`;
+      const existingData = await projectInstance.getItem(storageKey);
       await projectInstance.setItem(storageKey, {
-        book: selectedBook,
-        chapter: verse.chapterNumber,
-        verse: verse.verseNumber,
+        ...existingData,
         transcribedText: editedText,
         isApproved: !isCurrentlyApproved,
       });
@@ -411,16 +449,26 @@ const BooksList = ({
         if (book.name === selectedBook) {
           const updatedApproved = [...book.approved];
           const updatedTranscribed = [...book.completed];
+          const updatedConverted = [...book.converted];
 
           if (isCurrentlyApproved) {
-            // Remove from approved and add to transcribed
+            // Remove from approved and add to transcribed or converted
             const index = updatedApproved.indexOf(selectedChapter);
             if (index !== -1) updatedApproved.splice(index, 1);
-            updatedTranscribed.push(selectedChapter);
+            if (book?.status === "Done") {
+              updatedConverted.push(selectedChapter);
+            } else {
+              updatedTranscribed.push(selectedChapter);
+            }
           } else {
-            // Remove from transcribed and add to approved
-            const index = updatedTranscribed.indexOf(selectedChapter);
-            if (index !== -1) updatedTranscribed.splice(index, 1);
+            // Remove from transcribed or converted and add to approved
+            if (book?.status === "Transcribed") {
+              const index = updatedTranscribed.indexOf(selectedChapter);
+              if (index !== -1) updatedTranscribed.splice(index, 1);
+            } else {
+              const index = updatedConverted.indexOf(selectedChapter);
+              if (index !== -1) updatedConverted.splice(index, 1);
+            }
             updatedApproved.push(selectedChapter);
           }
           const allChaptersApproved = book.displayChapters.every(
@@ -429,7 +477,7 @@ const BooksList = ({
               "Approved"
           );
 
-          let status = "Transcribed";
+          let status = book?.status;
           if (allChaptersApproved) {
             status = "Approved";
             Swal.fire(
@@ -444,6 +492,7 @@ const BooksList = ({
             status,
             approved: updatedApproved,
             completed: updatedTranscribed,
+            converted: updatedConverted,
             hasDownload: allChaptersApproved,
           };
         }
@@ -456,14 +505,124 @@ const BooksList = ({
     setSelectedChapter(null);
   };
 
+  const isChapterReady = projectInstance && selectedLanguage && chapterData;
+  useEffect(() => {
+    if (isChapterReady && chapterData) {
+      startConversion(chapterData);
+    }
+  }, [isChapterReady, chapterData]);
+
+  const { isConverting, startConversion, processingChapter, processingVerse } =
+    TextToAudioConversion({
+      projectInstance,
+      selectedBook,
+      setBooks,
+      chapterData,
+      selectedLanguage,
+      setChapterStatuses,
+      extractChapterVerse,
+    });
+
+  const handleSpeechConversion = () => {
+    const fetchedChapter = files
+      .find((file) => file.bookName === selectedBook)
+      ?.chapters.find(
+        (chapter) => String(chapter.chapterNumber) === String(selectedChapter)
+      );
+    if (!selectedLanguage) {
+      setModalOpen(false);
+      Swal.fire("Error", "Please select a language", "error");
+      return;
+    }
+    console.log("fetched chapter", fetchedChapter);
+    if (fetchedChapter) {
+      setChapterData(fetchedChapter);
+    }
+    const isCurrentlyConverted =
+      chapterStatuses[`${selectedBook}-${selectedChapter}`] === "Converted";
+    setBooks((prevBooks) =>
+      prevBooks.map((book) => {
+        if (book.name === selectedBook) {
+          const updatedConvertedChapters = [...book.converted];
+
+          if (
+            isCurrentlyConverted &&
+            !updatedConvertedChapters.includes(selectedChapter)
+          ) {
+            updatedConvertedChapters.push(selectedChapter);
+          }
+
+          const allChaptersConverted = book.displayChapters.every((chapter) =>
+            updatedConvertedChapters.includes(chapter.chapterNumber)
+          );
+
+          return {
+            ...book,
+            converted: updatedConvertedChapters,
+            status: allChaptersConverted ? "Done" : book.status,
+            hasDownload: allChaptersConverted || book.hasDownload,
+          };
+        }
+        return book;
+      })
+    );
+    setModalOpen(false);
+  };
+
+  const handleAudioToggle = (file, verseKey) => {
+    if (playingAudio?.key === verseKey) {
+      playingAudio.audio.pause();
+      if (playingAudio.url) {
+        URL.revokeObjectURL(playingAudio.url);
+      }
+      setPlayingAudio(null);
+      return;
+    }
+
+    if (playingAudio) {
+      playingAudio.audio.pause();
+      if (playingAudio.url) {
+        URL.revokeObjectURL(playingAudio.url);
+      }
+    }
+
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+
+    audio.play();
+
+    setPlayingAudio({
+      key: verseKey,
+      audio,
+      url,
+    });
+
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      setPlayingAudio(null);
+    };
+
+    audio.onerror = () => {
+      console.error("Error playing audio");
+      URL.revokeObjectURL(url);
+      setPlayingAudio(null);
+    };
+  };
+
+  useEffect(() => {
+    return () => {
+      if (playingAudio) {
+        playingAudio.audio.pause();
+        if (playingAudio.url) {
+          URL.revokeObjectURL(playingAudio.url);
+        }
+      }
+    };
+  }, [playingAudio]);
+
   const downloadUSFM = (book) => {
     processUSFM(projectInstance, book.name, bibleMetaData);
   };
-
-  const handleSpeechConversion = () => {
-    console.log("text to audio conversion component will be called here");
-    setModalOpen(false);
-  }
 
   return (
     <Card sx={styles.cardRoot}>
@@ -588,69 +747,126 @@ const BooksList = ({
             position: "relative",
             width: "90%",
             maxHeight: "60vh",
-            overflowY: "auto",
+            overflow: "hidden",
             maxWidth: 800,
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            padding: 3,
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          <IconButton
-            onClick={handleCloseModal}
+          <Box
             sx={{
-              position: "absolute",
-              top: "10px",
-              right: "10px",
+              position: "sticky",
+              top: 0,
+              backgroundColor: "background.paper",
+              zIndex: 1,
+              padding: "16px",
+              borderBottom: "1px solid rgba(0, 0, 0, 0.12)",
             }}
           >
-            <CloseIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ marginBottom: "10px" }}>
-            {selectedBook} - Chapter {chapterContent[0]?.chapterNumber}
-          </Typography>
-          {chapterContent.map((verse) => (
-            <Box
-              key={verse.verseNumber}
+            <IconButton
+              onClick={handleCloseModal}
               sx={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: "10px",
-                flexWrap: "nowrap",
+                position: "absolute",
+                top: "10px",
+                right: "10px",
               }}
             >
-              <Typography
+              <CloseIcon />
+            </IconButton>
+            <Typography variant="h6" sx={{ marginBottom: "10px" }}>
+              {selectedBook} - Chapter {chapterContent[0]?.chapterNumber}
+            </Typography>
+          </Box>
+
+          <Box
+            sx={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "16px",
+            }}
+          >
+            {chapterContent.map((verse) => (
+              <Box
+                key={verse.verseNumber}
                 sx={{
-                  marginRight: "10px",
-                  whiteSpace: { xs: "normal", sm: "nowrap" },
+                  display: "flex",
+                  alignItems: "center",
+                  marginBottom: "10px",
+                  flexWrap: "nowrap",
                 }}
               >
-                Verse {verse.verseNumber}:
-              </Typography>
-              <TextField
-                fullWidth
-                variant="outlined"
-                value={
-                  editedVerses[
-                    `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
-                  ] || verse.text
-                }
-                onChange={(e) =>
-                  handleTextChange(
-                    verse.chapterNumber,
-                    verse.verseNumber,
-                    e.target.value
-                  )
-                }
-              />
-            </Box>
-          ))}
+                <Typography
+                  sx={{
+                    marginRight: "10px",
+                    whiteSpace: { xs: "normal", sm: "nowrap" },
+                  }}
+                >
+                  Verse {verse.verseNumber}:
+                </Typography>
+                <TextField
+                  fullWidth
+                  variant="outlined"
+                  value={
+                    editedVerses[
+                      `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
+                    ] || verse.text
+                  }
+                  onChange={(e) =>
+                    handleTextChange(
+                      verse.chapterNumber,
+                      verse.verseNumber,
+                      e.target.value
+                    )
+                  }
+                />
+                {verse?.generatedAudio ? (
+                  <IconButton
+                    onClick={() =>
+                      handleAudioToggle(
+                        verse?.generatedAudio,
+                        `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
+                      )
+                    }
+                  >
+                    {isConverting ? (
+                      verse?.generatedAudio ? (
+                        playingAudio?.key ===
+                        `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
+                          <PauseCircleIcon sx={{ height: 30, width: 30 }} />
+                        ) : (
+                          <PlayCircleIcon sx={{ height: 30, width: 30 }} />
+                        )
+                      ) : (
+                        <HourglassBottomIcon sx={{ height: 30, width: 30 }} />
+                      )
+                    ) : playingAudio?.key ===
+                      `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
+                      <PauseCircleIcon sx={{ height: 30, width: 30 }} />
+                    ) : (
+                      <PlayCircleIcon sx={{ height: 30, width: 30 }} />
+                    )}
+                  </IconButton>
+                ) : (
+                  <IconButton sx={{ opacity: 0, width: 30, height: 30 }} />
+                )}
+              </Box>
+            ))}
+          </Box>
+
           <Box
             sx={{
               display: "flex",
               justifyContent: "flex-end",
-              marginTop: "20px",
               gap: 2,
+              position: "sticky",
+              bottom: 0,
+              backgroundColor: "background.paper",
+              zIndex: 1,
+              borderTop: "1px solid rgba(0, 0, 0, 0.12)",
+              padding: "16px",
             }}
           >
             <Button variant="contained" onClick={handleCloseModal}>

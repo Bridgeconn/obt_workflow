@@ -3,6 +3,7 @@ import Swal from "sweetalert2";
 
 import api from "../store/apiConfig";
 import { AudioCodecDetector } from "../utils/audioCodecDetector";
+import language_codes from "../store/language_codes.json";
 
 const useAudioTranscription = ({
   projectInstance,
@@ -11,11 +12,11 @@ const useAudioTranscription = ({
   bookData,
   selectedLanguage,
   setChapterStatuses,
-  setProcessing,
   extractChapterVerse,
 }) => {
   const [currentChapter, setCurrentChapter] = useState(null);
   const [currentVerse, setCurrentVerse] = useState(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   useEffect(() => {
     if (currentVerse && currentChapter) {
@@ -25,66 +26,102 @@ const useAudioTranscription = ({
     }
   }, [currentVerse, currentChapter]);
 
+  const updateBookStatus = useCallback(
+    (chapterNumber, status) => {
+      const bookChapterKey = `${selectedBook}-${chapterNumber}`;
+
+      setChapterStatuses((prev) => ({
+        ...prev,
+        [bookChapterKey]: status,
+      }));
+
+      setBooks((prevBooks) =>
+        prevBooks.map((book) => {
+          if (book.name !== selectedBook) return book;
+
+          const updatedBook = { ...book };
+          const arrays = [
+            "approved",
+            "completed",
+            "inProgress",
+            "converted",
+            "failed",
+          ];
+          arrays.forEach((arr) => {
+            updatedBook[arr] =
+              updatedBook[arr]?.filter((ch) => ch !== chapterNumber) || [];
+          });
+
+          switch (status) {
+            case "inProgress":
+              updatedBook.inProgress.push(chapterNumber);
+              updatedBook.status = "inProgress";
+              break;
+            case "Transcribed":
+              updatedBook.completed.push(chapterNumber);
+              break;
+            case "Failed":
+              updatedBook.failed.push(chapterNumber);
+              updatedBook.status = "Failed";
+              break;
+          }
+
+          return updatedBook;
+        })
+      );
+    },
+    [selectedBook]
+  );
+
+  const prepareAudioFile = async (verse) => {
+    const codec = await AudioCodecDetector.detectCodec(verse.file);
+    let file;
+    let targetFormat;
+
+    if (codec === "Opus") {
+      const { convertAudioFile } = await import("../utils/opusAudioConversion");
+      if (verse.audioFileName.endsWith(".mp3")) {
+        targetFormat = "mp3";
+      } else if (verse.audioFileName.endsWith(".wav")) {
+        targetFormat = "wav";
+      }
+      const audioBlob = await convertAudioFile(
+        verse.file,
+        verse.audioFileName,
+        targetFormat
+      );
+      file = new File([audioBlob], verse.audioFileName, {
+        type: `audio/${targetFormat}`,
+      });
+    } else {
+      file = new File([verse.file], verse.audioFileName, {
+        type: `audio/${targetFormat}`,
+      });
+    }
+
+    return file;
+  };
+
   // Function to handle transcription for a verse
   const handleTranscribe = useCallback(
     async (verse) => {
       if (!verse) return;
-      setProcessing(true);
-      let bookChapterKey;
+      if(isTranscribing) return;
+      setIsTranscribing(true);
       if (currentChapter) {
-        bookChapterKey = `${selectedBook}-${currentChapter?.chapterNumber}`;
-        setChapterStatuses((prev) => ({
-          ...prev,
-          [bookChapterKey]: "inProgress",
-        }));
+        updateBookStatus(currentChapter?.chapterNumber, "inProgress");
       }
-      setBooks((prevBooks) =>
-        prevBooks.map((book) =>
-          book.name === selectedBook
-            ? {
-                ...book,
-                status: "inProgress",
-                inProgress: [
-                  ...new Set([
-                    ...book.inProgress,
-                    currentChapter?.chapterNumber,
-                  ]),
-                ],
-              }
-            : book
-        )
-      );
 
       try {
         const formData = new FormData();
-        const codec = await AudioCodecDetector.detectCodec(verse.file);
-        let file;
-        let targetFormat;
-        if (codec === "Opus") {
-          const { convertAudioFile } = await import("../utils/audioConversion");
-          if (verse.audioFileName.endsWith(".mp3")) {
-            targetFormat = "mp3";
-          } else if (verse.audioFileName.endsWith(".wav")) {
-            targetFormat = "wav";
-          }
-          const audioBlob = await convertAudioFile(
-            verse.file,
-            verse.audioFileName,
-            targetFormat
-          );
-          file = new File([audioBlob], verse.audioFileName, {
-            type: `audio/${targetFormat}`,
-          });
-        } else {
-          file = new File([verse.file], verse.audioFileName, {
-            type: `audio/${targetFormat}`,
-          });
-        }
+        const file = await prepareAudioFile(verse);
+        let model_name = "mms-1b-all";
+        let lang_code = language_codes[selectedLanguage]?.stt?.[model_name];
         formData.append("files", file);
-        formData.append("transcription_language", selectedLanguage);
+        formData.append("transcription_language", lang_code);
 
         const response = await api.post(
-          "/ai/model/audio/transcribe?model_name=mms-1b-all",
+          `/ai/model/audio/transcribe?model_name=${model_name}`,
           formData,
           {
             headers: { "Content-Type": "multipart/form-data" },
@@ -100,36 +137,13 @@ const useAudioTranscription = ({
           "Error in transcription. Please try again later.",
           "error"
         );
-        setProcessing(false);
         if (currentChapter) {
-          bookChapterKey = `${selectedBook}-${currentChapter?.chapterNumber}`;
-          setChapterStatuses((prev) => ({
-            ...prev,
-            [bookChapterKey]: "Failed",
-          }));
+          updateBookStatus(currentChapter?.chapterNumber, "Failed");
         }
-        setBooks((prevBooks) =>
-          prevBooks.map((book) =>
-            book.name === selectedBook
-              ? {
-                  ...book,
-                  inProgress: book.inProgress.filter(
-                    (chapter) => chapter !== currentChapter?.chapterNumber
-                  ),
-                  failed: [
-                    ...new Set([
-                      ...(book.failed || []),
-                      currentChapter?.chapterNumber,
-                    ]),
-                  ],
-                  status: "Failed",
-                }
-              : book
-          )
-        );
+        setIsTranscribing(false);
       }
     },
-    [currentChapter, selectedBook, selectedLanguage]
+    [currentChapter, selectedBook, selectedLanguage, updateBookStatus]
   );
 
   // Function to check transcription job status
@@ -145,7 +159,6 @@ const useAudioTranscription = ({
           const transcribedText =
             response.data.data.output.transcriptions[0].transcribedText;
           const storageKey = `${selectedBook}-${chapterNumber}-${verseNumber}`;
-          console.log("storage key", storageKey);
 
           const transcriptionData = {
             book: selectedBook,
@@ -153,16 +166,8 @@ const useAudioTranscription = ({
             verse: verseNumber,
             transcribedText,
           };
-
-          projectInstance
-            .setItem(storageKey, transcriptionData)
-            .then(() =>
-              console.log(`Stored transcription for key ${storageKey}`)
-            )
-            .catch((err) =>
-              console.error(`Failed to store transcription: ${err}`)
-            );
-
+          setIsTranscribing(false);
+          await projectInstance.setItem(storageKey, transcriptionData);
           moveToNextVerse(verse);
         }
         else if (jobStatus === "Error") {
@@ -173,58 +178,20 @@ const useAudioTranscription = ({
             "Some error occured. Please try again later",
             "error"
           );
-          setProcessing(false);
-          const bookChapterKey = `${selectedBook}-${chapterNumber}`;
-          setChapterStatuses((prev) => ({
-            ...prev,
-            [bookChapterKey]: "Failed",
-          }));
-          setBooks((prevBooks) =>
-            prevBooks.map((book) =>
-              book.name === selectedBook
-                ? {
-                    ...book,
-                    inProgress: book.inProgress.filter(
-                      (chapter) => chapter !== chapterNumber
-                    ),
-                    failed: [
-                      ...new Set([...(book.failed || []), chapterNumber]),
-                    ],
-                    status: "Failed",
-                  }
-                : book
-            )
-          );
+          updateBookStatus(chapterNumber, "Failed");
+          setIsTranscribing(false);
         } else {
           setTimeout(() => checkJobStatus(jobId, verse), 10000);
         }
       } catch (error) {
         console.error("Error fetching job status:", error);
         Swal.fire("Error", "Failed to fetch job status", "error");
-        setProcessing(false);
         const { chapterNumber } = extractChapterVerse(verse.audioFileName);
-        const bookChapterKey = `${selectedBook}-${chapterNumber}`;
-        setChapterStatuses((prev) => ({
-          ...prev,
-          [bookChapterKey]: "Failed",
-        }));
-        setBooks((prevBooks) =>
-          prevBooks.map((book) =>
-            book.name === selectedBook
-              ? {
-                  ...book,
-                  inProgress: book.inProgress.filter(
-                    (chapter) => chapter !== chapterNumber
-                  ),
-                  failed: [...new Set([...(book.failed || []), chapterNumber])],
-                  status: "Failed",
-                }
-              : book
-          )
-        );
+        updateBookStatus(chapterNumber, "Failed");
+        setIsTranscribing(false);
       }
     },
-    [selectedBook, projectInstance, extractChapterVerse]
+    [selectedBook, projectInstance, extractChapterVerse, updateBookStatus]
   );
 
   // Function to move to the next verse after transcription
@@ -247,49 +214,12 @@ const useAudioTranscription = ({
         setCurrentVerse(nextVerse);
         handleTranscribe(nextVerse);
       } else {
-        const bookChapterKey = `${selectedBook}-${chapterNumber}`;
-        setChapterStatuses((prev) => ({
-          ...prev,
-          [bookChapterKey]: "Transcribed",
-        }));
-        setBooks((prevBooks) =>
-          prevBooks.map((book) =>
-            book.name === selectedBook
-              ? {
-                  ...book,
-                  status: "Transcribed",
-                  inProgress: book.inProgress.filter(
-                    (chapter) => chapter !== chapterNumber
-                  ),
-                  completed: [...new Set([...book.completed, chapterNumber])],
-                }
-              : book
-          )
-        );
+        updateBookStatus(chapterNumber, "Transcribed");
         const nextChapter = bookData.chapters[chapterNumber];
         if (nextChapter) {
           setCurrentChapter(nextChapter);
-          setChapterStatuses((prev) => ({
-            ...prev,
-            [`${selectedBook}-${nextChapter.chapterNumber}`]: "inProgress",
-          }));
-          setBooks((prevBooks) =>
-            prevBooks.map((book) =>
-              book.name === selectedBook
-                ? {
-                    ...book,
-                    status: "inProgress",
-                    inProgress: [
-                      ...new Set([
-                        ...book.inProgress,
-                        nextChapter.chapterNumber,
-                      ]),
-                    ],
-                  }
-                : book
-            )
-          );
           setCurrentVerse(nextChapter.verses[0]);
+          updateBookStatus(nextChapter.chapterNumber, "inProgress");
           handleTranscribe(nextChapter.verses[0]);
         } else {
           Swal.fire(
@@ -297,7 +227,6 @@ const useAudioTranscription = ({
             "All chapters have been transcribed.",
             "success"
           );
-          setProcessing(false);
           setCurrentVerse(null);
           setCurrentChapter(null);
           setBooks((prevBooks) =>
@@ -307,43 +236,25 @@ const useAudioTranscription = ({
                 : book
             )
           );
+          setIsTranscribing(false);
         }
       }
     },
-    [bookData, selectedBook, handleTranscribe]
+    [bookData, selectedBook, extractChapterVerse, handleTranscribe, updateBookStatus]
   );
 
   // Start transcription process
   const startTranscription = useCallback(
     (firstChapter) => {
       setCurrentChapter(firstChapter);
-      setChapterStatuses((prev) => ({
-        ...prev,
-        [`${selectedBook}-${firstChapter.chapterNumber}`]: "inProgress",
-      }));
-      setBooks((prevBooks) =>
-        prevBooks.map((book) =>
-          book.name === selectedBook
-            ? {
-                ...book,
-                status: "inProgress",
-                inProgress: [
-                  ...new Set([...book.inProgress, firstChapter.chapterNumber]),
-                ],
-              }
-            : book
-        )
-      );
       setCurrentVerse(firstChapter.verses[0]);
+      updateBookStatus(firstChapter.chapterNumber, "inProgress");
       handleTranscribe(firstChapter.verses[0]);
     },
     [
       selectedBook,
-      setChapterStatuses,
-      handleTranscribe,
-      setBooks,
-      setCurrentVerse,
-      setCurrentChapter,
+      updateBookStatus,
+      handleTranscribe
     ]
   );
 
@@ -351,6 +262,9 @@ const useAudioTranscription = ({
     startTranscription,
     currentChapter,
     currentVerse,
+    setCurrentChapter,
+    setCurrentVerse,
+    isTranscribing
   };
 };
 
