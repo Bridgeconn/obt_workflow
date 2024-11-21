@@ -1,0 +1,7 @@
+ fastapi
+ uvicorn
+ psycopg2 
+ python-multipart
+ sqlalchemy
+ python-jose
+ passlib[bcrypt]
