@@ -170,7 +170,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
         <p>
           {fileName
             ? `Uploaded File: ${fileName}, Please wait`
-            : "Drag and drop a zip file here, or click to select"}
+            : "Drag and drop your Scribe project ZIP file here, or click to browse and upload."}
         </p>
       )}
     </Box>

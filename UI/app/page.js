@@ -2,9 +2,10 @@
 import { useState, useEffect } from "react";
 import localforage from "localforage";
 import Swal from "sweetalert2";
-import { Container, Box, Button } from "@mui/material";
+import { Container, Box, Typography } from "@mui/material";
 import DragAndDrop from "./components/DragAndDrop";
 import BooksList from "./components/BooksList";
+import AppBar from "@mui/material/AppBar";
 
 export default function Home() {
   const [files, setFiles] = useState([]);
@@ -13,11 +14,10 @@ export default function Home() {
   const [bibleMetaData, setBibleMetadata] = useState(null);
   const [projectName, setProjectName] = useState("");
   const [projectDB, setProjectDB] = useState(null);
-  const [sourceLang, setSourceLang] = useState("");
 
   useEffect(() => {
     if (projectName) {
-      console.log("project name", projectName)
+      console.log("project name", projectName);
       const dbInstance = localforage.createInstance({
         name: projectName,
         storeName: "transcriptions",
@@ -31,14 +31,12 @@ export default function Home() {
     jsonFiles,
     projectName,
     maxVersesData,
-    bibleMetaData,
-    sourceLanguage
+    bibleMetaData
   ) => {
     setJsonFiles(jsonFiles);
     setProjectName(projectName);
     setMaxVerses(maxVersesData);
     setBibleMetadata(bibleMetaData);
-    setSourceLang(sourceLanguage);
     validateBooks(extractedFiles, maxVersesData);
     const sortedBooks = sortBooks(extractedFiles);
     setFiles(sortedBooks);
@@ -111,42 +109,70 @@ export default function Home() {
     });
   }
 
-  console.log("project instance in page.js", projectDB)
+  console.log("project instance in page.js", projectDB);
 
   return (
-    <Container
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "100vh",
-        minWidth: "100vw",
-        padding: 2,
-      }}
-    >
+    <>
+      <AppBar
+        color="transparent"
+        sx={(theme) => ({
+          position: "static",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          p: 4,
+          pb: 2,
+          boxShadow: "unset",
+          borderBottom: `1px solid ${theme.palette.grey[300]}`,
+        })}
+      >
+        <Typography
+          variant="h4"
+          sx={{
+            display: { md: "flex" },
+            fontFamily: "Arial",
+            fontWeight: 700,
+          }}
+        >
+          AI OBT Assistant
+        </Typography>
+      </AppBar>
       {files.length === 0 ? (
         <Box
           sx={{
-            width: { xs: "90vw", sm: "60vw" },
-            height: { xs: "200px", sm: "300px" },
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "85vh",
+            minWidth: "100vw",
             padding: 2,
-            border: "2px dashed #888",
-            borderRadius: "8px",
-            backgroundColor: "#f9f9f9",
           }}
         >
-          <DragAndDrop onFilesExtracted={handleFilesExtracted} />
+          <Box
+            sx={{
+              width: { xs: "90vw", sm: "60vw" },
+              height: { xs: "200px", sm: "300px" },
+              padding: 2,
+              border: "2px dashed #888",
+              borderRadius: "8px",
+              backgroundColor: "#f9f9f9",
+            }}
+          >
+            <DragAndDrop onFilesExtracted={handleFilesExtracted} />
+          </Box>
         </Box>
       ) : (
+        <Box>
           <BooksList
             projectInstance={projectDB}
             files={files}
+            setFiles={setFiles}
             projectName={projectName}
             bibleMetaData={bibleMetaData}
-            sourceLang={sourceLang}
           />
+        </Box>
       )}
-    </Container>
+    </>
   );
 }

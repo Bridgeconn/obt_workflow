@@ -3,9 +3,8 @@ import React, { useState, useEffect } from "react";
 // import api from "../store/apiConfig"
 import Select from "react-select";
 import { CircularProgress, Box } from "@mui/material";
-import languages from "../store/languages.json";
 
-const LanguageDropdown = ({ onLanguageChange }) => {
+const LanguageDropdown = ({ languages, type, onLanguageChange }) => {
   const [selectedLanguage, setSelectedLanguage] = useState(null);
   const [loadingLanguages, setLoadingLanguages] = useState(false);
   // const [languages, setLanguages] = useState([]);
@@ -40,11 +39,11 @@ const LanguageDropdown = ({ onLanguageChange }) => {
 
   const handleLanguageChange = (selectedOption) => {
     setSelectedLanguage(selectedOption);
-    onLanguageChange(selectedOption.value);
+    onLanguageChange(type, selectedOption.value);
   };
 
   const options = languages.map((language) => ({
-    value: language.source_language,
+    value: language?.source_language || language?.major_language,
     label: language.language_name,
   }));
 

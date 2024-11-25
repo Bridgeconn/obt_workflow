@@ -28,18 +28,21 @@ import { processUSFM } from "../utils/usfmProcessor";
 import LanguageDropdown from "../components/LanguageDropdown";
 import useAudioTranscription from "./useAudioTranscription";
 import TextToAudioConversion from "./TextToAudioConversion";
+import source_languages from "../store/source_languages.json";
+import major_languages from "../store/major_languages.json";
 
 const BooksList = ({
   projectInstance,
   files,
+  setFiles,
   projectName,
   bibleMetaData,
-  sourceLang,
 }) => {
   const [books, setBooks] = useState([]);
   const [bookData, setBookData] = useState(null);
   const [chapterData, setChapterData] = useState(null);
-  const [selectedLanguage, setSelectedLanguage] = useState("");
+  const [scriptLanguage, setScriptLanguage] = useState("");
+  const [audioLanguage, setAudiolanguage] = useState("");
   const [chapterStatuses, setChapterStatuses] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [chapterContent, setChapterContent] = useState([]);
@@ -323,12 +326,12 @@ const BooksList = ({
     }));
   };
 
-  const handleLanguageChange = (language) => {
+  const handleLanguageChange = (type, language) => {
     console.log("selected language", language);
-    setSelectedLanguage(language);
+    type === "audio" ? setAudiolanguage(language) : setScriptLanguage(language);
   };
 
-  const isBookReady = projectInstance && selectedLanguage && bookData;
+  const isBookReady = projectInstance && scriptLanguage && bookData;
 
   const { startTranscription, currentChapter, currentVerse, isTranscribing } =
     useAudioTranscription({
@@ -336,7 +339,7 @@ const BooksList = ({
       selectedBook: bookData?.bookName,
       setBooks,
       bookData,
-      selectedLanguage,
+      scriptLanguage,
       setChapterStatuses,
       extractChapterVerse,
     });
@@ -349,8 +352,8 @@ const BooksList = ({
 
   const processBook = (name) => {
     const selectedData = files.find(({ bookName }) => bookName === name);
-    if (!selectedLanguage) {
-      Swal.fire("Error", "Please select a language", "error");
+    if (!scriptLanguage) {
+      Swal.fire("Error", "Please select a script language", "error");
       return;
     }
     if (selectedData) {
@@ -505,7 +508,7 @@ const BooksList = ({
     setSelectedChapter(null);
   };
 
-  const isChapterReady = projectInstance && selectedLanguage && chapterData;
+  const isChapterReady = projectInstance && audioLanguage && chapterData;
   useEffect(() => {
     if (isChapterReady && chapterData) {
       startConversion(chapterData);
@@ -518,7 +521,7 @@ const BooksList = ({
       selectedBook,
       setBooks,
       chapterData,
-      selectedLanguage,
+      audioLanguage,
       setChapterStatuses,
       extractChapterVerse,
     });
@@ -529,9 +532,9 @@ const BooksList = ({
       ?.chapters.find(
         (chapter) => String(chapter.chapterNumber) === String(selectedChapter)
       );
-    if (!selectedLanguage) {
+    if (!audioLanguage) {
       setModalOpen(false);
-      Swal.fire("Error", "Please select a language", "error");
+      Swal.fire("Error", "Please select an audio language", "error");
       return;
     }
     console.log("fetched chapter", fetchedChapter);
@@ -624,18 +627,37 @@ const BooksList = ({
     processUSFM(projectInstance, book.name, bibleMetaData);
   };
 
+  const resetProject = () => {
+    setFiles([]);
+  };
+
   return (
     <Card sx={styles.cardRoot}>
       <Box sx={styles.header}>
-        <Box sx={styles.TitleContainer}>
+        <Box sx={styles.HeadingContainer}>
+        <Typography variant="h6">Project Name</Typography>
           <Typography variant="h4" sx={styles.headerTitle}>
             {projectName}
           </Typography>
-          <Typography variant="h6">
-            [source - {sourceLang ? sourceLang : "Not found"}]
-          </Typography>
         </Box>
-        <LanguageDropdown onLanguageChange={handleLanguageChange} />
+        <Box sx={styles.selectBox}>
+        <Box sx={styles.TitleContainer}>
+          <Typography variant="h6">Source Language Uploaded</Typography>
+          <LanguageDropdown
+            languages={source_languages}
+            type="audio"
+            onLanguageChange={handleLanguageChange}
+          />
+        </Box>
+        <Box sx={styles.TitleContainer}>
+          <Typography variant="h6">Script Language</Typography>
+          <LanguageDropdown
+            languages={major_languages}
+            type="script"
+            onLanguageChange={handleLanguageChange}
+          />
+        </Box>
+        </Box>
       </Box>
 
       <TableContainer sx={styles.tableContainer}>
@@ -660,7 +682,7 @@ const BooksList = ({
                   Chapters
                 </Typography>
               </StyledTableCell>
-              <StyledTableCell width="20%">
+              <StyledTableCell width="20%" sx={{textAlign: "center"}}>
                 <Typography
                   variant="subtitle2"
                   color="text.secondary"
@@ -684,7 +706,7 @@ const BooksList = ({
             {books.map((book, index) => (
               <StyledTableRow key={index}>
                 <StyledTableCell>
-                  <Typography color="primary" fontWeight={500}>
+                  <Typography fontWeight={600}>
                     {book.name}
                   </Typography>
                 </StyledTableCell>
@@ -701,9 +723,9 @@ const BooksList = ({
                     ))}
                   </Box>
                 </StyledTableCell>
-                <StyledTableCell>
+                <StyledTableCell sx={{display: "flex", justifyContent: "center"}}>
                   <Button
-                    variant="outlined"
+                    variant={book.status === "pending" && "outlined"}
                     onClick={() => {
                       if (book.status === "pending") {
                         processBook(book.name);
@@ -869,16 +891,16 @@ const BooksList = ({
               padding: "16px",
             }}
           >
-            <Button variant="contained" onClick={handleCloseModal}>
+            <Button variant="contained" onClick={handleCloseModal} sx={styles.Button} >
               Close
             </Button>
-            <Button variant="contained" onClick={handleChapterApproval}>
+            <Button variant="contained" onClick={handleChapterApproval} sx={styles.Button}>
               {chapterStatuses[`${selectedBook}-${selectedChapter}`] ===
               "Approved"
                 ? "Disapprove"
                 : "Approve"}
             </Button>
-            <Button variant="contained" onClick={handleSpeechConversion}>
+            <Button variant="contained" onClick={handleSpeechConversion} sx={styles.Button}>
               Convert to speech
             </Button>
           </Box>
@@ -888,11 +910,19 @@ const BooksList = ({
       <Box
         sx={{
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
           marginTop: "40px",
+          px: 2 
         }}
       >
-        <Button variant="contained" sx={styles.downloadButton}>
+        <Button
+          variant="contained"
+          onClick={resetProject}
+          sx={styles.Button}
+        >
+          Reset Project
+        </Button>
+        <Button variant="contained" sx={styles.Button}>
           Download Project
         </Button>
       </Box>

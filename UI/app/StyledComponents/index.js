@@ -69,18 +69,23 @@ export const StyledTableCell = styled(TableCell)(({ theme }) => ({
 
 export const styles = {
   cardRoot: {
-    width: "90%",
-    maxWidth: "1200px",
-    margin: "auto",
-    p: 4,
-    boxShadow: (theme) => theme.shadows[3],
+    width: "100%",
+    // margin: "auto",
+    p: 6,
+    py: 4
   },
   header: {
     display: "flex",
+    flexDirection : "column",
     justifyContent: "space-between",
-    alignItems: "center",
+    gap: 2,
     mb: 4,
     px: 2,
+  },
+  HeadingContainer: {
+    display: "flex",
+    alignItems: "center",
+    gap: 2
   },
   TitleContainer: {
     display: "flex",
@@ -92,6 +97,10 @@ export const styles = {
     color: "#9c27b0",
     fontWeight: 600,
   },
+  selectBox: {
+    display: "flex",
+    justifyContent: "space-between",
+  },
   languageSelect: {
     "& .MuiSelect-select": {
       py: 1,
@@ -102,7 +111,7 @@ export const styles = {
     flexWrap: "wrap",
     gap: 0.5,
   },
-  downloadButton: {
+  Button: {
     backgroundColor: "#f3e5f5",
     color: "#9c27b0",
     py: 1.2,
