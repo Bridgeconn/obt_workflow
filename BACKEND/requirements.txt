@@ -5,3 +5,4 @@
  sqlalchemy
  python-jose
  passlib[bcrypt]
+ requests
