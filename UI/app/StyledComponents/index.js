@@ -21,11 +21,6 @@ export const ChapterCircle = styled(Box)(({ theme, status, onClick }) => ({
     border: "2px solid black",
     color: "#2e7d32",
   }),
-  ...(status === "Disapproved" && {
-    backgroundColor: "#e8f5e9",
-    border: "2px solid black",
-    color: "#2e7d32",
-  }),
   ...(status === "Converted" && {
     backgroundColor: "#c8e6c9",
     border: "2px solid #388e3c",

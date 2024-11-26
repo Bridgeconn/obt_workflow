@@ -77,11 +77,10 @@ const BooksList = ({
     }
   }, [files]);
 
-  // Load transcription statuses for all books and chapters
   const loadTranscriptionStatuses = async () => {
     const keys = await projectInstance.keys();
     const statuses = {};
-
+  
     // Initialize all chapters as "pending" for every book
     files.forEach((book) => {
       book.chapters.forEach((chapter) => {
@@ -89,11 +88,11 @@ const BooksList = ({
         statuses[bookChapterKey] = "pending";
       });
     });
-
+  
     const chapterVersesMap = {};
-
+  
+    // Collect verse data for each chapter
     for (const key of keys) {
-      // Only process keys that match the book-chapter-verse format
       const match = key.match(/^([^-]+)-(\d+)-(\d+)$/);
       if (match) {
         const bookName = match[1];
@@ -110,106 +109,144 @@ const BooksList = ({
         });
       }
     }
-
-    // Process each book and chapter
-    for (const book of files) {
-      for (const chapter of book.chapters) {
-        const chapterNumber = String(chapter.chapterNumber);
-        const bookChapterKey = `${book.bookName}-${chapter.chapterNumber}`;
-        const chapterVerses =
-          chapterVersesMap[book.bookName]?.[chapterNumber] || [];
-
-        if (chapterVerses.length > 0) {
-          try {
-            // Get data for all verses in this chapter
-            const verseDataPromises = chapterVerses.map(({ key }) =>
-              projectInstance.getItem(key)
-            );
-
-            const verseData = await Promise.all(verseDataPromises);
-
-            const allVersesApproved = verseData.every(
-              (data) => data && data.isApproved === true
-            );
-
-            if (allVersesApproved) {
-              statuses[bookChapterKey] = "Approved";
-            } else {
+  
+    // Track book-level updates
+    const bookUpdates = files.map(async (book) => {
+      try {
+        const chapterLevelStatuses = await Promise.all(
+          book.chapters.map(async (chapter) => {
+            const chapterNumber = String(chapter.chapterNumber);
+            const bookChapterKey = `${book.bookName}-${chapterNumber}`;
+            const chapterVerses =
+              chapterVersesMap[book.bookName]?.[chapterNumber] || [];
+  
+            if (chapterVerses.length === 0) {
+              statuses[bookChapterKey] = "pending";
+              return {
+                chapterNumber: chapterNumber,
+                status: "pending",
+              };
+            }
+  
+            try {
+              // Fetch data for all verses in this chapter
+              const verseData = await Promise.all(
+                chapterVerses.map(({ key }) => projectInstance.getItem(key))
+              );
+  
+              // Check for transcribed text
               const allVersesTranscribed = verseData.every(
                 (data) =>
-                  data &&
-                  data.transcribedText &&
-                  data.transcribedText.trim() !== "" &&
-                  data.book === book.bookName &&
-                  String(data.chapter) === chapterNumber
+                  data && data.transcribedText && data.transcribedText.trim() !== ""
               );
-
-              const expectedVerseCount = chapter.verses.length;
-              const actualTranscribedCount = chapterVerses.length;
-
-              if (
-                allVersesTranscribed &&
-                expectedVerseCount === actualTranscribedCount
-              ) {
-                statuses[bookChapterKey] = "Transcribed";
-              } else if (actualTranscribedCount > 0) {
-                statuses[bookChapterKey] = "inProgress";
+              // Check for audio conversion
+              const allVersesConverted = verseData.every(
+                (data) => data && data.generatedAudio
+              );
+  
+              // Check for approved status
+              const allVersesApproved = verseData.every(
+                (data) => data && data.isApproved === true
+              );
+  
+              // Determine and update chapter status
+              let chapterStatus = "pending";
+              if (allVersesApproved) {
+                chapterStatus = "Approved";
+              } else if (allVersesConverted) {
+                chapterStatus = "Converted";
+              } else if (allVersesTranscribed) {
+                chapterStatus = "Transcribed";
               }
+  
+              statuses[bookChapterKey] = chapterStatus;
+  
+              return {
+                chapterNumber: chapterNumber,
+                status: chapterStatus,
+              };
+            } catch (error) {
+              console.error(
+                `Error fetching verse data for ${book.bookName} chapter ${chapterNumber}:`,
+                error
+              );
+              statuses[bookChapterKey] = "Error";
+              return {
+                chapterNumber: chapterNumber,
+                status: "Error",
+              };
             }
-            const allVersesConverted = verseData.every(
-              (data) => data && data.generatedAudio
-            );
-            if (allVersesConverted) {
-              statuses[bookChapterKey] = "Converted";
-            }
-          } catch (error) {
-            console.error(
-              `Error checking status for ${book.bookName} chapter ${chapterNumber}:`,
-              error
-            );
-            statuses[bookChapterKey] = "Error";
-          }
+          })
+        );
+  
+        const chapterStatusCounts = chapterLevelStatuses.reduce(
+          (acc, chapter) => {
+            acc[chapter.status] = (acc[chapter.status] || 0) + 1;
+            return acc;
+          },
+          {}
+        );
+  
+        let newStatus = "pending";
+        if (chapterStatusCounts["Approved"] === chapterLevelStatuses.length) {
+          newStatus = "Approved";
+        } else if (
+          chapterStatusCounts["Converted"] === chapterLevelStatuses.length
+        ) {
+          newStatus = "Done";
+        } else if (
+          chapterStatusCounts["Transcribed"] === chapterLevelStatuses.length
+        ) {
+          newStatus = "Transcribed";
+        } else if (chapterStatusCounts["Transcribed"] > 0) {
+          newStatus = "Transcribed";
+        } else if (chapterStatusCounts["Converted"] > 0) {
+          newStatus = "Done";
+        } else if(chapterStatusCounts["Error"] > 0) {
+          newStatus = "pending"
         }
+
+        return {
+          book,
+          status: newStatus,
+          hasDownload:
+            newStatus === "Done" ||
+            newStatus === "Approved",
+        };
+      } catch (error) {
+        console.error(`Error processing book ${book.bookName}:`, error);
+        return {
+          book,
+          status: "pending",
+          hasDownload: false,
+        };
       }
-    }
-
-    console.log("Updated chapter statuses:", statuses);
+    });
+  
+    // Resolve book updates and update states
+    const resolvedBookUpdates = await Promise.all(bookUpdates);
+  
+    // Update chapter statuses
     setChapterStatuses(statuses);
-
+  
+    // Update books state
     setBooks((prevBooks) =>
-      prevBooks.map((book) => {
-        const allChaptersTranscribed = book.displayChapters.every(
-          (chapter) =>
-            statuses[`${book.name}-${chapter.chapterNumber}`] === "Transcribed"
+      prevBooks.map((prevBook) => {
+        const updatedBook = resolvedBookUpdates.find(
+          (update) => update.book.bookName === prevBook.name
         );
-
-        const allChaptersApproved = book.displayChapters.every(
-          (chapter) =>
-            statuses[`${book.name}-${chapter.chapterNumber}`] === "Approved"
-        );
-
-        const allChaptersConverted = book.displayChapters.every(
-          (chapter) =>
-            statuses[`${book.name}-${chapter.chapterNumber}`] === "Converted"
-        );
-
-        let status = book.status;
-        if (allChaptersConverted) {
-          status = "Done";
-        } else if (allChaptersApproved) {
-          status = "Approved";
-        } else if (allChaptersTranscribed) {
-          status = "Transcribed";
-        }
-
-        return allChaptersApproved ||
-          allChaptersTranscribed ||
-          allChaptersConverted
-          ? { ...book, status, hasDownload: true }
-          : book;
+  
+        return updatedBook
+          ? {
+              ...prevBook,
+              status: updatedBook.status,
+              hasDownload: updatedBook.hasDownload,
+            }
+          : prevBook;
       })
     );
   };
+  
 
   const getChapterStatus = (book, chapter) => {
     const bookChapterKey = `${book.name}-${chapter.chapterNumber}`;
@@ -366,11 +403,10 @@ const BooksList = ({
     setSelectedChapter(chapter.chapterNumber);
     const chapterKey = `${book.name}-${chapter.chapterNumber}`;
     if (
-      chapterStatuses[chapterKey] === "Transcribed" ||
-      chapterStatuses[chapterKey] === "Approved" ||
-      chapterStatuses[chapterKey] === "Disapproved" ||
-      chapterStatuses[chapterKey] === "Converted" ||
-      chapterStatuses[chapterKey] === "converting"
+      !(
+        chapterStatuses[chapterKey] === "pending" ||
+        chapterStatuses[chapterKey] === "inProgress"
+      )
     ) {
       const keys = await projectInstance.keys();
       const filteredKeys = keys.filter((key) => key.startsWith(chapterKey));
@@ -427,6 +463,8 @@ const BooksList = ({
   const handleChapterApproval = async () => {
     const isCurrentlyApproved =
       chapterStatuses[`${selectedBook}-${selectedChapter}`] === "Approved";
+
+    // Update verses with transcribed text and approval status
     for (const verse of chapterContent) {
       const editedText =
         editedVerses[
@@ -441,68 +479,8 @@ const BooksList = ({
       });
     }
 
-    const newChapterStatuses = {
-      ...chapterStatuses,
-      [`${selectedBook}-${selectedChapter}`]: isCurrentlyApproved
-        ? "Disapproved"
-        : "Approved",
-    };
-    setBooks((prevBooks) =>
-      prevBooks.map((book) => {
-        if (book.name === selectedBook) {
-          const updatedApproved = [...book.approved];
-          const updatedTranscribed = [...book.completed];
-          const updatedConverted = [...book.converted];
+    await loadTranscriptionStatuses();
 
-          if (isCurrentlyApproved) {
-            // Remove from approved and add to transcribed or converted
-            const index = updatedApproved.indexOf(selectedChapter);
-            if (index !== -1) updatedApproved.splice(index, 1);
-            if (book?.status === "Done") {
-              updatedConverted.push(selectedChapter);
-            } else {
-              updatedTranscribed.push(selectedChapter);
-            }
-          } else {
-            // Remove from transcribed or converted and add to approved
-            if (book?.status === "Transcribed") {
-              const index = updatedTranscribed.indexOf(selectedChapter);
-              if (index !== -1) updatedTranscribed.splice(index, 1);
-            } else {
-              const index = updatedConverted.indexOf(selectedChapter);
-              if (index !== -1) updatedConverted.splice(index, 1);
-            }
-            updatedApproved.push(selectedChapter);
-          }
-          const allChaptersApproved = book.displayChapters.every(
-            (chapter) =>
-              newChapterStatuses[`${book.name}-${chapter.chapterNumber}`] ===
-              "Approved"
-          );
-
-          let status = book?.status;
-          if (allChaptersApproved) {
-            status = "Approved";
-            Swal.fire(
-              "Success",
-              "All chapters approved successfully",
-              "success"
-            );
-          }
-
-          return {
-            ...book,
-            status,
-            approved: updatedApproved,
-            completed: updatedTranscribed,
-            converted: updatedConverted,
-            hasDownload: allChaptersApproved,
-          };
-        }
-        return book;
-      })
-    );
-    setChapterStatuses(newChapterStatuses);
     setModalOpen(false);
     setSelectedBook("");
     setSelectedChapter(null);
@@ -635,28 +613,28 @@ const BooksList = ({
     <Card sx={styles.cardRoot}>
       <Box sx={styles.header}>
         <Box sx={styles.HeadingContainer}>
-        <Typography variant="h6">Project Name</Typography>
+          <Typography variant="h6">Project Name</Typography>
           <Typography variant="h4" sx={styles.headerTitle}>
             {projectName}
           </Typography>
         </Box>
         <Box sx={styles.selectBox}>
-        <Box sx={styles.TitleContainer}>
-          <Typography variant="h6">Source Language Uploaded</Typography>
-          <LanguageDropdown
-            languages={source_languages}
-            type="audio"
-            onLanguageChange={handleLanguageChange}
-          />
-        </Box>
-        <Box sx={styles.TitleContainer}>
-          <Typography variant="h6">Script Language</Typography>
-          <LanguageDropdown
-            languages={major_languages}
-            type="script"
-            onLanguageChange={handleLanguageChange}
-          />
-        </Box>
+          <Box sx={styles.TitleContainer}>
+            <Typography variant="h6">Source Audio Uploaded</Typography>
+            <LanguageDropdown
+              languages={source_languages}
+              type="audio"
+              onLanguageChange={handleLanguageChange}
+            />
+          </Box>
+          <Box sx={styles.TitleContainer}>
+            <Typography variant="h6">Script Language</Typography>
+            <LanguageDropdown
+              languages={major_languages}
+              type="script"
+              onLanguageChange={handleLanguageChange}
+            />
+          </Box>
         </Box>
       </Box>
 
@@ -682,7 +660,7 @@ const BooksList = ({
                   Chapters
                 </Typography>
               </StyledTableCell>
-              <StyledTableCell width="20%" sx={{textAlign: "center"}}>
+              <StyledTableCell width="20%" sx={{ textAlign: "center" }}>
                 <Typography
                   variant="subtitle2"
                   color="text.secondary"
@@ -706,9 +684,7 @@ const BooksList = ({
             {books.map((book, index) => (
               <StyledTableRow key={index}>
                 <StyledTableCell>
-                  <Typography fontWeight={600}>
-                    {book.name}
-                  </Typography>
+                  <Typography fontWeight={600}>{book.name}</Typography>
                 </StyledTableCell>
                 <StyledTableCell>
                   <Box sx={styles.chaptersContainer}>
@@ -723,7 +699,9 @@ const BooksList = ({
                     ))}
                   </Box>
                 </StyledTableCell>
-                <StyledTableCell sx={{display: "flex", justifyContent: "center"}}>
+                <StyledTableCell
+                  sx={{ display: "flex", justifyContent: "center" }}
+                >
                   <Button
                     variant={book.status === "pending" && "outlined"}
                     onClick={() => {
@@ -831,6 +809,9 @@ const BooksList = ({
                 <TextField
                   fullWidth
                   variant="outlined"
+                  multiline
+                  minRows={1}
+                  maxRows={10}
                   value={
                     editedVerses[
                       `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
@@ -843,6 +824,14 @@ const BooksList = ({
                       e.target.value
                     )
                   }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                    }
+                  }}
+                  sx={{
+                    overflow: "hidden",
+                  }}
                 />
                 {verse?.generatedAudio ? (
                   <IconButton
@@ -891,16 +880,28 @@ const BooksList = ({
               padding: "16px",
             }}
           >
-            <Button variant="contained" onClick={handleCloseModal} sx={styles.Button} >
+            <Button
+              variant="contained"
+              onClick={handleCloseModal}
+              sx={styles.Button}
+            >
               Close
             </Button>
-            <Button variant="contained" onClick={handleChapterApproval} sx={styles.Button}>
+            <Button
+              variant="contained"
+              onClick={handleChapterApproval}
+              sx={styles.Button}
+            >
               {chapterStatuses[`${selectedBook}-${selectedChapter}`] ===
               "Approved"
                 ? "Disapprove"
                 : "Approve"}
             </Button>
-            <Button variant="contained" onClick={handleSpeechConversion} sx={styles.Button}>
+            <Button
+              variant="contained"
+              onClick={handleSpeechConversion}
+              sx={styles.Button}
+            >
               Convert to speech
             </Button>
           </Box>
@@ -912,14 +913,10 @@ const BooksList = ({
           display: "flex",
           justifyContent: "space-between",
           marginTop: "40px",
-          px: 2 
+          px: 2,
         }}
       >
-        <Button
-          variant="contained"
-          onClick={resetProject}
-          sx={styles.Button}
-        >
+        <Button variant="contained" onClick={resetProject} sx={styles.Button}>
           Reset Project
         </Button>
         <Button variant="contained" sx={styles.Button}>

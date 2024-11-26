@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Box } from "@mui/material";
 import JSZip from "jszip";
+import Swal from "sweetalert2";
 
 const DragAndDrop = ({ onFilesExtracted }) => {
   const [fileName, setFileName] = useState("");
@@ -18,7 +19,6 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       let maxVersesData = {};
       let bibleMetaData = {};
       let projectName = "";
-      let sourceLanguage = "";
 
       console.log("Zip contents:", zipContents.files);
 
@@ -85,7 +85,6 @@ const DragAndDrop = ({ onFilesExtracted }) => {
                   typeof localizedBibles === "string"
                     ? JSON.parse(localizedBibles)
                     : localizedBibles;
-                sourceLanguage = parsedContent["languages"][0]?.name?.en
               } catch (e) {
                 console.error("Error parsing metadata JSON:", e);
               }
@@ -121,11 +120,62 @@ const DragAndDrop = ({ onFilesExtracted }) => {
         projectName,
         maxVersesData,
         bibleMetaData,
-        sourceLanguage
       );
     } catch (error) {
       console.error("Error extracting zip file:", error);
     }
+  };
+
+  const validateZipStructure = async (file) => {
+    const zip = new JSZip();
+    const zipContents = await zip.loadAsync(file);
+    const files = zipContents.files;
+    const requiredFolders = ["ingredients/", "audio/ingredients/"];
+    const requiredFiles = ["metadata.json", "versification.json"];
+    const seenFolders = new Set();
+    const seenFiles = new Set();
+
+    for (const relativePath in files) {
+      const pathParts = relativePath.split("/");
+
+      if (files[relativePath].dir) {
+        const folderPath = pathParts.filter((part) => part).join("/") + "/";
+
+        if (folderPath !== "/") {
+          seenFolders.add(folderPath);
+        }
+      } else {
+        const fileName = pathParts[pathParts.length - 1];
+        seenFiles.add(fileName);
+      }
+    }
+
+    console.log("seen folders", seenFolders);
+    const isValidFolderStructure = requiredFolders.some((folder) =>
+      Array.from(seenFolders).some((seenFolder) => seenFolder.includes(folder))
+    );
+
+    if (!isValidFolderStructure) {
+      Swal.fire(
+        "Error",
+        "Please upload a correctly structured project ZIP.",
+        "error"
+      );
+      return false;
+    }
+
+    for (const file of requiredFiles) {
+      if (!seenFiles.has(file)) {
+        console.log(`Required file missing: ${file}`);
+        Swal.fire(
+          "Error",
+          "Please upload a correctly structured project ZIP.",
+          "error"
+        );
+        return false;
+      }
+    }
+    return true;
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -133,8 +183,11 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       if (acceptedFiles.length > 0) {
         const file = acceptedFiles[0];
         if (file && file.name.endsWith(".zip")) {
-          setFileName(file.name);
-          await handleZipFileProcessing(file);
+          const isValid = await validateZipStructure(file);
+          if (isValid) {
+            setFileName(file.name);
+            await handleZipFileProcessing(file);
+          }
         } else {
           setFileName("");
           console.error("Please upload a valid zip file.");
