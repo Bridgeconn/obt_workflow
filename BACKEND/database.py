@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey,Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import datetime
@@ -57,18 +57,42 @@ class Project(Base):
 
 
 
+
+class Chapter(Base):
+    __tablename__ = "chapter"
+    chapter_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  # Auto-increment ID
+    project_id = Column(Integer, ForeignKey("project.project_id"), nullable=False)  # Linked to Project table
+    book = Column(String, nullable=False)  # Book identifier (e.g., "MAT")
+    chapter = Column(Integer, nullable=False)  # Chapter number
+    approved = Column(Boolean, default=False)  # Approval status (default: False)
+
+
+
 class VerseFile(Base):
     __tablename__ = "versefile"
-    verse_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    project_id = Column(Integer, ForeignKey("project.project_id"), nullable=False)
-    book_id = Column(String, nullable=False)
-    chapter = Column(Integer, nullable=False)
-    verse = Column(Integer, nullable=False)
-    name = Column(String, nullable=False)  # File name (e.g., 1_1.wav)
-    path = Column(String, nullable=False)  # Full path to the file
+    verse_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  # Auto-increment ID
+    chapter_id = Column(Integer, ForeignKey("chapter.chapter_id"), nullable=False)  # Linked to Chapter table
+    verse = Column(Integer, nullable=False)  # Verse number
+    name = Column(String, nullable=False)  # File name (e.g., "1_1.wav")
+    path = Column(String, nullable=False)  # Full file path
     size = Column(Integer, nullable=False)  # File size in bytes
-    format = Column(String, nullable=False)  # File format (e.g., wav, mp3)
+    format = Column(String, nullable=False)  # File format (e.g., "wav")
+    stt = Column(Boolean, default=False)  # Speech-to-text status
+    text = Column(String, default="")  # Extracted text
+    text_mod = Column(Boolean, default=False)  # Modified text
+    tts = Column(Boolean, default=False) # Text-to-speech status
+    stt_msg = Column(String, default="")  # Speech-to-text error message
+    tts_msg = Column(String, default="")  # Text-to-speech error message
 
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    jobid = Column(Integer, primary_key=True, autoincrement=True)  # Unique internal job ID
+    verse_id = Column(Integer, ForeignKey("versefile.verse_id"))  # Linked to VerseFile table
+    ai_jobid = Column(String, unique=True)  # AI server's job ID
+    status = Column(String, default="pending")  # pending, in_progress, completed, failed
 
 
 # Create Tables in Database
