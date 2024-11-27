@@ -85,6 +85,14 @@ const DragAndDrop = ({ onFilesExtracted }) => {
                   typeof localizedBibles === "string"
                     ? JSON.parse(localizedBibles)
                     : localizedBibles;
+                const metadataProjectname =
+                  parsedContent["identification"]?.name?.["en"];
+                if (
+                  metadataProjectname &&
+                  metadataProjectname !== projectName
+                ) {
+                  projectName = metadataProjectname;
+                }
               } catch (e) {
                 console.error("Error parsing metadata JSON:", e);
               }
@@ -119,7 +127,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
         jsonFiles,
         projectName,
         maxVersesData,
-        bibleMetaData,
+        bibleMetaData
       );
     } catch (error) {
       console.error("Error extracting zip file:", error);
@@ -158,7 +166,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
     if (!isValidFolderStructure) {
       Swal.fire(
         "Error",
-        "Please upload a correctly structured project ZIP.",
+        "Invalid folder format. Please upload a Scribe Project",
         "error"
       );
       return false;
@@ -169,7 +177,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
         console.log(`Required file missing: ${file}`);
         Swal.fire(
           "Error",
-          "Please upload a correctly structured project ZIP.",
+          "Invalid folder format. Please upload a Scribe Project",
           "error"
         );
         return false;

@@ -10,7 +10,7 @@ const useAudioTranscription = ({
   selectedBook,
   setBooks,
   bookData,
-  selectedLanguage,
+  scriptLanguage,
   setChapterStatuses,
   extractChapterVerse,
 }) => {
@@ -62,7 +62,7 @@ const useAudioTranscription = ({
               break;
             case "Failed":
               updatedBook.failed.push(chapterNumber);
-              updatedBook.status = "Failed";
+              updatedBook.status = "Error";
               break;
           }
 
@@ -116,7 +116,9 @@ const useAudioTranscription = ({
         const formData = new FormData();
         const file = await prepareAudioFile(verse);
         let model_name = "mms-1b-all";
-        let lang_code = language_codes[selectedLanguage]?.stt?.[model_name];
+        console.log("selected language", scriptLanguage)
+        let lang_code = language_codes[scriptLanguage]?.stt?.[model_name];
+        console.log("lang_code", lang_code);
         formData.append("files", file);
         formData.append("transcription_language", lang_code);
 
@@ -143,7 +145,7 @@ const useAudioTranscription = ({
         setIsTranscribing(false);
       }
     },
-    [currentChapter, selectedBook, selectedLanguage, updateBookStatus]
+    [currentChapter, selectedBook, scriptLanguage, updateBookStatus]
   );
 
   // Function to check transcription job status
@@ -197,25 +199,31 @@ const useAudioTranscription = ({
   // Function to move to the next verse after transcription
   const moveToNextVerse = useCallback(
     (verse) => {
+      console.log("verse in move to next verse", verse);
       const { chapterNumber, verseNumber } = extractChapterVerse(
         verse.audioFileName
       );
+      console.log("chapter number", chapterNumber)
+      console.log("verse number", verseNumber)
 
-      const nextVerseIndex = bookData.chapters[
-        chapterNumber - 1
-      ].verses.findIndex(
+      const currentChapter = bookData.chapters.find(
+        (chapter) => parseInt(chapter.chapterNumber) === parseInt(chapterNumber)
+      );
+      const nextVerseIndex = currentChapter.verses.findIndex(
         (v) =>
           extractChapterVerse(v.audioFileName).verseNumber === verseNumber + 1
       );
 
       if (nextVerseIndex !== -1) {
         const nextVerse =
-          bookData.chapters[chapterNumber - 1].verses[nextVerseIndex];
+        currentChapter.verses[nextVerseIndex];
         setCurrentVerse(nextVerse);
         handleTranscribe(nextVerse);
       } else {
         updateBookStatus(chapterNumber, "Transcribed");
-        const nextChapter = bookData.chapters[chapterNumber];
+        const nextChapter = bookData.chapters.find(
+          (chapter) => parseInt(chapter.chapterNumber) === parseInt(chapterNumber) + 1
+        );
         if (nextChapter) {
           setCurrentChapter(nextChapter);
           setCurrentVerse(nextChapter.verses[0]);

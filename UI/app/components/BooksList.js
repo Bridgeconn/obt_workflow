@@ -80,7 +80,7 @@ const BooksList = ({
   const loadTranscriptionStatuses = async () => {
     const keys = await projectInstance.keys();
     const statuses = {};
-  
+
     // Initialize all chapters as "pending" for every book
     files.forEach((book) => {
       book.chapters.forEach((chapter) => {
@@ -88,9 +88,9 @@ const BooksList = ({
         statuses[bookChapterKey] = "pending";
       });
     });
-  
+
     const chapterVersesMap = {};
-  
+
     // Collect verse data for each chapter
     for (const key of keys) {
       const match = key.match(/^([^-]+)-(\d+)-(\d+)$/);
@@ -109,7 +109,7 @@ const BooksList = ({
         });
       }
     }
-  
+
     // Track book-level updates
     const bookUpdates = files.map(async (book) => {
       try {
@@ -119,7 +119,7 @@ const BooksList = ({
             const bookChapterKey = `${book.bookName}-${chapterNumber}`;
             const chapterVerses =
               chapterVersesMap[book.bookName]?.[chapterNumber] || [];
-  
+
             if (chapterVerses.length === 0) {
               statuses[bookChapterKey] = "pending";
               return {
@@ -127,28 +127,30 @@ const BooksList = ({
                 status: "pending",
               };
             }
-  
+
             try {
               // Fetch data for all verses in this chapter
               const verseData = await Promise.all(
                 chapterVerses.map(({ key }) => projectInstance.getItem(key))
               );
-  
+
               // Check for transcribed text
               const allVersesTranscribed = verseData.every(
                 (data) =>
-                  data && data.transcribedText && data.transcribedText.trim() !== ""
+                  data &&
+                  data.transcribedText &&
+                  data.transcribedText.trim() !== ""
               );
               // Check for audio conversion
               const allVersesConverted = verseData.every(
                 (data) => data && data.generatedAudio
               );
-  
+
               // Check for approved status
               const allVersesApproved = verseData.every(
                 (data) => data && data.isApproved === true
               );
-  
+
               // Determine and update chapter status
               let chapterStatus = "pending";
               if (allVersesApproved) {
@@ -158,9 +160,9 @@ const BooksList = ({
               } else if (allVersesTranscribed) {
                 chapterStatus = "Transcribed";
               }
-  
+
               statuses[bookChapterKey] = chapterStatus;
-  
+
               return {
                 chapterNumber: chapterNumber,
                 status: chapterStatus,
@@ -178,7 +180,8 @@ const BooksList = ({
             }
           })
         );
-  
+
+
         const chapterStatusCounts = chapterLevelStatuses.reduce(
           (acc, chapter) => {
             acc[chapter.status] = (acc[chapter.status] || 0) + 1;
@@ -186,7 +189,8 @@ const BooksList = ({
           },
           {}
         );
-  
+
+
         let newStatus = "pending";
         if (chapterStatusCounts["Approved"] === chapterLevelStatuses.length) {
           newStatus = "Approved";
@@ -202,16 +206,14 @@ const BooksList = ({
           newStatus = "Transcribed";
         } else if (chapterStatusCounts["Converted"] > 0) {
           newStatus = "Done";
-        } else if(chapterStatusCounts["Error"] > 0) {
-          newStatus = "pending"
+        } else if (chapterStatusCounts["Error"] > 0) {
+          newStatus = "pending";
         }
 
         return {
           book,
           status: newStatus,
-          hasDownload:
-            newStatus === "Done" ||
-            newStatus === "Approved",
+          hasDownload: newStatus === "Done" || newStatus === "Approved",
         };
       } catch (error) {
         console.error(`Error processing book ${book.bookName}:`, error);
@@ -222,20 +224,20 @@ const BooksList = ({
         };
       }
     });
-  
+
     // Resolve book updates and update states
     const resolvedBookUpdates = await Promise.all(bookUpdates);
-  
+
     // Update chapter statuses
     setChapterStatuses(statuses);
-  
+
     // Update books state
     setBooks((prevBooks) =>
       prevBooks.map((prevBook) => {
         const updatedBook = resolvedBookUpdates.find(
           (update) => update.book.bookName === prevBook.name
         );
-  
+
         return updatedBook
           ? {
               ...prevBook,
@@ -246,7 +248,6 @@ const BooksList = ({
       })
     );
   };
-  
 
   const getChapterStatus = (book, chapter) => {
     const bookChapterKey = `${book.name}-${chapter.chapterNumber}`;
@@ -266,10 +267,12 @@ const BooksList = ({
   };
 
   const showCurrentStatus = (book) => {
-    console.log("book status", book.status);
 
     if (book.status === "pending") {
       return "Transcribe";
+    }
+    if (book.status === "Error") {
+      return "Retry";
     }
     if (book.status === "inProgress") {
       for (const chapter of book.displayChapters) {
@@ -364,11 +367,11 @@ const BooksList = ({
   };
 
   const handleLanguageChange = (type, language) => {
-    console.log("selected language", language);
     type === "audio" ? setAudiolanguage(language) : setScriptLanguage(language);
   };
 
   const isBookReady = projectInstance && scriptLanguage && bookData;
+  const areLanguagesChosen = audioLanguage && scriptLanguage;
 
   const { startTranscription, currentChapter, currentVerse, isTranscribing } =
     useAudioTranscription({
@@ -389,13 +392,12 @@ const BooksList = ({
 
   const processBook = (name) => {
     const selectedData = files.find(({ bookName }) => bookName === name);
-    if (!scriptLanguage) {
-      Swal.fire("Error", "Please select a script language", "error");
-      return;
-    }
-    if (selectedData) {
-      setBookData(selectedData);
-    }
+    setBookData(null);
+    setTimeout(() => {
+      if (selectedData) {
+        setBookData(selectedData);
+      }
+    }, 0);
   };
 
   const handleChapterClick = async (book, chapter) => {
@@ -488,7 +490,9 @@ const BooksList = ({
 
   const isChapterReady = projectInstance && audioLanguage && chapterData;
   useEffect(() => {
-    if (isChapterReady && chapterData) {
+    const isFailedChapter =
+      chapterStatuses[`${selectedBook}-${selectedChapter}`] === "Failed";
+    if ((isChapterReady && chapterData) || (chapterData && isFailedChapter)) {
       startConversion(chapterData);
     }
   }, [isChapterReady, chapterData]);
@@ -510,15 +514,13 @@ const BooksList = ({
       ?.chapters.find(
         (chapter) => String(chapter.chapterNumber) === String(selectedChapter)
       );
-    if (!audioLanguage) {
-      setModalOpen(false);
-      Swal.fire("Error", "Please select an audio language", "error");
-      return;
-    }
-    console.log("fetched chapter", fetchedChapter);
-    if (fetchedChapter) {
-      setChapterData(fetchedChapter);
-    }
+    setChapterData(null);
+
+    setTimeout(() => {
+      if (fetchedChapter) {
+        setChapterData(fetchedChapter);
+      }
+    }, 0);
     const isCurrentlyConverted =
       chapterStatuses[`${selectedBook}-${selectedChapter}`] === "Converted";
     setBooks((prevBooks) =>
@@ -607,6 +609,7 @@ const BooksList = ({
 
   const resetProject = () => {
     setFiles([]);
+    // window.location.reload();
   };
 
   return (
@@ -703,13 +706,29 @@ const BooksList = ({
                   sx={{ display: "flex", justifyContent: "center" }}
                 >
                   <Button
-                    variant={book.status === "pending" && "outlined"}
+                    {...(book.status === "pending" && { variant: "outlined" })}
+                    {...(book.status === "Error" && { variant: "contained" })}
+                    sx={{
+                      ...(book.status === "Error" && {
+                        backgroundColor: "#FAA49D",
+                        color: "#F44336",
+                        "&:hover": {
+                          backgroundColor: "#FFCCCB",
+                        },
+                      }),
+                    }}
                     onClick={() => {
-                      if (book.status === "pending") {
+                      if (
+                        book.status === "pending" ||
+                        book.status === "Error"
+                      ) {
                         processBook(book.name);
                       }
                     }}
-                    disabled={!(book.status == "pending")}
+                    disabled={
+                      !(book.status == "pending" || book.status === "Error") ||
+                      !areLanguagesChosen
+                    }
                   >
                     {showCurrentStatus(book)}
                   </Button>
@@ -900,9 +919,22 @@ const BooksList = ({
             <Button
               variant="contained"
               onClick={handleSpeechConversion}
-              sx={styles.Button}
+              sx={{
+                ...styles.Button,
+                ...(chapterStatuses[`${selectedBook}-${selectedChapter}`] ===
+                  "Failed" && {
+                  backgroundColor: "#FAA49D",
+                  color: "#F44336",
+                  "&:hover": {
+                    backgroundColor: "#FFCCCB",
+                  },
+                }),
+              }}
             >
-              Convert to speech
+              {chapterStatuses[`${selectedBook}-${selectedChapter}`] ===
+              "Failed"
+                ? "Retry Conversion"
+                : "Convert to Speech"}
             </Button>
           </Box>
         </Box>
@@ -916,10 +948,15 @@ const BooksList = ({
           px: 2,
         }}
       >
-        <Button variant="contained" onClick={resetProject} sx={styles.Button}>
+        <Button
+          variant="contained"
+          onClick={resetProject}
+          sx={styles.Button}
+          disabled={isTranscribing || isConverting}
+        >
           Reset Project
         </Button>
-        <Button variant="contained" sx={styles.Button}>
+        <Button variant="contained" sx={styles.Button} disabled>
           Download Project
         </Button>
       </Box>

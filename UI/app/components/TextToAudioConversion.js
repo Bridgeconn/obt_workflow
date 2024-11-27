@@ -10,7 +10,7 @@ const TextToAudioConversion = ({
   selectedBook,
   setBooks,
   chapterData,
-  selectedLanguage,
+  audioLanguage,
   setChapterStatuses,
   extractChapterVerse,
 }) => {
@@ -137,6 +137,7 @@ const TextToAudioConversion = ({
           updatedBook.converted.push(chapterNumber);
         } else if (status === "Failed") {
           updatedBook.failed.push(chapterNumber);
+          // updatedBook.status = "Transcribed"
         }
 
         return updatedBook;
@@ -165,8 +166,8 @@ const TextToAudioConversion = ({
         const storageKey = `${selectedBook}-${chapterNumber}-${verseNumber}`;
         const transcribedData = await projectInstance.getItem(storageKey);
         const transcribedTextArray = [transcribedData?.transcribedText.trim()];
-        let model_name = "seamless-m4t-large";
-        let lang_code = language_codes[selectedLanguage]?.tts?.[model_name];
+        let model_name = "seamless-m4-large";
+        let lang_code = language_codes[audioLanguage]?.tts?.[model_name];
         const response = await api.post(
           `/ai/model/audio/generate?model_name=${model_name}&language=${lang_code}`,
           transcribedTextArray
@@ -187,7 +188,7 @@ const TextToAudioConversion = ({
         }
       }
     },
-    [processingChapter, selectedBook, selectedLanguage, updateBookStatus]
+    [processingChapter, selectedBook, audioLanguage, updateBookStatus]
   );
 
   const moveToNextVerse = useCallback(
@@ -200,7 +201,6 @@ const TextToAudioConversion = ({
         (v) =>
           extractChapterVerse(v.audioFileName).verseNumber === verseNumber + 1
       );
-      console.log("next verse", nextVerse);
       if (nextVerse) {
         setProcessingVerse(nextVerse);
         handleConvert(nextVerse);
