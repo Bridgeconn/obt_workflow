@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Card,
@@ -16,7 +16,8 @@ import { Modal, TextField } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import PlayCircleIcon from "@mui/icons-material/PlayCircle";
 import PauseCircleIcon from "@mui/icons-material/PauseCircle";
-import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
+// import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
+import CircularProgress from "@mui/material/CircularProgress";
 import {
   ChapterCircle,
   StyledTableRow,
@@ -50,6 +51,7 @@ const BooksList = ({
   const [selectedBook, setSelectedBook] = useState("");
   const [selectedChapter, setSelectedChapter] = useState(null);
   const [playingAudio, setPlayingAudio] = useState(null);
+  const [inProgressVerse, setInProgressVerse] = useState({});
 
   useEffect(() => {
     if (files.length != 0) {
@@ -181,7 +183,6 @@ const BooksList = ({
           })
         );
 
-
         const chapterStatusCounts = chapterLevelStatuses.reduce(
           (acc, chapter) => {
             acc[chapter.status] = (acc[chapter.status] || 0) + 1;
@@ -189,7 +190,6 @@ const BooksList = ({
           },
           {}
         );
-
 
         let newStatus = "pending";
         if (chapterStatusCounts["Approved"] === chapterLevelStatuses.length) {
@@ -267,7 +267,6 @@ const BooksList = ({
   };
 
   const showCurrentStatus = (book) => {
-
     if (book.status === "pending") {
       return "Transcribe";
     }
@@ -310,6 +309,17 @@ const BooksList = ({
     }
     return book.status;
   };
+
+  const bookInProgress = useMemo(() => {
+    for (const book of books) {
+      if (book.status === "inProgress") {
+        return true;
+      }
+    }
+    return false;
+  }, [books]);
+  console.log("books array", books);
+  console.log("book in progress", bookInProgress);
 
   // Extract chapter and verse from the audioFileName
   const extractChapterVerse = (audioFileName) => {
@@ -460,6 +470,14 @@ const BooksList = ({
     setModalOpen(false);
     setSelectedBook("");
     setSelectedChapter(null);
+    if (playingAudio) {
+      playingAudio.audio.pause();
+      if (playingAudio.url) {
+        URL.revokeObjectURL(playingAudio.url);
+      }
+      setPlayingAudio(null);
+    }
+  
   };
 
   const handleChapterApproval = async () => {
@@ -504,6 +522,7 @@ const BooksList = ({
       setBooks,
       chapterData,
       audioLanguage,
+      setInProgressVerse,
       setChapterStatuses,
       extractChapterVerse,
     });
@@ -515,6 +534,11 @@ const BooksList = ({
         (chapter) => String(chapter.chapterNumber) === String(selectedChapter)
       );
     setChapterData(null);
+    if (!audioLanguage) {
+      setModalOpen(false);
+      Swal.fire("Error", "Please select an audio language", "error");
+      return;
+    }
 
     setTimeout(() => {
       if (fetchedChapter) {
@@ -549,11 +573,13 @@ const BooksList = ({
         return book;
       })
     );
-    setModalOpen(false);
+    // setModalOpen(false);
   };
 
   const handleAudioToggle = (file, verseKey) => {
+
     if (playingAudio?.key === verseKey) {
+    
       playingAudio.audio.pause();
       if (playingAudio.url) {
         URL.revokeObjectURL(playingAudio.url);
@@ -572,13 +598,19 @@ const BooksList = ({
     const url = URL.createObjectURL(file);
     const audio = new Audio(url);
 
-    audio.play();
-
-    setPlayingAudio({
-      key: verseKey,
-      audio,
-      url,
-    });
+    audio
+      .play()
+      .then(() => {
+        setPlayingAudio({
+          key: verseKey,
+          audio,
+          url,
+        });
+      })
+      .catch(() => {
+        console.error("Error playing audio");
+        URL.revokeObjectURL(url);
+      });
 
     audio.onended = () => {
       URL.revokeObjectURL(url);
@@ -690,7 +722,10 @@ const BooksList = ({
                   <Typography fontWeight={600}>{book.name}</Typography>
                 </StyledTableCell>
                 <StyledTableCell>
-                  <Box sx={styles.chaptersContainer}>
+                  <Box
+                    sx={styles.chaptersContainer}
+                    disabled={!areLanguagesChosen}
+                  >
                     {book.displayChapters.map((chapter, idx) => (
                       <ChapterCircle
                         key={`${book.name}-${chapter.chapterNumber}-${idx}`}
@@ -727,7 +762,8 @@ const BooksList = ({
                     }}
                     disabled={
                       !(book.status == "pending" || book.status === "Error") ||
-                      !areLanguagesChosen
+                      !areLanguagesChosen ||
+                      bookInProgress
                     }
                   >
                     {showCurrentStatus(book)}
@@ -852,36 +888,39 @@ const BooksList = ({
                     overflow: "hidden",
                   }}
                 />
-                {verse?.generatedAudio ? (
-                  <IconButton
-                    onClick={() =>
-                      handleAudioToggle(
-                        verse?.generatedAudio,
-                        `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
-                      )
-                    }
-                  >
-                    {isConverting ? (
-                      verse?.generatedAudio ? (
-                        playingAudio?.key ===
-                        `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
-                          <PauseCircleIcon sx={{ height: 30, width: 30 }} />
-                        ) : (
-                          <PlayCircleIcon sx={{ height: 30, width: 30 }} />
-                        )
-                      ) : (
-                        <HourglassBottomIcon sx={{ height: 30, width: 30 }} />
-                      )
-                    ) : playingAudio?.key ===
-                      `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
-                      <PauseCircleIcon sx={{ height: 30, width: 30 }} />
+                <IconButton sx={{ minWidth: "50px" }}>
+                  {inProgressVerse[
+                    `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
+                  ] ? (
+                    <CircularProgress size={24} />
+                  ) : verse?.generatedAudio ? (
+                    playingAudio?.key ===
+                    `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
+                      <PauseCircleIcon
+                        sx={{ height: 30, width: 30 }}
+                        onClick={() =>
+                          handleAudioToggle(
+                            verse?.generatedAudio,
+                            `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
+                          )
+                        }
+                      />
                     ) : (
-                      <PlayCircleIcon sx={{ height: 30, width: 30 }} />
-                    )}
-                  </IconButton>
-                ) : (
-                  <IconButton sx={{ opacity: 0, width: 30, height: 30 }} />
-                )}
+                      <PlayCircleIcon
+                        sx={{ height: 30, width: 30 }}
+                        onClick={() =>
+                          handleAudioToggle(
+                            verse?.generatedAudio,
+                            `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
+                          )
+                        }
+                      />
+                    )
+                  ) : (
+                    // This ensures no visible icon when there's no audio
+                    <span sx={{ height: 30, width: 30 }}></span>
+                  )}
+                </IconButton>
               </Box>
             ))}
           </Box>
@@ -913,12 +952,13 @@ const BooksList = ({
             >
               {chapterStatuses[`${selectedBook}-${selectedChapter}`] ===
               "Approved"
-                ? "Disapprove"
+                ? "Unapprove"
                 : "Approve"}
             </Button>
             <Button
               variant="contained"
               onClick={handleSpeechConversion}
+              disabled={isConverting}
               sx={{
                 ...styles.Button,
                 ...(chapterStatuses[`${selectedBook}-${selectedChapter}`] ===
