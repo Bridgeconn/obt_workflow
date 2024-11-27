@@ -52,7 +52,8 @@ class Project(Base):
     project_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False)
     owner_id = Column(Integer, ForeignKey("usertable.user_id"), nullable=False)
-    language = Column(String, nullable=False)
+    script_lang = Column(String, nullable=True)  # Script language (e.g., "eng")
+    audio_lang = Column(String, nullable=True)   # Audio language (e.g., "hin")
     metadata_info = Column(String, nullable=False)
 
 
@@ -60,7 +61,7 @@ class Project(Base):
 
 class Chapter(Base):
     __tablename__ = "chapter"
-    chapter_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  # Auto-increment ID
+    chapter_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  # Auto-increment ID1
     project_id = Column(Integer, ForeignKey("project.project_id"), nullable=False)  # Linked to Project table
     book = Column(String, nullable=False)  # Book identifier (e.g., "MAT")
     chapter = Column(Integer, nullable=False)  # Chapter number
@@ -79,8 +80,9 @@ class VerseFile(Base):
     format = Column(String, nullable=False)  # File format (e.g., "wav")
     stt = Column(Boolean, default=False)  # Speech-to-text status
     text = Column(String, default="")  # Extracted text
-    text_mod = Column(Boolean, default=False)  # Modified text
+    text_modified= Column(Boolean, default=False)  # Modified text
     tts = Column(Boolean, default=False) # Text-to-speech status
+    tts_path = Column(String, nullable=True)
     stt_msg = Column(String, default="")  # Speech-to-text error message
     tts_msg = Column(String, default="")  # Text-to-speech error message
 

@@ -1,10 +1,7 @@
 
 
 from fastapi import FastAPI, Depends, File, UploadFile, HTTPException
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from fastapi.security import  OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pathlib import Path
 import zipfile
@@ -15,6 +12,9 @@ import logging
 import requests
 from fastapi import BackgroundTasks
 import time
+import auth
+import shutil
+
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -37,46 +37,7 @@ def get_db():
     finally:
         db.close()
 
-# JWT Configuration
-SECRET_KEY = "your-secret-key"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-
-# Utility functions for password hashing
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-# Utility function for creating JWT tokens
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-# Verify token and retrieve the current user
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid authentication token")
-        user = db.query(User).filter(User.user_id == user_id).first()
-        if user is None:
-            raise HTTPException(status_code=401, detail="User not found")
-        return user
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
-    
 
 
 
@@ -174,7 +135,7 @@ def check_ai_job_status(ai_jobid: str) -> dict:
     Check the status of an AI transcription job.
     """
     job_status_url = f"https://api.vachanengine.org/v2/ai/model/job?job_id={ai_jobid}"
-    headers = {"Authorization": "Bearer ory_st_hs45d7A0Odx2Da8MGLw3Al6SNATM0Mzz"}
+    headers = {"Authorization": "Bearer ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"}
     response = requests.get(job_status_url, headers=headers)
 
     if response.status_code == 200:
@@ -194,7 +155,7 @@ def call_ai_api(file_path: str) -> dict:
     ai_api_url = "https://api.vachanengine.org/v2/ai/model/audio/transcribe?model_name=mms-1b-all"
     transcription_language = "hin"
     file_name = os.path.basename(file_path)
-    api_token = "ory_st_hs45d7A0Odx2Da8MGLw3Al6SNATM0Mzz"
+    api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
 
     try:
         with open(file_path, "rb") as audio_file:
@@ -216,10 +177,188 @@ def call_ai_api(file_path: str) -> dict:
 
 
 
+def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_lang: str, db):
+    """
+    Generate speech for each verse and update the database.
+    """
+    db_session = SessionLocal()
+    edited_audios_base_folder = f"{UPLOAD_DIR}/edited_audios"
+    os.makedirs(edited_audios_base_folder, exist_ok=True)
+
+    try:
+        for verse in verses:
+            try:
+                # Create a job entry linked to the verse
+                job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
+                db_session.add(job)
+                db_session.commit()
+                db_session.refresh(job)
+
+                # Call AI API for text-to-speech
+                result = call_tts_api([verse.text], audio_lang)
+                if "error" in result:
+                    # Handle API error
+                    job.status = "failed"
+                    verse.tts = False
+                    verse.tts_msg = result.get("error", "Unknown error")
+                else:
+                    # Update the job with the AI job ID
+                    ai_jobid = result.get("data", {}).get("jobId")
+                    job.ai_jobid = ai_jobid
+                    job.status = "in_progress"
+                    db_session.add(job)
+                    db_session.commit()
+
+                    # Poll AI job status until it's finished
+                    while True:
+                        job_result = check_ai_job_status(ai_jobid)
+                        job_status = job_result.get("data", {}).get("status")
+
+                        if job_status == "job finished":
+                            # Download and extract the audio ZIP file
+                            audio_zip_url = f"https://api.vachanengine.org/v2/ai/assets?job_id={ai_jobid}"
+                            extracted_folder = download_and_extract_audio_zip(audio_zip_url)
+                            if extracted_folder:
+                                # Find and move the audio file to the proper chapter folder
+                                for root, _, files in os.walk(extracted_folder):
+                                    for file in files:
+                                        if file == "audio_0.wav":
+                                            # Rename and move the audio file to the chapter folder
+                                            chapter_folder = os.path.join(
+                                                edited_audios_base_folder, str(verse.chapter_id)
+                                            )
+                                            os.makedirs(chapter_folder, exist_ok=True)
+                                            
+                                            new_audio_path = os.path.join(chapter_folder, verse.name)
+                                            shutil.move(os.path.join(root, file), new_audio_path)
+
+                                            # Update verse information
+                                            verse.tts_path = new_audio_path
+                                            verse.tts = True
+                                            verse.tts_msg = "Text-to-speech completed"
+                                            job.status = "completed"
+                                            break
+                            else:
+                                verse.tts = False
+                                verse.tts_msg = "Failed to download or extract audio ZIP"
+                                job.status = "failed"
+                            break
+
+                        elif job_status == "job failed":
+                            job.status = "failed"
+                            verse.tts = False
+                            verse.tts_msg = "AI TTS job failed"
+                            break
+                        time.sleep(5)
+
+                # Save the updated job and verse statuses
+                db_session.add(job)
+                db_session.add(verse)
+                db_session.commit()
+
+            except Exception as e:
+                # Handle errors during TTS
+                job.status = "failed"
+                verse.tts = False
+                verse.tts_msg = f"Error during TTS: {str(e)}"
+                db_session.add(job)
+                db_session.add(verse)
+                db_session.commit()
+                logging.error(f"Error during TTS for verse {verse.verse_id}: {str(e)}")
+
+    except Exception as e:
+        logging.error(f"Error in generate_speech_for_verses: {str(e)}")
+
+    finally:
+        db_session.close()
+
+
+def download_and_extract_audio_zip(audio_zip_url: str) -> str:
+    """
+    Downloads the audio ZIP file, extracts it, and returns the folder path where files are extracted.
+    """
+    headers = {"Authorization": "Bearer ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"}
+    response = requests.get(audio_zip_url, stream=True,headers=headers)
+    if response.status_code == 200:
+        # Save the ZIP file locally
+        zip_file_path = f"{UPLOAD_DIR}/audio_temp.zip"
+        with open(zip_file_path, "wb") as zip_file:
+            for chunk in response.iter_content(chunk_size=1024):
+                zip_file.write(chunk)
+        # Extract the ZIP file
+        extract_path = f"{UPLOAD_DIR}/temp_audio"
+        os.makedirs(extract_path, exist_ok=True)
+        with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+            zip_ref.extractall(extract_path)
+        os.remove(zip_file_path)
+        return extract_path
+    else:
+        logging.error(f"Failed to download audio ZIP file: {response.status_code} - {response.text}")
+        return None
+
+
+
+def find_audio_file(folder_path: str, verse_name: str) -> str:
+    """
+    Match the verse with an audio file in the extracted folder. 
+    If files are generic (e.g., 'audio_0.wav'), use order to map.
+    """
+    for root, dirs, files in os.walk(folder_path):
+        logging.info(f"Searching in folder: {root}, Files: {files}")
+        # If there is a single audio file, assume it's for the current verse
+        if len(files) == 1:
+            return os.path.join(root, files[0])
+        # If multiple files exist, attempt exact or approximate matches
+        for file in files:
+            if file == verse_name:
+                return os.path.join(root, file)  # Exact match
+            elif file.startswith("audio_") and file.endswith(".wav"):
+                # Handle generic audio files (map based on verse order)
+                return os.path.join(root, file)
+    logging.error(f"Audio file not found for verse: {verse_name} in folder: {folder_path}")
+    return None
+
+
+
+
+def call_tts_api(text: str, audio_lang: str) -> dict:
+    """
+    Call the AI API for text-to-speech.
+    """
+    base_url = "https://api.vachanengine.org/v2/ai/model/audio/generate"
+    model_name = "seamless-m4t-large"  # Model to be used
+    api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
+    print("AUDIO_LAN",audio_lang)
+    # Query parameters
+    params = {
+        "model_name": model_name,
+        "language": audio_lang,  # Include language as a query parameter
+    }
+    # API expects the entire payload to be a list
+    data_payload = [  text ]
+    headers = {"Authorization": f"Bearer {api_token}"}
+
+    try:
+        # Send the POST request with query parameters and JSON body
+        response = requests.post(base_url, params=params, json=data_payload, headers=headers)
+        logging.info(f"AI API Response: {response.status_code} - {response.text}")
+        if response.status_code == 201:
+            return response.json()  # Successfully created a TTS job
+        else:
+            logging.error(f"AI API Error: {response.status_code} - {response.text}")
+            return {"error": response.text, "status_code": response.status_code}
+    except Exception as e:
+        logging.error(f"Error in call_tts_api: {str(e)}")
+        return {"error": str(e)}
+
+
+
+
+
 # Create User API
 @app.post("/create-user/")
 def create_user(username: str, password: str, db: Session = Depends(get_db)):
-    hashed_password = get_password_hash(password)
+    hashed_password = auth.get_password_hash(password)
     user = User(username=username, password=hashed_password)
     db.add(user)
     db.commit()
@@ -230,9 +369,9 @@ def create_user(username: str, password: str, db: Session = Depends(get_db)):
 @app.post("/token/")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password):
+    if not user or not auth.verify_password(form_data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
-    access_token = create_access_token(data={"sub": str(user.user_id)})
+    access_token = auth.create_access_token(data={"sub": str(user.user_id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -243,7 +382,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 async def upload_zip(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(auth.get_current_user),
 ):
     try:
         owner_id = current_user.user_id
@@ -282,8 +421,8 @@ async def upload_zip(
         # Extract project name
         name = metadata_content.get("identification", {}).get("name", {}).get("en", "Unknown Project")
         # Extract language field from metadata.json
-        language_data = metadata_content.get("languages", [{}])[0]
-        language = language_data.get("name", {}).get(language_data.get("tag", "unknown"), "unknown")
+        # language_data = metadata_content.get("languages", [{}])[0]
+        # language = language_data.get("name", {}).get(language_data.get("tag", "unknown"), "unknown")
 
 
         # Convert the full metadata.json content back to a JSON string
@@ -293,7 +432,8 @@ async def upload_zip(
         project = Project(
             name=name,
             owner_id=owner_id,
-            language=language,
+            script_lang="",  # Empty field
+            audio_lang="",   # Empty field
             metadata_info=metadata_info
         )
         db.add(project)
@@ -336,8 +476,9 @@ async def upload_zip(
                                         format=verse_file.suffix.lstrip("."),
                                         stt=False,
                                         text="",
-                                        text_mod=False,
+                                        text_modified=False,
                                         tts=False,
+                                        tts_path="",
                                         stt_msg="",
                                         tts_msg=""
                                     )
@@ -360,6 +501,59 @@ async def upload_zip(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.put("/update-script-lang/{project_id}")
+async def update_script_lang(
+    project_id: int, 
+    script_lang: str, 
+    db: Session = Depends(get_db)
+):
+    """
+    Update the script_lang field in the Project table for a given project_id.
+    """
+    # Fetch the project
+    project = db.query(Project).filter(Project.project_id == project_id).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Update the script_lang field
+    project.script_lang = script_lang
+    db.commit()
+    db.refresh(project)
+
+    return {
+        "message": "Script language updated successfully",
+        "project_id": project_id,
+        "script_lang": project.script_lang,
+    }
+
+
+
+@app.put("/update-audio-lang/{project_id}")
+async def update_audio_lang(
+    project_id: int,
+    audio_lang: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Update the audio_lang field in the Project table for a given project_id.
+    """
+    # Fetch the project
+    project = db.query(Project).filter(Project.project_id == project_id).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Update the audio_lang field
+    project.audio_lang = audio_lang
+    db.commit()
+    db.refresh(project)
+
+    return {
+        "message": "Audio language updated successfully",
+        "project_id": project_id,
+        "audio_lang": project.audio_lang,
+    }
 
 
 
@@ -370,7 +564,7 @@ async def transcribe_book(
     book_code: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(auth.get_current_user),
 ):
     # Step 1: Validate Project and Book
     project = db.query(Project).filter(Project.project_id == project_id).first()
@@ -398,7 +592,7 @@ async def transcribe_book(
 
 
 @app.get("/job-status/{jobid}")
-async def get_job_status(jobid: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+async def get_job_status(jobid: int, db: Session = Depends(get_db),current_user: User = Depends(auth.get_current_user)):
     """
     API to check the status of a job using the job ID.
     """
@@ -425,7 +619,7 @@ async def get_chapter_status(
     book_code: str,
     chapter_number: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(auth.get_current_user)
 ):
     """
     Get the status of each verse in a chapter.
@@ -474,3 +668,126 @@ async def get_chapter_status(
         },
         "data": verse_statuses,
     }
+
+
+
+@app.put("/chapter/approve")
+async def update_chapter_approval(
+    project_id: int,
+    book: str,
+    chapter: int,
+    approve: bool,
+    db: Session = Depends(get_db)
+):
+    """
+    Update the approved column in the Chapter table for a given project_id, book, and chapter.
+    """
+    # Fetch the chapter record
+    chapter_record = (
+        db.query(Chapter)
+        .filter(
+            Chapter.project_id == project_id,
+            Chapter.book == book,
+            Chapter.chapter == chapter
+        )
+        .first()
+    )
+
+    if not chapter_record:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+
+    # Update the approved column
+    chapter_record.approved = approve
+    db.commit()
+
+    return {
+        "message": "Chapter approval status updated",
+        "project_id": project_id,
+        "book": book,
+        "chapter": chapter,
+        "approved": chapter_record.approved
+    }
+
+
+@app.put("/verse/update-text")
+async def update_verse_text(
+    verse_id: int,
+    modified_text: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Update the text and set text_modified to True in the VerseFile table for a given verse_id.
+    """
+    # Fetch the verse record
+    verse_record = db.query(VerseFile).filter(VerseFile.verse_id == verse_id).first()
+
+    if not verse_record:
+        raise HTTPException(status_code=404, detail="Verse not found")
+
+    # Update the text and set text_modified to True
+    verse_record.text = modified_text
+    verse_record.text_modified = True
+    db.commit()
+
+    return {
+        "message": "Verse text updated successfully",
+        "verse_id": verse_id,
+        "text": verse_record.text,
+        "text_modified": verse_record.text_modified
+    }
+
+
+
+
+@app.post("/convert-to-speech")
+async def convert_to_speech(
+    project_id: int,
+    book_code: str,
+    # chapter:str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    API to convert text to speech for all verses in a chapter.
+    """
+    # Step 1: Validate Project and Book
+    project = db.query(Project).filter(Project.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Fetch the chapters for the given book
+    chapters = db.query(Chapter).filter(
+        Chapter.project_id == project_id, Chapter.book == book_code
+    ).all()
+
+    if not chapters:
+        raise HTTPException(status_code=404, detail="No chapters found for the given book")
+
+    # Step 2: Gather verses with modified text
+    verses = db.query(VerseFile).join(
+        Chapter, VerseFile.chapter_id == Chapter.chapter_id
+    ).filter(
+        Chapter.project_id == project_id,
+        Chapter.book == book_code,
+        VerseFile.text_modified == True
+    ).all()
+
+    if not verses:
+        return {"message": "No verses with modified text found"}
+
+    # Step 3: Start Background Task
+    background_tasks.add_task(
+        generate_speech_for_verses, project_id, book_code, verses, project.audio_lang, db
+    )
+
+    return {
+        "message": "Text-to-speech conversion started",
+        "book_code": book_code,
+        "project_id": project_id,
+    }
+
+
+ 
+
+
+
