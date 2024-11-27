@@ -166,7 +166,7 @@ const TextToAudioConversion = ({
         const storageKey = `${selectedBook}-${chapterNumber}-${verseNumber}`;
         const transcribedData = await projectInstance.getItem(storageKey);
         const transcribedTextArray = [transcribedData?.transcribedText.trim()];
-        let model_name = "seamless-m4-large";
+        let model_name = "seamless-m4t-large";
         let lang_code = language_codes[audioLanguage]?.tts?.[model_name];
         const response = await api.post(
           `/ai/model/audio/generate?model_name=${model_name}&language=${lang_code}`,
