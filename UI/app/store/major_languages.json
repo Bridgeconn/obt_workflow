@@ -1,0 +1,22 @@
+[
+    {
+        "id" : 1,
+        "language_name" : "Kannada",
+        "major_language": "Kannada"
+    },
+    {
+        "id" : 2,
+        "language_name" : "Marathi",
+        "major_language": "Marathi"
+    },
+    {
+        "id" : 3,
+        "language_name" : "Telugu",
+        "major_language": "Telugu"
+    },
+    {
+        "id" : 4,
+        "language_name" : "Hindi",
+        "major_language": "Hindi"
+    }
+]
