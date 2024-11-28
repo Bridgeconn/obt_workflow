@@ -17,7 +17,6 @@ export default function Home() {
 
   useEffect(() => {
     if (projectName) {
-      console.log("project name", projectName);
       const dbInstance = localforage.createInstance({
         name: projectName,
         storeName: "transcriptions",
@@ -63,7 +62,6 @@ export default function Home() {
   };
 
   function validateBooks(books, maxVersesData) {
-    console.log("max verses", maxVersesData);
     for (const book of books) {
       const bookName = book.bookName;
       const maxChapters = maxVersesData[bookName];
@@ -108,8 +106,6 @@ export default function Home() {
       text: "All books and chapters have the expected verse counts.",
     });
   }
-
-  console.log("project instance in page.js", projectDB);
 
   return (
     <>

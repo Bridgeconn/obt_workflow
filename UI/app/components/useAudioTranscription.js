@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import Swal from "sweetalert2";
 
 import api from "../store/apiConfig";
-import { AudioCodecDetector } from "../utils/audioCodecDetector";
 import language_codes from "../store/language_codes.json";
 
 const useAudioTranscription = ({
@@ -74,30 +73,16 @@ const useAudioTranscription = ({
   );
 
   const prepareAudioFile = async (verse) => {
-    const codec = await AudioCodecDetector.detectCodec(verse.file);
     let file;
     let targetFormat;
-
-    if (codec === "Opus") {
-      const { convertAudioFile } = await import("../utils/opusAudioConversion");
-      if (verse.audioFileName.endsWith(".mp3")) {
-        targetFormat = "mp3";
-      } else if (verse.audioFileName.endsWith(".wav")) {
-        targetFormat = "wav";
-      }
-      const audioBlob = await convertAudioFile(
-        verse.file,
-        verse.audioFileName,
-        targetFormat
-      );
-      file = new File([audioBlob], verse.audioFileName, {
-        type: `audio/${targetFormat}`,
-      });
-    } else {
-      file = new File([verse.file], verse.audioFileName, {
-        type: `audio/${targetFormat}`,
-      });
+    if (verse.audioFileName.endsWith(".mp3")) {
+      targetFormat = "mp3";
+    } else if (verse.audioFileName.endsWith(".wav")) {
+      targetFormat = "wav";
     }
+    file = new File([verse.file], verse.audioFileName, {
+      type: `audio/${targetFormat}`,
+    });
 
     return file;
   };
@@ -106,7 +91,7 @@ const useAudioTranscription = ({
   const handleTranscribe = useCallback(
     async (verse) => {
       if (!verse) return;
-      if(isTranscribing) return;
+      if (isTranscribing) return;
       setIsTranscribing(true);
       if (currentChapter) {
         updateBookStatus(currentChapter?.chapterNumber, "inProgress");
@@ -116,9 +101,7 @@ const useAudioTranscription = ({
         const formData = new FormData();
         const file = await prepareAudioFile(verse);
         let model_name = "mms-1b-all";
-        console.log("selected language", scriptLanguage)
         let lang_code = language_codes[scriptLanguage]?.stt?.[model_name];
-        console.log("lang_code", lang_code);
         formData.append("files", file);
         formData.append("transcription_language", lang_code);
 
@@ -171,8 +154,7 @@ const useAudioTranscription = ({
           setIsTranscribing(false);
           await projectInstance.setItem(storageKey, transcriptionData);
           moveToNextVerse(verse);
-        }
-        else if (jobStatus === "Error") {
+        } else if (jobStatus === "Error") {
           const outputMessage = response.data?.data?.output?.message;
           console.log("error occured in the backend", outputMessage);
           Swal.fire(
@@ -199,12 +181,9 @@ const useAudioTranscription = ({
   // Function to move to the next verse after transcription
   const moveToNextVerse = useCallback(
     (verse) => {
-      console.log("verse in move to next verse", verse);
       const { chapterNumber, verseNumber } = extractChapterVerse(
         verse.audioFileName
       );
-      console.log("chapter number", chapterNumber)
-      console.log("verse number", verseNumber)
 
       const currentChapter = bookData.chapters.find(
         (chapter) => parseInt(chapter.chapterNumber) === parseInt(chapterNumber)
@@ -215,14 +194,14 @@ const useAudioTranscription = ({
       );
 
       if (nextVerseIndex !== -1) {
-        const nextVerse =
-        currentChapter.verses[nextVerseIndex];
+        const nextVerse = currentChapter.verses[nextVerseIndex];
         setCurrentVerse(nextVerse);
         handleTranscribe(nextVerse);
       } else {
         updateBookStatus(chapterNumber, "Transcribed");
         const nextChapter = bookData.chapters.find(
-          (chapter) => parseInt(chapter.chapterNumber) === parseInt(chapterNumber) + 1
+          (chapter) =>
+            parseInt(chapter.chapterNumber) === parseInt(chapterNumber) + 1
         );
         if (nextChapter) {
           setCurrentChapter(nextChapter);
@@ -232,7 +211,7 @@ const useAudioTranscription = ({
         } else {
           Swal.fire(
             "Completed",
-            "All chapters have been transcribed.",
+            `All chapters in the book ${selectedBook} have been transcribed.`,
             "success"
           );
           setCurrentVerse(null);
@@ -248,7 +227,13 @@ const useAudioTranscription = ({
         }
       }
     },
-    [bookData, selectedBook, extractChapterVerse, handleTranscribe, updateBookStatus]
+    [
+      bookData,
+      selectedBook,
+      extractChapterVerse,
+      handleTranscribe,
+      updateBookStatus,
+    ]
   );
 
   // Start transcription process
@@ -259,11 +244,7 @@ const useAudioTranscription = ({
       updateBookStatus(firstChapter.chapterNumber, "inProgress");
       handleTranscribe(firstChapter.verses[0]);
     },
-    [
-      selectedBook,
-      updateBookStatus,
-      handleTranscribe
-    ]
+    [selectedBook, updateBookStatus, handleTranscribe]
   );
 
   return {
@@ -272,7 +253,7 @@ const useAudioTranscription = ({
     currentVerse,
     setCurrentChapter,
     setCurrentVerse,
-    isTranscribing
+    isTranscribing,
   };
 };
 

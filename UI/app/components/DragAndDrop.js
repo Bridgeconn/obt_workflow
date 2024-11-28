@@ -20,8 +20,6 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       let bibleMetaData = {};
       let projectName = "";
 
-      console.log("Zip contents:", zipContents.files);
-
       const processAudioFile = (
         bookName,
         chapterName,
@@ -158,7 +156,6 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       }
     }
 
-    console.log("seen folders", seenFolders);
     const isValidFolderStructure = requiredFolders.some((folder) =>
       Array.from(seenFolders).some((seenFolder) => seenFolder.includes(folder))
     );
