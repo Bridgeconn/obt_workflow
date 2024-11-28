@@ -232,7 +232,7 @@ const useAudioTranscription = ({
         } else {
           Swal.fire(
             "Completed",
-            "All chapters have been transcribed.",
+            `All chapters in the book ${selectedBook} have been transcribed.`,
             "success"
           );
           setCurrentVerse(null);

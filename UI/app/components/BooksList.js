@@ -16,7 +16,6 @@ import { Modal, TextField } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import PlayCircleIcon from "@mui/icons-material/PlayCircle";
 import PauseCircleIcon from "@mui/icons-material/PauseCircle";
-// import HourglassBottomIcon from "@mui/icons-material/HourglassBottom";
 import CircularProgress from "@mui/material/CircularProgress";
 import {
   ChapterCircle,
@@ -477,7 +476,6 @@ const BooksList = ({
       }
       setPlayingAudio(null);
     }
-  
   };
 
   const handleChapterApproval = async () => {
@@ -525,9 +523,10 @@ const BooksList = ({
       setInProgressVerse,
       setChapterStatuses,
       extractChapterVerse,
+      setChapterContent,
     });
 
-  const handleSpeechConversion = () => {
+  const handleSpeechConversion = async () => {
     const fetchedChapter = files
       .find((file) => file.bookName === selectedBook)
       ?.chapters.find(
@@ -573,13 +572,27 @@ const BooksList = ({
         return book;
       })
     );
+    try {
+      const updatedVerses = await Promise.all(
+        chapterContent.map(async (verse) => {
+          const verseKey = `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`;
+          const verseData = await projectInstance.getItem(verseKey);
+          return {
+            ...verse,
+            generatedAudio: verseData?.generatedAudio || verse.generatedAudio,
+          };
+        })
+      );
+
+      setChapterContent(updatedVerses);
+    } catch (error) {
+      console.error("Error updating chapter content:", error);
+    }
     // setModalOpen(false);
   };
 
   const handleAudioToggle = (file, verseKey) => {
-
     if (playingAudio?.key === verseKey) {
-    
       playingAudio.audio.pause();
       if (playingAudio.url) {
         URL.revokeObjectURL(playingAudio.url);
@@ -892,7 +905,7 @@ const BooksList = ({
                   {inProgressVerse[
                     `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
                   ] ? (
-                    <CircularProgress size={24} />
+                    <CircularProgress size={24} sx={{ color: 'black' }} />
                   ) : verse?.generatedAudio ? (
                     playingAudio?.key ===
                     `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
@@ -917,8 +930,7 @@ const BooksList = ({
                       />
                     )
                   ) : (
-                    // This ensures no visible icon when there's no audio
-                    <span sx={{ height: 30, width: 30 }}></span>
+                    <span style={{ visibility: "hidden", height: "30px", width: "30px" }}></span>
                   )}
                 </IconButton>
               </Box>

@@ -14,6 +14,7 @@ const TextToAudioConversion = ({
   setInProgressVerse,
   setChapterStatuses,
   extractChapterVerse,
+  setChapterContent,
 }) => {
   const [processingChapter, setProcessingChapter] = useState(null);
   const [processingVerse, setProcessingVerse] = useState(null);
@@ -79,7 +80,15 @@ const TextToAudioConversion = ({
                 generatedAudio: file,
                 lastUpdated: new Date().toISOString(),
               });
-              setInProgressVerse((prev) => ({ ...prev, [key]: false}));
+              setChapterContent((prevContent) =>
+                prevContent.map((verse) =>
+                  verse.chapterNumber === chapterNumber &&
+                  verse.verseNumber === verseNumber
+                    ? { ...verse, generatedAudio: file }
+                    : verse
+                )
+              );
+              setInProgressVerse((prev) => ({ ...prev, [key]: false }));
               return;
             } catch (dbError) {
               console.error("Failed to save audio to IndexedDB:", dbError);
@@ -90,7 +99,7 @@ const TextToAudioConversion = ({
               );
               setIsConverting(false);
               updateBookStatus(chapterNumber, "Failed");
-              setInProgressVerse((prev) => ({ ...prev, [key]: false}));
+              setInProgressVerse((prev) => ({ ...prev, [key]: false }));
               return;
             }
           }
@@ -105,7 +114,8 @@ const TextToAudioConversion = ({
       );
       setIsConverting(false);
       updateBookStatus(chapterNumber, "Failed");
-      setInProgressVerse((prev) => ({ ...prev, [key]: false}));
+      setInProgressVerse((prev) => ({ ...prev, [key]: false }));
+      return;
     }
   };
 
@@ -152,7 +162,7 @@ const TextToAudioConversion = ({
   const handleConvert = useCallback(
     async (verse) => {
       if (isProcessingRef.current || isConverting) {
-        console.log('Conversion already in progress');
+        console.log("Conversion already in progress");
         return;
       }
       if (!verse) return;
@@ -167,7 +177,10 @@ const TextToAudioConversion = ({
         const { chapterNumber, verseNumber } = extractChapterVerse(
           verse.audioFileName
         );
-        setInProgressVerse((prev) => ({ ...prev, [`${selectedBook}-${chapterNumber}-${verseNumber}`]: true}));
+        setInProgressVerse((prev) => ({
+          ...prev,
+          [`${selectedBook}-${chapterNumber}-${verseNumber}`]: true,
+        }));
         const storageKey = `${selectedBook}-${chapterNumber}-${verseNumber}`;
         const transcribedData = await projectInstance.getItem(storageKey);
         const transcribedTextArray = [transcribedData?.transcribedText.trim()];
@@ -191,7 +204,10 @@ const TextToAudioConversion = ({
         const { chapterNumber, verseNumber } = extractChapterVerse(
           verse.audioFileName
         );
-        setInProgressVerse((prev) => ({ ...prev, [`${selectedBook}-${chapterNumber}-${verseNumber}`]: false}));
+        setInProgressVerse((prev) => ({
+          ...prev,
+          [`${selectedBook}-${chapterNumber}-${verseNumber}`]: false,
+        }));
         if (processingChapter) {
           updateBookStatus(processingChapter?.chapterNumber, "Failed");
         }
@@ -254,7 +270,10 @@ const TextToAudioConversion = ({
           );
           setIsConverting(false);
           isProcessingRef.current = false;
-          setInProgressVerse((prev) => ({ ...prev, [`${selectedBook}-${chapterNumber}-${verseNumber}`]: true}));
+          setInProgressVerse((prev) => ({
+            ...prev,
+            [`${selectedBook}-${chapterNumber}-${verseNumber}`]: false,
+          }));
 
           updateBookStatus(chapterNumber, "Failed");
         } else {
@@ -268,7 +287,10 @@ const TextToAudioConversion = ({
         const { chapterNumber, verseNumber } = extractChapterVerse(
           verse.audioFileName
         );
-        setInProgressVerse((prev) => ({ ...prev, [`${selectedBook}-${chapterNumber}-${verseNumber}`]: true}));
+        setInProgressVerse((prev) => ({
+          ...prev,
+          [`${selectedBook}-${chapterNumber}-${verseNumber}`]: false,
+        }));
         updateBookStatus(chapterNumber, "Failed");
       }
     },
@@ -291,8 +313,7 @@ const TextToAudioConversion = ({
       setProcessingChapter(chapter);
       setProcessingVerse(chapter.verses[0]);
       updateBookStatus(chapter.chapterNumber, "converting");
-      handleConvert(chapter.verses[0])
-
+      handleConvert(chapter.verses[0]);
     },
     [selectedBook, setBooks, handleConvert, updateBookStatus]
   );
