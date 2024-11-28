@@ -161,7 +161,7 @@ const TextToAudioConversion = ({
 
   const handleConvert = useCallback(
     async (verse) => {
-      if (isProcessingRef.current || isConverting) {
+      if (isProcessingRef.current) {
         console.log("Conversion already in progress");
         return;
       }
@@ -170,7 +170,7 @@ const TextToAudioConversion = ({
 
       try {
         isProcessingRef.current = true;
-        setIsConverting(true);
+        // setIsConverting(true);
         if (processingChapter) {
           updateBookStatus(processingChapter?.chapterNumber, "converting");
         }
@@ -256,7 +256,7 @@ const TextToAudioConversion = ({
 
         if (jobStatus === "job finished") {
           const storageKey = `${selectedBook}-${chapterNumber}-${verseNumber}`;
-          setIsConverting(false);
+          // setIsConverting(false);
           isProcessingRef.current = false;
           await fetchAsset(storageKey, jobId);
           moveToNextVerse(verse);
@@ -306,7 +306,7 @@ const TextToAudioConversion = ({
   const startConversion = useCallback(
     (chapter) => {
       isProcessingRef.current = false;
-      setIsConverting(false);
+      setIsConverting(true);
       setProcessingChapter(null);
       setProcessingVerse(null);
 

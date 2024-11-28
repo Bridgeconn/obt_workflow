@@ -227,6 +227,7 @@ const BooksList = ({
     // Resolve book updates and update states
     const resolvedBookUpdates = await Promise.all(bookUpdates);
 
+
     // Update chapter statuses
     setChapterStatuses(statuses);
 
@@ -236,7 +237,6 @@ const BooksList = ({
         const updatedBook = resolvedBookUpdates.find(
           (update) => update.book.bookName === prevBook.name
         );
-
         return updatedBook
           ? {
               ...prevBook,
@@ -286,26 +286,6 @@ const BooksList = ({
         }
       }
     }
-    if (book.status === "converting") {
-      for (const chapter of book.displayChapters) {
-        if (
-          String(chapter.chapterNumber) ===
-          String(processingChapter?.chapterNumber)
-        ) {
-          const { verseNumber } = extractChapterVerse(
-            processingVerse?.audioFileName
-          );
-
-          return `[${verseNumber} out of ${chapter.verses.length}]`;
-        }
-      }
-    }
-    if (book.approved.length === book.totalChapters) {
-      return "Approved";
-    }
-    if (book.converted.length === book.totalChapters) {
-      return "Done";
-    }
     return book.status;
   };
 
@@ -317,8 +297,6 @@ const BooksList = ({
     }
     return false;
   }, [books]);
-  console.log("books array", books);
-  console.log("book in progress", bookInProgress);
 
   // Extract chapter and verse from the audioFileName
   const extractChapterVerse = (audioFileName) => {
