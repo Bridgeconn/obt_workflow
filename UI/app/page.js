@@ -11,9 +11,9 @@ export default function Home() {
   const [files, setFiles] = useState([]);
   const [jsonFiles, setJsonFiles] = useState([]);
   const [maxVerses, setMaxVerses] = useState(null);
-  const [bibleMetaData, setBibleMetadata] = useState(null);
   const [projectName, setProjectName] = useState("");
   const [projectDB, setProjectDB] = useState(null);
+  const [licenseData, setLicenseData] = useState(null);
 
   useEffect(() => {
     if (projectName) {
@@ -30,12 +30,12 @@ export default function Home() {
     jsonFiles,
     projectName,
     maxVersesData,
-    bibleMetaData
+    licenseContent
   ) => {
     setJsonFiles(jsonFiles);
     setProjectName(projectName);
     setMaxVerses(maxVersesData);
-    setBibleMetadata(bibleMetaData);
+    setLicenseData(licenseContent)
     validateBooks(extractedFiles, maxVersesData);
     const sortedBooks = sortBooks(extractedFiles);
     setFiles(sortedBooks);
@@ -164,8 +164,9 @@ export default function Home() {
             projectInstance={projectDB}
             files={files}
             setFiles={setFiles}
+            jsonFiles ={jsonFiles}
             projectName={projectName}
-            bibleMetaData={bibleMetaData}
+            licenseData = {licenseData}
           />
         </Box>
       )}

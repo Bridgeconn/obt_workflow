@@ -1,7 +1,7 @@
 import Swal from "sweetalert2";
 import LocalizedNames from "../store/localizedNames.json";
 
-export const processUSFM = async (projectInstance, selectedBook, bibleMetaData) => {
+export const processUSFM = async (projectInstance, selectedBook, download = true) => {
   const keys = await projectInstance.keys();
   const filteredKeys = keys.filter((key) => key.startsWith(selectedBook));
 
@@ -20,20 +20,22 @@ export const processUSFM = async (projectInstance, selectedBook, bibleMetaData) 
     }
     return a.chapter - b.chapter; // Sort by chapter
   });
-  // const metaData = bibleMetaData[selectedBook]
   const metaData = LocalizedNames[selectedBook]
   const usfmContent = generateUSFMContent(sortedData, selectedBook, metaData);
 
-  // Create a Blob and trigger download
-  const blob = new Blob([usfmContent], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${selectedBook}.usfm`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+ if (download) {
+    const blob = new Blob([usfmContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${selectedBook}.usfm`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } else {
+    return usfmContent;
+  }
 };
 
 const generateUSFMContent = (sortedData, selectedBook, metaData) => {
