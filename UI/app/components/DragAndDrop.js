@@ -17,8 +17,8 @@ const DragAndDrop = ({ onFilesExtracted }) => {
       const extractedBooks = [];
       const jsonFiles = [];
       let maxVersesData = {};
-      let bibleMetaData = {};
       let projectName = "";
+      let licenseContent = "";
 
       const processAudioFile = (
         bookName,
@@ -52,6 +52,11 @@ const DragAndDrop = ({ onFilesExtracted }) => {
 
           if (!projectName) projectName = pathParts[0];
 
+          if (relativePath.endsWith("license.md")) {
+            licenseContent = await file.async("string");
+            continue;
+          }
+
           if (relativePath.endsWith(".json")) {
             const fileData = await file.async("string");
             const parsedContent = JSON.parse(fileData);
@@ -78,11 +83,6 @@ const DragAndDrop = ({ onFilesExtracted }) => {
               file.name.endsWith("metadata.json")
             ) {
               try {
-                const localizedBibles = parsedContent["localizedNames"];
-                bibleMetaData =
-                  typeof localizedBibles === "string"
-                    ? JSON.parse(localizedBibles)
-                    : localizedBibles;
                 const metadataProjectname =
                   parsedContent["identification"]?.name?.["en"];
                 if (
@@ -125,7 +125,7 @@ const DragAndDrop = ({ onFilesExtracted }) => {
         jsonFiles,
         projectName,
         maxVersesData,
-        bibleMetaData
+        licenseContent
       );
     } catch (error) {
       console.error("Error extracting zip file:", error);

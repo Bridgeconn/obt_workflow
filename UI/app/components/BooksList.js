@@ -30,13 +30,15 @@ import useAudioTranscription from "./useAudioTranscription";
 import TextToAudioConversion from "./TextToAudioConversion";
 import source_languages from "../store/source_languages.json";
 import major_languages from "../store/major_languages.json";
+import DownloadProject from "./DownloadProject";
 
 const BooksList = ({
   projectInstance,
   files,
   setFiles,
+  jsonFiles,
   projectName,
-  bibleMetaData,
+  licenseData
 }) => {
   const [books, setBooks] = useState([]);
   const [bookData, setBookData] = useState(null);
@@ -627,7 +629,7 @@ const BooksList = ({
   }, [playingAudio]);
 
   const downloadUSFM = (book) => {
-    processUSFM(projectInstance, book.name, bibleMetaData);
+    processUSFM(projectInstance, book.name, true);
   };
 
   const resetProject = () => {
@@ -986,9 +988,7 @@ const BooksList = ({
         >
           Reset Project
         </Button>
-        <Button variant="contained" sx={styles.Button} disabled>
-          Download Project
-        </Button>
+        <DownloadProject projectName = {projectName} projectInstance={projectInstance} jsonFiles={jsonFiles} licenseData= {licenseData} />
       </Box>
     </Card>
   );
