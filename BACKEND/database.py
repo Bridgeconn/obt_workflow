@@ -55,6 +55,7 @@ class Project(Base):
     script_lang = Column(String, nullable=True)  # Script language (e.g., "eng")
     audio_lang = Column(String, nullable=True)   # Audio language (e.g., "hin")
     metadata_info = Column(String, nullable=False)
+    archive = Column(Boolean, default=False)
 
 
 
@@ -80,7 +81,7 @@ class VerseFile(Base):
     format = Column(String, nullable=False)  # File format (e.g., "wav")
     stt = Column(Boolean, default=False)  # Speech-to-text status
     text = Column(String, default="")  # Extracted text
-    text_modified= Column(Boolean, default=False)  # Modified text
+    modified= Column(Boolean, default=False)  # Modified text
     tts = Column(Boolean, default=False) # Text-to-speech status
     tts_path = Column(String, nullable=True)
     stt_msg = Column(String, default="")  # Speech-to-text error message
