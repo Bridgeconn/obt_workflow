@@ -6,22 +6,11 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from database import SessionLocal, init_db, User
+from database import  User
 import dependency
-# import logging
+from fastapi import  Depends, HTTPException
 
 
-# logging.basicConfig(level=logging.DEBUG)
-
-
-
-# # Dependency to get the database session
-# def get_db():
-#     db = SessionLocal()
-#     try:
-#         yield db
-#     finally:
-#         db.close()
 
 # JWT Configuration
 SECRET_KEY = "your-secret-key"
