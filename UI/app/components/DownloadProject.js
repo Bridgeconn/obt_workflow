@@ -12,9 +12,9 @@ const DownloadProject = ({
 }) => {
   const downloadProject = async () => {
     const zip = new JSZip();
-    const projectFolder = zip.folder(projectName);
-    const textFolder = projectFolder?.folder("text-1");
-    const audioFolder = projectFolder?.folder("audio");
+    // const projectFolder = zip.folder(projectName);
+    const textFolder = zip.folder("text-1");
+    const audioFolder = zip.folder("audio");
     const audioIngredientsFolder = audioFolder?.folder("ingredients");
     const textIngredientsFolder = textFolder?.folder("ingredients");
     let metaData;
@@ -32,7 +32,7 @@ const DownloadProject = ({
     for (const json of jsonFiles) {
       if (json?.name.endsWith("metadata.json")) {
         metaData = json?.content || null;
-        projectFolder?.file("metadata.json", JSON.stringify(metaData, null, 2));
+        zip.file("metadata.json", JSON.stringify(metaData, null, 2));
         textFolder?.file("metadata.json", JSON.stringify(metaData, null, 2));
       } else if (json?.name.endsWith("versification.json")) {
         versification = json?.content || null;
@@ -118,7 +118,7 @@ const DownloadProject = ({
       const blobUrl = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = "project.zip";
+      a.download = `${projectName}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
