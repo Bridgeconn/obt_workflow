@@ -27,6 +27,7 @@ const useAudioTranscription = ({
 
   const updateBookStatus = useCallback(
     (chapterNumber, status) => {
+      chapterNumber = parseInt(chapterNumber, 10);
       const bookChapterKey = `${selectedBook}-${chapterNumber}`;
 
       setChapterStatuses((prev) => ({
@@ -48,7 +49,7 @@ const useAudioTranscription = ({
           ];
           arrays.forEach((arr) => {
             updatedBook[arr] =
-              updatedBook[arr]?.filter((ch) => ch !== chapterNumber) || [];
+              updatedBook[arr]?.filter((ch) => parseInt(ch) !== chapterNumber) || [];
           });
 
           switch (status) {
@@ -219,7 +220,7 @@ const useAudioTranscription = ({
           setBooks((prevBooks) =>
             prevBooks.map((book) =>
               book.name === selectedBook
-                ? { ...book, status: "Transcribed", hasDownload: true }
+                ? { ...book, status: "Transcribed" }
                 : book
             )
           );
