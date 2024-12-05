@@ -24,17 +24,14 @@ def transcribe_verses(file_paths: list[str], db_session: Session):
         for file_path in file_paths:
             # Retrieve the VerseFile entry based on the file path
             verse = db_session.query(VerseFile).filter(VerseFile.path == file_path).first()
-
             if not verse:
                 logging.error(f"Verse file not found for path: {file_path}")
                 continue
-
             # Create a job entry linked to the verse
             job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
             db_session.add(job)
             db_session.commit()
             db_session.refresh(job)
-
             try:
                 # Call AI API for transcription
                 result = call_ai_api(file_path)
@@ -50,12 +47,10 @@ def transcribe_verses(file_paths: list[str], db_session: Session):
                     job.status = "in_progress"
                     db_session.add(job)
                     db_session.commit()
-
                     # Poll AI job status until it's finished
                     while True:
                         transcription_result = check_ai_job_status(ai_jobid)
                         job_status = transcription_result.get("data", {}).get("status")
-
                         if job_status == "job finished":
                             # Extract transcription results
                             transcriptions = transcription_result["data"]["output"]["transcriptions"]
@@ -72,16 +67,13 @@ def transcribe_verses(file_paths: list[str], db_session: Session):
 
                             job.status = "completed"
                             break
-
                         elif job_status == "job failed":
                             job.status = "failed"
                             verse.stt = False
                             verse.stt_msg = "AI transcription failed"
                             break
-
                         # Wait for a few seconds before polling again
                         time.sleep(5)
-
                 # Save the updated job and verse statuses
                 db_session.add(job)
                 db_session.add(verse)
@@ -131,7 +123,6 @@ def call_ai_api(file_path: str) -> dict:
     transcription_language = "hin"
     file_name = os.path.basename(file_path)
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
-
     try:
         with open(file_path, "rb") as audio_file:
             files_payload = {"files": (file_name, audio_file, "audio/wav")}
@@ -159,7 +150,6 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
     db_session = SessionLocal()
     Edited_dir = "Output"
     os.makedirs(Edited_dir, exist_ok=True)
-
     try:
         for verse in verses:
             try:
@@ -167,7 +157,6 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 if not chapter:
                     logging.error(f"Chapter not found for verse ID {verse.verse_id}")
                     continue
-
                 # Create a job entry linked to the verse
                 job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
                 db_session.add(job)
@@ -205,8 +194,11 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                 # Find and move the audio file to the proper chapter folder
                                 for root, _, files in os.walk(extracted_folder):
                                     for file in files:
-                                        if file == "audio_0.wav":                                       
-                                            new_audio_path = os.path.join(chapter_folder, verse.name)
+                                        if file == "audio_0.wav":
+                                            # Remove any existing extensions from verse.name and add .wav
+                                            base_name = os.path.splitext(verse.name)[0]  # Get the name without extension
+                                            new_audio_filename = f"{base_name}.wav"  # Add only the .wav extension
+                                            new_audio_path = os.path.join(chapter_folder, new_audio_filename)
                                             shutil.move(os.path.join(root, file), new_audio_path)
                                             # Update verse information
                                             verse.tts_path = new_audio_path
@@ -323,3 +315,6 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     except Exception as e:
         logging.error(f"Error in call_tts_api: {str(e)}")
         return {"error": str(e)}
+    
+
+    

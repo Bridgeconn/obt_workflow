@@ -15,7 +15,7 @@ from fastapi import  Depends, HTTPException
 # JWT Configuration
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -37,17 +37,25 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
 
-# Verify token and retrieve the current user
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(dependency.get_db)):
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme), 
+    db: Session = Depends(dependency.get_db)
+) -> User:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
+        user_id: int = int(payload.get("sub"))
         if user_id is None:
-            raise HTTPException(status_code=401, detail="Invalid authentication token")
+            raise HTTPException(status_code=401, detail="Invalid token")
+
         user = db.query(User).filter(User.user_id == user_id).first()
-        if user is None:
-            raise HTTPException(status_code=401, detail="User not found")
+        if not user or user.token != token:  # Ensure token matches
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
         return user
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid authentication token")
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
