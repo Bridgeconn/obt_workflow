@@ -38,7 +38,7 @@ const BooksList = ({
   setFiles,
   jsonFiles,
   projectName,
-  licenseData
+  licenseData,
 }) => {
   const [books, setBooks] = useState([]);
   const [bookData, setBookData] = useState(null);
@@ -228,7 +228,6 @@ const BooksList = ({
 
     // Resolve book updates and update states
     const resolvedBookUpdates = await Promise.all(bookUpdates);
-
 
     // Update chapter statuses
     setChapterStatuses(statuses);
@@ -885,7 +884,7 @@ const BooksList = ({
                   {inProgressVerse[
                     `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}`
                   ] ? (
-                    <CircularProgress size={24} sx={{ color: 'black' }} />
+                    <CircularProgress size={24} sx={{ color: "black" }} />
                   ) : verse?.generatedAudio ? (
                     playingAudio?.key ===
                     `${selectedBook}-${verse.chapterNumber}-${verse.verseNumber}` ? (
@@ -910,7 +909,13 @@ const BooksList = ({
                       />
                     )
                   ) : (
-                    <span style={{ visibility: "hidden", height: "30px", width: "30px" }}></span>
+                    <span
+                      style={{
+                        visibility: "hidden",
+                        height: "30px",
+                        width: "30px",
+                      }}
+                    ></span>
                   )}
                 </IconButton>
               </Box>
@@ -988,7 +993,15 @@ const BooksList = ({
         >
           Reset Project
         </Button>
-        <DownloadProject projectName = {projectName} projectInstance={projectInstance} jsonFiles={jsonFiles} licenseData= {licenseData} />
+        <DownloadProject
+          projectName={projectName}
+          projectInstance={projectInstance}
+          books={books}
+          jsonFiles={jsonFiles}
+          licenseData={licenseData}
+          isConverting={isConverting}
+          isTranscribing={isTranscribing}
+        />
       </Box>
     </Card>
   );

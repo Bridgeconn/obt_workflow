@@ -120,6 +120,7 @@ const TextToAudioConversion = ({
   };
 
   const updateBookStatus = (chapterNumber, status) => {
+    chapterNumber = parseInt(chapterNumber, 10);
     const bookChapterKey = `${selectedBook}-${chapterNumber}`;
 
     setChapterStatuses((prev) => ({
@@ -142,7 +143,7 @@ const TextToAudioConversion = ({
 
         arrays.forEach((arr) => {
           updatedBook[arr] =
-            updatedBook[arr]?.filter((ch) => ch !== chapterNumber) || [];
+            updatedBook[arr]?.filter((ch) => parseInt(ch) !== chapterNumber) || [];
         });
 
         if (status === "converting") {
@@ -151,8 +152,10 @@ const TextToAudioConversion = ({
           updatedBook.converted.push(chapterNumber);
         } else if (status === "Failed") {
           updatedBook.failed.push(chapterNumber);
-          // updatedBook.status = "Transcribed"
         }
+        const allChaptersConverted =
+          updatedBook.totalChapters === updatedBook.converted.length;
+        updatedBook.status = allChaptersConverted ? "Done" : updatedBook.status;
 
         return updatedBook;
       })
