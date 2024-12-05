@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Button } from "@mui/material";
 import { styles } from "../StyledComponents";
 import JSZip from "jszip";
@@ -7,12 +8,81 @@ import Swal from "sweetalert2";
 const DownloadProject = ({
   projectName,
   projectInstance,
+  books,
   jsonFiles,
   licenseData,
+  isConverting,
+  isTranscribing,
 }) => {
+  const [isDownloadReady, setIsDownloadReady] = useState(false);
+
+  useEffect(() => {
+    const validateBooksCompletion = async () => {
+      try {
+        const keys = await projectInstance.keys();
+        const fetchedData = (
+          await Promise.all(keys.map((key) => projectInstance.getItem(key)))
+        ).filter((data) => data !== null);
+  
+        const bookDataMap = {};
+        fetchedData.forEach((data) => {
+          if (!data.book) return;
+          if (!bookDataMap[data.book]) {
+            bookDataMap[data.book] = [];
+          }
+          bookDataMap[data.book].push(data);
+        });
+  
+        const areBooksDownloadable = books.map((book) => {
+          const records = bookDataMap[book.name] || [];
+  
+          const chaptersStatus = book.displayChapters.map((chapter) => {
+            const chapterRecords = records.filter(
+              (record) => record.chapter === chapter.chapterNumber
+            );
+  
+            const totalVersesInChapter = chapter.verses.length;
+            const completedVerses = chapterRecords.filter(
+              (record) => record.transcribedText && record.generatedAudio
+            ).length;
+            const approvedVerses = chapterRecords.filter(
+              (record) =>
+                record.transcribedText &&
+                record.generatedAudio &&
+                record.isApproved
+            ).length;
+  
+            return {
+              chapterNumber: chapter.chapterNumber,
+              isConvertible: completedVerses === totalVersesInChapter,
+              isApproved: approvedVerses === totalVersesInChapter,
+            };
+          });
+  
+          const isBookReady = chaptersStatus.some(
+            (status) => status.isConvertible || status.isApproved
+          );
+  
+          return isBookReady;
+        });
+  
+        setIsDownloadReady(areBooksDownloadable.some((ready) => ready));
+      } catch (error) {
+        console.error("Error validating book completion:", error);
+        setIsDownloadReady(false);
+      }
+    };
+  
+    if (books.length > 0) {
+      validateBooksCompletion();
+    } else {
+      setIsDownloadReady(false);
+    }
+  }, [books, projectInstance]);
+  
+
   const downloadProject = async () => {
     const zip = new JSZip();
-    // const projectFolder = zip.folder(projectName);
     const textFolder = zip.folder("text-1");
     const audioFolder = zip.folder("audio");
     const audioIngredientsFolder = audioFolder?.folder("ingredients");
@@ -20,9 +90,6 @@ const DownloadProject = ({
     let metaData;
     let versification;
     let projectSetting;
-
-    console.log("json files", jsonFiles);
-    console.log("licenseData", licenseData);
 
     if (licenseData) {
       textIngredientsFolder?.file("license.md", licenseData);
@@ -70,14 +137,9 @@ const DownloadProject = ({
         await Promise.all(keys.map((key) => projectInstance.getItem(key)))
       ).filter((data) => data !== null);
 
-      console.log("fetched data from indexed db", fetchedData);
-
       for (const data of fetchedData) {
         if (!data?.book) continue;
 
-        console.log("processing data for book:", data.book);
-
-        // const bookTextFolder = textFolder?.folder(data.book);
         const usfmBookData = await processUSFM(
           projectInstance,
           data.book,
@@ -101,8 +163,8 @@ const DownloadProject = ({
           const bookAudioFolder = audioIngredientsFolder?.folder(data.book);
           const chapterFolder = bookAudioFolder?.folder(data.chapter);
           const audioBlob = await data.generatedAudio.arrayBuffer();
-          const audioExtension = data.generatedAudio.name.split('.').pop();
-          const audioFileName = `${data.chapter}_${data.verse}.${audioExtension}`
+          const audioExtension = data.generatedAudio.name.split(".").pop();
+          const audioFileName = `${data.chapter}_${data.verse}.${audioExtension}`;
           chapterFolder?.file(audioFileName, audioBlob);
         }
       }
@@ -134,6 +196,7 @@ const DownloadProject = ({
       variant="contained"
       sx={styles.downloadButton}
       onClick={downloadProject}
+      disabled={!isDownloadReady || isConverting || isTranscribing}
     >
       Download Project
     </Button>
