@@ -7,16 +7,137 @@ import logging
 import requests
 import time
 import shutil
+import subprocess
+from fastapi import  HTTPException
+from pathlib import Path
+from database import Project ,Book
+import json
+from dotenv import load_dotenv
 
+
+
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
+
+BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
+if not BASE_DIRECTORY:
+    raise ValueError("The environment variable 'BASE_DIRECTORY' is not set.")
+BASE_DIR = Path(BASE_DIRECTORY)
+
+
 
 
 # Directory for extracted files
 UPLOAD_DIR = "Input"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def transcribe_verses(file_paths: list[str], db_session: Session):
+
+
+
+def process_project_files(input_path, output_path, db, project):
+    """
+    Process the files in the extracted project directory and populate the database.
+    """
+    try:
+        # Locate the project directory within `input_path`
+        project_input_path = next(input_path.iterdir(), None)
+        if not project_input_path or not project_input_path.is_dir():
+            logging.error("Project directory not found under input path.")
+            raise HTTPException(status_code=400, detail="Project directory not found under input path")
+        # Locate versification.json
+        versification_path = next(project_input_path.rglob("versification.json"), None)
+        if not versification_path:
+            logging.error("versification.json not found in the project folder.")
+            raise HTTPException(status_code=400, detail="versification.json not found in the project folder")
+        # Read versification.json
+        with open(versification_path, "r", encoding="utf-8") as versification_file:
+            versification_data = json.load(versification_file)
+        max_verses = versification_data.get("maxVerses", {})
+        # Dynamically locate the `ingredients` folder
+        ingredients_path = None
+        for root, dirs, files in os.walk(project_input_path):
+            if "audio" in dirs and "ingredients" in os.listdir(os.path.join(root, "audio")):
+                ingredients_path = Path(root) / "audio" / "ingredients"
+                break
+            elif "text" in dirs and "ingredients" in os.listdir(os.path.join(root, "text")):
+                ingredients_path = Path(root) / "text" / "ingredients"
+                break
+            elif "ingredients" in dirs:
+                ingredients_path = Path(root) / "ingredients"
+                break
+        if not ingredients_path:
+            logging.error("Ingredients folder not found. Checked all possible locations.")
+            raise HTTPException(status_code=400, detail="ingredients folder not found in the project folder")
+        logging.info(f"Ingredients folder found at: {ingredients_path}")
+        # Process books, chapters, and verses in `ingredients`
+        for book_dir in ingredients_path.iterdir():
+            if book_dir.is_dir():
+                book_name = book_dir.name
+                book_max_verses = max_verses.get(book_name, [])
+                # Create a book entry in the database
+                book_entry = Book(
+                    project_id=project.project_id,
+                    book=book_name,
+                    # approved=False,
+                )
+                db.add(book_entry)
+                db.commit()
+                db.refresh(book_entry)
+
+                for chapter_dir in book_dir.iterdir():
+                    if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+                        chapter_number = int(chapter_dir.name)
+                        chapter_max_verses = int(book_max_verses[chapter_number - 1]) if chapter_number <= len(book_max_verses) else 0
+                        # Get all available verses in the chapter
+                        available_verses = set(
+                            int(verse_file.stem.split("_")[1])
+                            for verse_file in chapter_dir.iterdir()
+                            if verse_file.is_file() and "_" in verse_file.stem
+                        )
+                        # Determine missing verses
+                        expected_verses = set(range(1, chapter_max_verses + 1))
+                        missing_verses = list(expected_verses - available_verses)
+                        # Create a chapter entry in the database
+                        chapter_entry = Chapter(
+                            book_id=book_entry.book_id,
+                            chapter=chapter_number,
+                            approved=False,
+                            missing_verses=missing_verses if missing_verses else None,
+                        )
+                        db.add(chapter_entry)
+                        db.commit()
+                        db.refresh(chapter_entry)
+                        # Add verse records
+                        for verse_file in chapter_dir.iterdir():
+                            if verse_file.is_file() and "_" in verse_file.stem:
+                                try:
+                                    verse_number = int(verse_file.stem.split("_")[1])
+                                    verse = VerseFile(
+                                        chapter_id=chapter_entry.chapter_id,
+                                        verse=verse_number,
+                                        name=verse_file.name,
+                                        path=str(verse_file),
+                                        size=verse_file.stat().st_size,
+                                        format=verse_file.suffix.lstrip("."),
+                                        stt=False,
+                                        text="",
+                                        modified=False,
+                                        tts=False,
+                                        tts_path="",
+                                        stt_msg="",
+                                        tts_msg="",
+                                    )
+                                    db.add(verse)
+                                except ValueError:
+                                    logging.warning(f"Invalid file name format: {verse_file.name}")
+                                    continue
+        db.commit()
+    except Exception as e:
+        logging.error(f"Error while processing project files: {str(e)}") 
+        raise HTTPException(status_code=500, detail="Error while processing project files")
+
+def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Session):
     """
     Background task to transcribe verses and update the database.
     """
@@ -34,7 +155,7 @@ def transcribe_verses(file_paths: list[str], db_session: Session):
             db_session.refresh(job)
             try:
                 # Call AI API for transcription
-                result = call_ai_api(file_path)
+                result = call_ai_api(file_path,script_lang)
                 if "error" in result:
                     # Update job and verse statuses in case of an error
                     job.status = "failed"
@@ -115,18 +236,18 @@ def check_ai_job_status(ai_jobid: str) -> dict:
 
 
 
-def call_ai_api(file_path: str) -> dict:
+def call_ai_api(file_path: str, script_lang: str) -> dict:
     """
     Calls the AI API to transcribe the given audio file.
     """
     ai_api_url = "https://api.vachanengine.org/v2/ai/model/audio/transcribe?model_name=mms-1b-all"
-    transcription_language = "hin"
+    # transcription_language = "hin"
     file_name = os.path.basename(file_path)
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
     try:
         with open(file_path, "rb") as audio_file:
             files_payload = {"files": (file_name, audio_file, "audio/wav")}
-            data_payload = {"transcription_language": transcription_language}
+            data_payload = {"transcription_language": script_lang}
             headers = {"Authorization": f"Bearer {api_token}"}
 
             # Make the API request
@@ -145,18 +266,27 @@ def call_ai_api(file_path: str) -> dict:
 
 def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_lang: str, db):
     """
-    Generate speech for each verse and update the database.
+    Generate speech for each verse and update the database, saving files in the appropriate output directory.
     """
     db_session = SessionLocal()
-    Edited_dir = "Output"
-    os.makedirs(Edited_dir, exist_ok=True)
     try:
+        # Fetch the project name for creating the output path
+        project = db_session.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
+
+        # Base directory for output
+        output_base_dir = BASE_DIR / str(project_id) / "output" / project.name
+        ingredients_audio_dir = output_base_dir / "audio" / "ingredients"
+        ingredients_audio_dir.mkdir(parents=True, exist_ok=True)
+
         for verse in verses:
             try:
                 chapter = db_session.query(Chapter).filter(Chapter.chapter_id == verse.chapter_id).first()
                 if not chapter:
                     logging.error(f"Chapter not found for verse ID {verse.verse_id}")
                     continue
+
                 # Create a job entry linked to the verse
                 job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
                 db_session.add(job)
@@ -188,20 +318,21 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                             audio_zip_url = f"https://api.vachanengine.org/v2/ai/assets?job_id={ai_jobid}"
                             extracted_folder = download_and_extract_audio_zip(audio_zip_url)
                             if extracted_folder:
-                                book_folder = os.path.join(Edited_dir, book_code)
-                                chapter_folder = os.path.join(book_folder, str(chapter.chapter))
+                                book_folder = ingredients_audio_dir / book_code
+                                chapter_folder = book_folder / str(chapter.chapter)
                                 os.makedirs(chapter_folder, exist_ok=True)
-                                # Find and move the audio file to the proper chapter folder
+                                # Find and move the audio file to the appropriate folder
                                 for root, _, files in os.walk(extracted_folder):
                                     for file in files:
                                         if file == "audio_0.wav":
-                                            # Remove any existing extensions from verse.name and add .wav
-                                            base_name = os.path.splitext(verse.name)[0]  # Get the name without extension
-                                            new_audio_filename = f"{base_name}.wav"  # Add only the .wav extension
-                                            new_audio_path = os.path.join(chapter_folder, new_audio_filename)
+                                            # Update filename based on the verse
+                                            base_name = os.path.splitext(verse.name)[0]  # Strip existing extension
+                                            new_audio_filename = f"{base_name}.wav"  # Add .wav extension
+                                            new_audio_path = chapter_folder / new_audio_filename
                                             shutil.move(os.path.join(root, file), new_audio_path)
+
                                             # Update verse information
-                                            verse.tts_path = new_audio_path
+                                            verse.tts_path = str(new_audio_path)
                                             verse.tts = True
                                             verse.tts_msg = "Text-to-speech completed"
                                             job.status = "completed"
@@ -235,6 +366,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
 
     except Exception as e:
         logging.error(f"Error in generate_speech_for_verses: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error in generate_speech_for_verses: {str(e)}")
 
     finally:
         db_session.close()
@@ -315,6 +447,50 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     except Exception as e:
         logging.error(f"Error in call_tts_api: {str(e)}")
         return {"error": str(e)}
+    
+
+def validate_and_resample_wav(file_path: str) -> str:
+    """
+    Validate WAV file sample rate and resample to 48000 Hz if necessary.
+    Args:
+        file_path (str): Path to the original WAV file.
+    Returns:
+        str: Path to the processed WAV file.
+    """
+    temp_resampled_path = f"{file_path}.resampled.wav"
+    try:
+        # Check the current sample rate using ffprobe
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate",
+             "-of", "default=nw=1:nk=1", file_path],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        current_sample_rate = int(probe.stdout.decode().strip())
+        logging.debug(f"Current sample rate: {current_sample_rate} Hz")
+
+        # Resample only if not 48000 Hz
+        if current_sample_rate != 48000:
+            subprocess.run(
+                [
+                    "ffmpeg", "-i", file_path,
+                    "-ar", "48000", "-ac", "1", "-sample_fmt", "s16",
+                    temp_resampled_path, "-y"
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logging.info(f"Resampled WAV file to 48000 Hz: {temp_resampled_path}")
+            os.replace(temp_resampled_path, file_path)  # Replace the original file with the resampled one
+        else:
+            logging.info("File already has a sample rate of 48000 Hz. No resampling needed.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to resample WAV file: {e.stderr.decode()}")
+        raise HTTPException(status_code=500, detail="Failed to resample WAV audio file")
+    return file_path
+
     
 
     

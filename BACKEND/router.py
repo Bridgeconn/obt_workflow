@@ -16,13 +16,23 @@ from fastapi.responses import StreamingResponse
 import subprocess
 import shutil
 import datetime
+from pydantic import EmailStr
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.DEBUG)
 
 
+BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
 
+# Raise an error if the environment variable is not set
+if not BASE_DIRECTORY:
+    raise ValueError("The environment variable 'BASE_DIRECTORY' is not set.")
+
+# Convert the base directory to a Path object
+BASE_DIR = Path(BASE_DIRECTORY)
 router = APIRouter()
-# Directory for extracted files
+
 UPLOAD_DIR = "Input"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -30,8 +40,11 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # Create User API
-@router.post("/create-user/")
-def create_user(username: str, password: str, db: Session = Depends(dependency.get_db)):
+@router.post("/user/signup/",tags=["User"])
+def user_signup(username: str, password: str,email: EmailStr, db: Session = Depends(dependency.get_db)):
+    # Validate input fields
+    if not username or not email or not password:
+        raise HTTPException(status_code=400, detail="All fields (username, email, password) are required.")
     # Check if the username already exists
     existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
@@ -41,16 +54,45 @@ def create_user(username: str, password: str, db: Session = Depends(dependency.g
         )
     # Hash the password and create the user
     hashed_password = auth.get_password_hash(password)
-    user = User(username=username, hashed_password=hashed_password)
-    db.add(user)
+    new_user = User(
+        username=username,
+        email=email,
+        hashed_password=hashed_password
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "User created successfully", "user_id": new_user.user_id}
+
+
+@router.put("/user/updatePassword/", tags=["User"])
+async def update_password(
+    current_password: str,
+    new_password: str,
+    db: Session = Depends(dependency.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    """
+    Change the password for the logged-in user.
+    """
+    user = db.query(User).filter(User.user_id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify current password
+    if not auth.verify_password(current_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    # Update to the new password
+    user.hashed_password = auth.get_password_hash(new_password)
     db.commit()
     db.refresh(user)
-    return {"message": "User created successfully", "user_id": user.user_id}
+    return {"message": "Password updated successfully"}
 
 
 
 
-@router.post("/token/")
+@router.post("/token",tags=["User"])
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(), 
     db: Session = Depends(dependency.get_db)
@@ -65,13 +107,16 @@ def login(
     user.last_login = datetime.datetime.utcnow()
     db.commit()
     db.refresh(user)
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, "token_type": "bearer",
+        "message": "Login successful"
+    }
 
 
 
 
 
-@router.post("/logout/")
+@router.post("/user/logout/", tags=["User"])
 async def logout(
     db: Session = Depends(dependency.get_db), 
     current_user: User = Depends(auth.get_current_user)
@@ -89,53 +134,141 @@ async def logout(
 
 
 
-
-
-
-
-@router.post("/upload-zip/{owner_id}")
-async def upload_zip(
-    file: UploadFile = File(...),
+@router.get("/user/", tags=["User"])
+async def get_user_details(
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
-    try:
-        owner_id = current_user.user_id
+    """
+    Fetch the details of the currently logged-in user.
+    """
+    user = db.query(User).filter(User.user_id == current_user.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {
+        "user_id": user.user_id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "last_login": user.last_login,
+        "created_date": user.created_date,
+    }
 
+
+# Users Details (Only Admin)
+@router.get("/users/", tags=["User"])
+async def get_all_users(
+    db: Session = Depends(dependency.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    """
+    Fetch the details of all users. Only accessible by Admins.
+    """
+    # Ensure the current user is an Admin
+    if current_user.role != "Admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this endpoint")
+    # Fetch all users
+    users = db.query(User).all()
+
+    # Format the response
+    users_data = [
+        {
+            "user_id": user.user_id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "last_login": user.last_login,
+            "token": user.token,
+            "active": user.active,
+            "created_date": user.created_date,
+        }
+        for user in users
+    ]
+
+    return users_data
+
+@router.put("/user/role/", tags=["User"])
+async def update_role(
+    user_id: int,
+    role: str,
+    db: Session = Depends(dependency.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    """
+    Update the role of a user.
+    Only users with the 'Admin' role can perform this action.
+    """
+    # Ensure the current user has an Admin role
+    if current_user.role != "Admin":
+        raise HTTPException(status_code=403, detail="Only admins can update user roles")
+
+    # Validate the new role
+    valid_roles = ["Admin", "AI", "User"]
+    if role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Valid roles are: {', '.join(valid_roles)}")
+
+    # Fetch the user whose role is to be updated
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update the role
+    user.role = role  # Keep the role as it is in the valid_roles list 
+    db.commit()
+    db.refresh(user)
+
+    return {"message": f"Role updated successfully to '{role}' for user ID {user_id}"}
+
+
+
+
+
+
+@router.post("/Projects", tags=["Project"])
+async def upload_zip(
+    file: UploadFile = File(...),
+    db: Session = Depends(dependency.get_db),
+    current_user: dict = Depends(auth.get_current_user),
+):
+    """
+    Upload a ZIP file, create a project entry, and store the files in the appropriate folder structure.
+    """
+    try:
         # Ensure the uploaded file is a ZIP file
         if not file.filename.endswith(".zip"):
             raise HTTPException(status_code=400, detail="Uploaded file is not a ZIP file")
 
         # Save the uploaded ZIP file temporarily
-        zip_path = Path(UPLOAD_DIR) / file.filename.replace(" ", "_")
-        with open(zip_path, "wb") as buffer:
+        temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
+        temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(temp_zip_path, "wb") as buffer:
             buffer.write(await file.read())
-        # Temporary extraction path
-        temp_extract_path = Path(UPLOAD_DIR) / "temp_extraction"
+
+        # Extract the ZIP file to a temporary directory
+        temp_extract_path = BASE_DIR / "temp" / "extracted"
         temp_extract_path.mkdir(parents=True, exist_ok=True)
-        # Extract the ZIP file
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+
+        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_extract_path)
         # Remove the ZIP file after extraction
-        os.remove(zip_path)
-        # Search for metadata.json recursively
-        metadata_path = None
-        for root, dirs, files in os.walk(temp_extract_path):
-            if "metadata.json" in files:
-                metadata_path = Path(root) / "metadata.json"
-                break
+        os.remove(temp_zip_path)
+        # Search for metadata.json
+        metadata_path = next(temp_extract_path.rglob("metadata.json"), None)
         if not metadata_path:
             raise HTTPException(status_code=400, detail="metadata.json not found in the ZIP file")
+
         # Read metadata.json
         with open(metadata_path, "r", encoding="utf-8") as metadata_file:
             metadata_content = json.load(metadata_file)
-        # Extract project name
+        # Extract project name and metadata info
         name = metadata_content.get("identification", {}).get("name", {}).get("en", "Unknown Project")
         metadata_info = json.dumps(metadata_content)
-        # Create a new project entry
+        # Create the project entry in the database
         project = Project(
             name=name,
-            owner_id=owner_id,
+            owner_id=current_user.user_id,
             script_lang="",
             audio_lang="",
             metadata_info=metadata_info,
@@ -144,116 +277,26 @@ async def upload_zip(
         db.commit()
         db.refresh(project)
 
-        # Rename the extracted folder to match the project name
-        project_extract_path = Path(UPLOAD_DIR) / project.name
-        if project_extract_path.exists():
-            shutil.rmtree(project_extract_path)  # Clean up if a folder with the same name exists
-        shutil.move(str(temp_extract_path), str(project_extract_path))
+        # Use the project_id for folder creation
+        project_id = project.project_id
+        project_base_path = BASE_DIR / str(project_id)
+        input_path = project_base_path / "input" 
+        output_path = project_base_path / "output" 
 
-        # Locate and read versification.json
-        versification_path = None
-        for root, dirs, files in os.walk(project_extract_path):
-            if "versification.json" in files:
-                versification_path = Path(root) / "versification.json"
-                break
-        if not versification_path or not versification_path.exists():
-            raise HTTPException(status_code=400, detail="versification.json not found in the ZIP file")
+        # Move extracted files to the input folder
+        input_path.mkdir(parents=True, exist_ok=True)
+        for item in temp_extract_path.iterdir():
+            shutil.move(str(item), str(input_path))
+        shutil.rmtree(temp_extract_path)
+        # Ensure the output directory exists
+        output_path.mkdir(parents=True, exist_ok=True)
 
-        # Load versification.json
-        with open(versification_path, "r", encoding="utf-8") as versification_file:
-            versification_data = json.load(versification_file)
-        max_verses = versification_data.get("maxVerses", {})
-
-
-        # Dynamically locate `ingredients` folder
-        ingredients_path = None
-        for root, dirs, files in os.walk(project_extract_path):
-            if "audio" in dirs and "ingredients" in os.listdir(os.path.join(root, "audio")):
-                ingredients_path = Path(root) / "audio" / "ingredients"
-                break
-            elif "text" in dirs and "ingredients" in os.listdir(os.path.join(root, "text")):
-                ingredients_path = Path(root) / "text" / "ingredients"
-                break
-            elif "ingredients" in dirs:
-                ingredients_path = Path(root) / "ingredients"
-                break
-
-        if not ingredients_path:
-            raise HTTPException(status_code=400, detail="ingredients folder not found in the ZIP file")
-
-        # Process books, chapters, and verses in `ingredients`
-        for book_dir in ingredients_path.iterdir():
-            if book_dir.is_dir():
-                book = book_dir.name
-                book_max_verses = max_verses.get(book, [])
-
-                # Create a book entry in the database
-                book_entry = Book(
-                    project_id=project.project_id,
-                    book=book,
-                    approved=False
-                )
-                db.add(book_entry)
-                db.commit()
-                db.refresh(book_entry)
-
-                for chapter_dir in book_dir.iterdir():
-                    if chapter_dir.is_dir() and chapter_dir.name.isdigit():
-                        chapter_number = int(chapter_dir.name)
-                        chapter_max_verses = int(book_max_verses[chapter_number - 1]) if chapter_number <= len(book_max_verses) else 0
-
-                        # Get all available verses in the chapter
-                        available_verses = set(
-                            int(verse_file.stem.split("_")[1])
-                            for verse_file in chapter_dir.iterdir()
-                            if verse_file.is_file() and "_" in verse_file.stem
-                        )
-                        # Determine missing verses
-                        expected_verses = set(range(1, chapter_max_verses + 1))
-                        missing_verses = list(expected_verses - available_verses)
-                        # Store chapter with missing verses in the database
-                        chapter = Chapter(
-                            # project_id=project.project_id,
-                            book_id=book_entry.book_id,
-                            # book=book,
-                            chapter=chapter_number,
-                            approved=False,
-                            missing_verses=missing_verses if missing_verses else None,
-                        )
-                        db.add(chapter)
-                        db.commit()
-                        db.refresh(chapter)
-
-                        # Add verse records
-                        for verse_file in chapter_dir.iterdir():
-                            if verse_file.is_file() and "_" in verse_file.stem:
-                                try:
-                                    verse_number = int(verse_file.stem.split("_")[1])
-                                    verse = VerseFile(
-                                        chapter_id=chapter.chapter_id,
-                                        verse=verse_number,
-                                        name=verse_file.name,
-                                        path=str(verse_file),
-                                        size=verse_file.stat().st_size,
-                                        format=verse_file.suffix.lstrip("."),
-                                        stt=False,
-                                        text="",
-                                        modified=False,
-                                        tts=False,
-                                        tts_path="",
-                                        stt_msg="",
-                                        tts_msg=""
-                                    )
-                                    db.add(verse)
-                                except ValueError:
-                                    logging.warning(f"Invalid file name format: {verse_file.name}")
-                                    continue
-
-        db.commit()
+        # Process the project files (e.g., books, chapters, verses)
+        crud.process_project_files(input_path, output_path, db, project)
 
         return {
-            "message": "ZIP file extracted, project and chapters created successfully",
-            "project_id": project.project_id,
+            "message": "Project uploaded successfully",
+            "project_id": project_id,
         }
 
     except zipfile.BadZipFile:
@@ -264,178 +307,280 @@ async def upload_zip(
 
 
 
-@router.get("/projects/")
+
+
+
+@router.get("/projects/", tags=["Project"])
 async def get_user_projects(
     project_id: int = Query(None),
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
-    if project_id:
-        # Fetch the specific project and its associated books for the user
-        project = db.query(Project).filter(
-            Project.owner_id == current_user.user_id,
-            Project.project_id == project_id
-        ).first()
+    """
+    Retrieve projects:
+    - Admin and AI roles can see all projects.
+    - Users can only see projects where they are the owner.
+    """
+    if current_user.role in ["Admin", "AI"]:
+        if project_id:
+            # Fetch a specific project
+            project = db.query(Project).filter(Project.project_id == project_id).first()
 
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found for the user.")
-
-        # Fetch associated books
-        books = db.query(Book).filter(Book.project_id == project.project_id).all()
-
-        # Prepare the response for a single project
-        return {
-            "message": "Project retrieved successfully",
-            "project": {
-                "project_id": project.project_id,
-                "name": project.name,
-                "script_lang": project.script_lang,
-                "audio_lang": project.audio_lang,
-                "metadata_info": project.metadata_info,
-                "books": [
-                    {
-                        "book_id": book.book_id,
-                        "book": book.book,
-                        "approved": book.approved,
-                    }
-                    for book in books
-                ],
-            },
-        }
-    else:
-        # Fetch all projects and their associated books for the user
-        projects = db.query(Project).filter(Project.owner_id == current_user.user_id).all()
-
-        if not projects:
-            raise HTTPException(status_code=404, detail="No projects found for the user.")
-
-        # Prepare the response for all projects
-        project_list = []
-        for project in projects:
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found.")
             books = db.query(Book).filter(Book.project_id == project.project_id).all()
-            project_list.append(
-                {
+            # Fetch the owner of the project
+            owner = db.query(User).filter(User.user_id == project.owner_id).first()
+            # Prepare the response for a single project
+            return {
+                "message": "Project retrieved successfully",
+                "project": {
                     "project_id": project.project_id,
                     "name": project.name,
                     "script_lang": project.script_lang,
                     "audio_lang": project.audio_lang,
                     "metadata_info": project.metadata_info,
+                    "owner_id": project.owner_id,
+                    "user_name": owner.username if owner else None,
                     "books": [
                         {
                             "book_id": book.book_id,
                             "book": book.book,
-                            "approved": book.approved,
+                            # "approved": book.approved,
                         }
                         for book in books
                     ],
-                }
-            )
+                },
+            }
+        else:
+            # Fetch all projects
+            projects = db.query(Project).all()
 
-        return {
-            "message": "Projects retrieved successfully",
-            "projects": project_list,
-        }
+            if not projects:
+                raise HTTPException(status_code=404, detail="No projects found.")
+            # Prepare the response for all projects
+            project_list = []
+            for project in projects:
+                books = db.query(Book).filter(Book.project_id == project.project_id).all()
+                owner = db.query(User).filter(User.user_id == project.owner_id).first()
+                project_list.append(
+                    {
+                        "project_id": project.project_id,
+                        "name": project.name,
+                        "script_lang": project.script_lang,
+                        "audio_lang": project.audio_lang,
+                        "metadata_info": project.metadata_info,
+                        "owner_id": project.owner_id,
+                        "user_name": owner.username if owner else None,
+                        "books": [
+                            {
+                                "book_id": book.book_id,
+                                "book": book.book,
+                                # "approved": book.approved,
+                            }
+                            for book in books
+                        ],
+                    }
+                )
+
+            return {
+                "message": "Projects retrieved successfully",
+                "projects": project_list,
+            }
+
+    elif current_user.role == "User":
+        # Users can only view their own projects
+        if project_id:
+            # Fetch the specific project for the user
+            project = db.query(Project).filter(
+                Project.owner_id == current_user.user_id,
+                Project.project_id == project_id
+            ).first()
+
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found for the user.")
+
+            # Fetch associated books
+            books = db.query(Book).filter(Book.project_id == project.project_id).all()
+
+            # Prepare the response for a single project
+            return {
+                "message": "Project retrieved successfully",
+                "project": {
+                    "project_id": project.project_id,
+                    "name": project.name,
+                    "script_lang": project.script_lang,
+                    "audio_lang": project.audio_lang,
+                    "metadata_info": project.metadata_info,
+                    "owner_id": project.owner_id,
+                    "user_name": current_user.username,
+                    "books": [
+                        {
+                            "book_id": book.book_id,
+                            "book": book.book,
+                            # "approved": book.approved,
+                        }
+                        for book in books
+                    ],
+                },
+            }
+        else:
+            # Fetch all projects for the user
+            projects = db.query(Project).filter(Project.owner_id == current_user.user_id).all()
+
+            if not projects:
+                raise HTTPException(status_code=404, detail="No projects found for the user.")
+
+            # Prepare the response for all projects
+            project_list = []
+            for project in projects:
+                books = db.query(Book).filter(Book.project_id == project.project_id).all()
+                project_list.append(
+                    {
+                        "project_id": project.project_id,
+                        "name": project.name,
+                        "script_lang": project.script_lang,
+                        "audio_lang": project.audio_lang,
+                        "metadata_info": project.metadata_info,
+                        "owner_id": project.owner_id,
+                        "user_name": current_user.username,
+                        "books": [
+                            {
+                                "book_id": book.book_id,
+                                "book": book.book,
+                                # "approved": book.approved,
+                            }
+                            for book in books
+                        ],
+                    }
+                )
+            return {
+                "message": "Projects retrieved successfully",
+                "projects": project_list,
+            }
+
+    else:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
 
 
-@router.get("/project/details")
-async def get_user_projects(
+
+@router.get("/project/details", tags=["Project"])
+async def get_project_details(
     project_id: int = Query(None),
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
     """
     Fetch detailed project information for the user, including associated books and chapters.
+    - Admin and AI roles can view all projects.
+    - Regular users can only view their own projects.
     """
-    # Fetch a specific project
-    if project_id:
-        project = db.query(Project).filter(
-            Project.owner_id == current_user.user_id,
-            Project.project_id == project_id
-        ).first()
-
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found for the user.")
+    def get_project_response(project):
+        # Fetch the owner details
+        owner = db.query(User).filter(User.user_id == project.owner_id).first()
 
         # Fetch books associated with the project
         books = db.query(Book).filter(Book.project_id == project.project_id).all()
 
         # Prepare detailed project information (up to book and chapter level)
-        project_data = {
-            "project_id": project.project_id,
-            "name": project.name,
-            "script_lang": project.script_lang,
-            "audio_lang": project.audio_lang,
-            "metadata_info": project.metadata_info,
-            "books": [
-                {
-                    "book_id": book.book_id,
-                    "book": book.book,
-                    "approved": book.approved,
-                    "chapters": [
-                        {
-                            "chapter_id": chapter.chapter_id,
-                            "chapter": chapter.chapter,
-                            "approved": chapter.approved,
-                            "missing_verses": chapter.missing_verses,  # Include missing_verses column
-                        }
-                        for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
-                    ],
-                }
-                for book in books
-            ],
-        }
-
         return {
-            "message": "Project retrieved successfully",
-            "project": project_data,
-        }
-
-    # Fetch all projects for the user
-    projects = db.query(Project).filter(Project.owner_id == current_user.user_id).all()
-
-    if not projects:
-        raise HTTPException(status_code=404, detail="No projects found for the user.")
-
-    # Prepare detailed project information for all projects (up to book and chapter level)
-    project_list = []
-    for project in projects:
-        books = db.query(Book).filter(Book.project_id == project.project_id).all()
-        project_list.append({
             "project_id": project.project_id,
             "name": project.name,
+            "owner_id": project.owner_id,
+            "user_name": owner.username if owner else None,
             "script_lang": project.script_lang,
             "audio_lang": project.audio_lang,
             "metadata_info": project.metadata_info,
+            "archive": project.archive,
             "books": [
                 {
                     "book_id": book.book_id,
                     "book": book.book,
-                    "approved": book.approved,
+                    # "approved": book.approved,
                     "chapters": [
                         {
                             "chapter_id": chapter.chapter_id,
                             "chapter": chapter.chapter,
                             "approved": chapter.approved,
-                            "missing_verses": chapter.missing_verses,  # Include missing_verses column
+                            "missing_verses": chapter.missing_verses,
                         }
                         for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
                     ],
                 }
                 for book in books
             ],
-        })
+        }
 
-    return {
-        "message": "Projects retrieved successfully",
-        "projects": project_list,
-    }
+    if current_user.role in ["Admin", "AI"]:
+        # Admin and AI roles: Can view all projects
+        if project_id:
+            # Fetch the specific project
+            project = db.query(Project).filter(Project.project_id == project_id).first()
+
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found.")
+
+            # Return the detailed project response
+            return {
+                "message": "Project retrieved successfully",
+                "project": get_project_response(project),
+            }
+        else:
+            # Fetch all projects
+            projects = db.query(Project).all()
+
+            if not projects:
+                raise HTTPException(status_code=404, detail="No projects found.")
+
+            # Prepare the response for all projects
+            project_list = [get_project_response(project) for project in projects]
+
+            return {
+                "message": "Projects retrieved successfully",
+                "projects": project_list,
+            }
+
+    elif current_user.role == "User":
+        # Regular users: Can only view their own projects
+        if project_id:
+            # Fetch the specific project for the user
+            project = db.query(Project).filter(
+                Project.owner_id == current_user.user_id,
+                Project.project_id == project_id
+            ).first()
+
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found for the user.")
+
+            # Return the detailed project response
+            return {
+                "message": "Project retrieved successfully",
+                "project": get_project_response(project),
+            }
+        else:
+            # Fetch all projects for the user
+            projects = db.query(Project).filter(Project.owner_id == current_user.user_id).all()
+
+            if not projects:
+                raise HTTPException(status_code=404, detail="No projects found for the user.")
+
+            # Prepare the response for all projects
+            project_list = [get_project_response(project) for project in projects]
+
+            return {
+                "message": "Projects retrieved successfully",
+                "projects": project_list,
+            }
+
+    else:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
 
 
 
 
-@router.put("/update-script-lang/{project_id}")
+@router.put("/projects/{project_id}/script_language/{script_lang}", tags=["Project"])
 async def update_script_lang(
     project_id: int, 
     script_lang: str, 
@@ -463,7 +608,9 @@ async def update_script_lang(
 
 
 
-@router.put("/update-audio-lang/{project_id}")
+
+
+@router.put("/projects/{project_id}/audio_language/{audio_lang}", tags=["Project"])
 async def update_audio_lang(
     project_id: int,
     audio_lang: str,
@@ -491,7 +638,10 @@ async def update_audio_lang(
     }
 
 
-@router.put("/projects/{project_id}/archive/")
+
+
+
+@router.put("/projects/{project_id}/archive/",  tags=["Project"])
 async def update_project_archive(
     project_id: int,
     archive: bool,
@@ -531,7 +681,9 @@ async def update_project_archive(
 
 
 
-@router.post("/transcribe")
+
+
+@router.post("/transcribe", tags=["Project"])
 async def transcribe_book(
     project_id: int,
     book_code: str,
@@ -545,8 +697,7 @@ async def transcribe_book(
             Project.project_id == project_id
         ).first()
     if not project:
-            raise HTTPException(status_code=404, detail="Project not found for the user.")
-    
+            raise HTTPException(status_code=404, detail="Project not found for the user.")   
      # Fetch the book associated with the project and book_code
     book = (
         db.query(Book)
@@ -556,7 +707,6 @@ async def transcribe_book(
         )
         .first()
     )
-
     if not book:
         raise HTTPException(status_code=404, detail="Book not found for the project.")
 
@@ -569,48 +719,50 @@ async def transcribe_book(
         )
         .first()
     )
-
     if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found for the book.")
-
-    
+        raise HTTPException(status_code=404, detail="Chapter not found for the book.")  
+    script_lang = project.script_lang
+    if not script_lang:
+        raise HTTPException(status_code=400, detail="Script language is not defined for the project.")  
     verses = db.query(VerseFile).filter(VerseFile.chapter_id == chapter.chapter_id).all()
     if not verses:
         raise HTTPException(status_code=404, detail="No verses found for the chapter")
     file_paths = [verse.path for verse in verses]  
-    background_tasks.add_task(crud.transcribe_verses, file_paths, db)
-
+    background_tasks.add_task(crud.transcribe_verses, file_paths, script_lang, db)
     return {
         "message": "Transcription started for all verses in the chapter",
         "project_id": project_id,
         "book_code": book_code,
         "chapter_number": chapter_number,
+        "script_lang": script_lang
     }
 
 
-@router.get("/job-status/{jobid}")
+
+
+@router.get("/job-status/{jobid}", tags=["Project"])
 async def get_job_status(jobid: int, db: Session = Depends(dependency.get_db),current_user: User = Depends(auth.get_current_user)):
     """
     API to check the status of a job using the job ID.
     """
     # Query the jobs table for the given jobid
     job = db.query(Job).filter(Job.jobid == jobid).first()
-
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-
     # Fetch status from the local jobs table
     job_status = {
         "jobid": job.jobid,
         "ai_jobid": job.ai_jobid,
         "status": job.status,
     }
-
     return {"message": "Job status retrieved successfully", "data": job_status}
 
 
 
-@router.get("/chapter-status/{project_id}/{book_code}/{chapter_number}")
+
+
+
+@router.get("/project/{project_id}/{book_code}/{chapter_number}", tags=["Project"])
 async def get_chapter_status(
     project_id: int,
     book_code: str,
@@ -628,7 +780,6 @@ async def get_chapter_status(
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found for user")
-
     # Validate book
     book = (
         db.query(Book)
@@ -640,7 +791,6 @@ async def get_chapter_status(
     )
     if not book:
         raise HTTPException(status_code=404, detail="Book not found for the project")
-
     # Validate chapter
     chapter = (
         db.query(Chapter)
@@ -652,13 +802,10 @@ async def get_chapter_status(
     )
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
-
     # Retrieve all verses for the chapter
     verses = db.query(VerseFile).filter(VerseFile.chapter_id == chapter.chapter_id).all()
-
     if not verses:
         return {"message": "No verses found for the chapter", "data": []}
-
     # Prepare the response with verse statuses
     verse_statuses = [
         {
@@ -670,7 +817,6 @@ async def get_chapter_status(
         }
         for verse in verses
     ]
-
     return {
         "message": "Chapter status retrieved successfully",
         "chapter_info": {
@@ -684,7 +830,9 @@ async def get_chapter_status(
 
 
 
-@router.put("/chapter/approve")
+
+
+@router.put("/chapter/approve", tags=["Project"])
 async def update_chapter_approval(
     project_id: int,
     book: str,
@@ -714,7 +862,6 @@ async def update_chapter_approval(
     )
     if not book_record:
         raise HTTPException(status_code=404, detail="Book not found for the project")
-
     chapter_record = (
         db.query(Chapter)
         .filter(
@@ -723,10 +870,8 @@ async def update_chapter_approval(
         )
         .first()
     )
-
     if not chapter_record:
         raise HTTPException(status_code=404, detail="Chapter not found")
-
     # Update the approved column
     chapter_record.approved = approve
     db.commit()
@@ -740,239 +885,152 @@ async def update_chapter_approval(
     }
 
 
-@router.put("/verse/update-text")
+
+
+@router.put("/project/verse/{verse_id}", tags=["Project"])
 async def update_verse_text(
-    project_id:int,
     verse_id: int,
-    modified_text: str,
+    verse_text: str = Query(...),
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
     """
-    Update the text and set text_modified to True in the VerseFile table for a given verse_id.
+    Update the text of a verse and mark it as modified based on verse_id.
     """
-    project = db.query(Project).filter(
-            Project.owner_id == current_user.user_id,
-            Project.project_id == project_id
-        ).first()
-    if not project:
-            raise HTTPException(status_code=404, detail="Project not found for the user.")
     # Fetch the verse record
     verse_record = db.query(VerseFile).filter(VerseFile.verse_id == verse_id).first()
-
     if not verse_record:
-        raise HTTPException(status_code=404, detail="Verse not found")
+        raise HTTPException(status_code=404, detail="Verse not found.")
 
-    # Update the text and set text_modified to True
-    verse_record.text = modified_text
+    # Use back joins to fetch the book and project
+    chapter = db.query(Chapter).filter(Chapter.chapter_id == verse_record.chapter_id).first()
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found for the verse.")
+
+    book = db.query(Book).filter(Book.book_id == chapter.book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found for the chapter.")
+
+    project = db.query(Project).filter(Project.project_id == book.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found for the book.")
+
+    # Validate the user is the owner of the project
+    if project.owner_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this project.")
+
+    # Update the text and mark it as modified
+    verse_record.text = verse_text
     verse_record.modified = True
     db.commit()
 
     return {
-        "message": "Verse text updated successfully",
+        "message": "Verse text updated successfully.",
         "verse_id": verse_id,
         "text": verse_record.text,
-        "modified": verse_record.modified
+        "modified": verse_record.modified,
     }
 
 
 
 
-@router.post("/convert-to-speech")
+@router.put("/project/chapter/{chapter_id}/tts", tags=["Project"])
 async def convert_to_speech(
-    project_id: int,
-    book_code: str,
-    chapter_number: int,
+    chapter_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
     """
-    API to convert text to speech for all verses in a chapter.
+    API to convert text to speech for all verses in a chapter, using chapter_id.
     """
-    # project = db.query(Project).filter(Project.project_id == project_id).first()
-    # if not project:
-    #     raise HTTPException(status_code=404, detail="Project not found")
-    project = db.query(Project).filter(
-            Project.owner_id == current_user.user_id,
-            Project.project_id == project_id
-        ).first()
-    if not project:
-            raise HTTPException(status_code=404, detail="Project not found for the user.")
-    # Validate the book
-    book = (
-        db.query(Book)
-        .filter(
-            Book.project_id == project_id,
-            Book.book == book_code
-        )
-        .first()
-    )
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found for the project.")
-
-    # Validate the chapter
-    chapter = (
-        db.query(Chapter)
-        .filter(
-            Chapter.book_id == book.book_id,
-            Chapter.chapter == chapter_number,
-        )
-        .first()
-    )
+    # Fetch the chapter and validate it
+    chapter = db.query(Chapter).filter(Chapter.chapter_id == chapter_id).first()
     if not chapter:
-        raise HTTPException(status_code=404, detail="Chapter not found for the book.")
+        raise HTTPException(status_code=404, detail="Chapter not found.")
 
+    # Use back joins to fetch the book and project
+    book = db.query(Book).filter(Book.book_id == chapter.book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found.")
+
+    project = db.query(Project).filter(Project.project_id == book.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    # Validate the user is the owner of the project
+    if project.owner_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this project.")
+
+    # Fetch modified verses for the chapter
     verses = db.query(VerseFile).filter(
-        VerseFile.chapter_id == chapter.chapter_id, VerseFile.modified == True
+        VerseFile.chapter_id == chapter_id, VerseFile.modified == True
     ).all()
-
     if not verses:
         return {"message": "No verses with modified text found in the chapter"}
+
+    # Start the text-to-speech generation task
     background_tasks.add_task(
-        crud.generate_speech_for_verses, project_id, book_code, verses, project.audio_lang, db
+        crud.generate_speech_for_verses, project.project_id, book.book, verses, project.audio_lang, db
     )
 
     return {
         "message": "Text-to-speech conversion started for the chapter",
-        "project_id": project_id,
-        "book_code": book_code,
-        "chapter_number": chapter_number,
+        "project_id": project.project_id,
+        "book_code": book.book,
+        "chapter_number": chapter.chapter,
     }
 
 
-def convert_to_wav(file_path: str) -> str:
-    """
-    Convert MP3 files to WAV, normalize WAV files, and resample WAV to 48000 Hz if necessary.
-    Args:
-        file_path (str): Path to the original audio file.
-    Returns:
-        str: Path to the processed WAV file.
-    """
-    logging.debug(f"Processing file: {file_path}")
 
-    # Ensure the file exists
-    if not os.path.exists(file_path) or not os.path.isfile(file_path):
-        raise HTTPException(status_code=404, detail=f"Audio file not found: {file_path}")
-
-    # Extract file extension
-    file_extension = os.path.splitext(file_path)[-1].lower()
-
-    # If the file is WAV, check sample rate and resample to 48000 Hz if needed
-    if file_extension == ".wav":
-        temp_resampled_path = f"{file_path}.resampled.wav"
-        try:
-            # Check the current sample rate using ffprobe
-            probe = subprocess.run(
-                ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate", "-of", "default=nw=1:nk=1", file_path],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            current_sample_rate = int(probe.stdout.decode().strip())
-            logging.debug(f"Current sample rate: {current_sample_rate} Hz")
-
-            # Resample only if not 48000 Hz
-            if current_sample_rate != 48000:
-                subprocess.run(
-                    [
-                        "ffmpeg", "-i", file_path,
-                        "-ar", "48000", "-ac", "1", "-sample_fmt", "s16",
-                        temp_resampled_path, "-y"
-                    ],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                logging.info(f"Resampled WAV file to 48000 Hz: {temp_resampled_path}")
-                os.replace(temp_resampled_path, file_path)  # Replace the original file with the resampled one
-            else:
-                logging.info("File already has a sample rate of 48000 Hz. No resampling needed.")
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Failed to resample WAV file: {e.stderr.decode()}")
-            raise HTTPException(status_code=500, detail="Failed to resample WAV audio file")
-        return file_path
-
-    # # If the file is MP3, convert it to WAV
-    elif file_extension == ".mp3":
-        converted_wav_path = f"{os.path.splitext(file_path)[0]}.wav"
-        try:
-            # Convert MP3 to WAV using ffmpeg
-            subprocess.run(
-                ["ffmpeg", "-i", file_path, "-ar", "48000", "-ac", "1", "-sample_fmt", "s16", converted_wav_path, "-y"],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            logging.info(f"Converted MP3 to WAV: {converted_wav_path}")
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Failed to convert MP3 to WAV: {e.stderr.decode()}")
-            raise HTTPException(status_code=500, detail="Failed to convert MP3 to WAV")
-        return converted_wav_path
-
-    # If unsupported format
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported audio format: {file_extension}")
-
-
-@router.get("/stream-audio/")
+@router.get("/project/verse/{verse_id}/audio", tags=["Project"])
 async def stream_audio(
-    project_id: int,
-    book: str,
-    chapter: int,
-    verse: int,
+    verse_id: int,
     db: Session = Depends(dependency.get_db),
 ):
     """
-    Stream an audio file, ensuring proper sample rate and format.
+    Stream an audio file, ensuring proper sample rate and format for WAV files.
+    MP3 files are streamed directly without conversion.
     """
-    book_entry = (
-        db.query(Book)
-        .filter(Book.project_id == project_id, Book.book == book)
-        .first()
-    )
-    if not book_entry:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    # Validate chapter
-    chapter_entry = (
-        db.query(Chapter)
-        .filter(Chapter.book_id == book_entry.book_id, Chapter.chapter == chapter)
-        .first()
-    )
-    if not chapter_entry:
-        logging.error(f"Chapter not found for Book: {book}, Chapter: {chapter}")
-        raise HTTPException(status_code=404, detail="Chapter not found")
-
-    # Validate and retrieve verse entry
-    verse_entry = db.query(VerseFile).filter(
-        VerseFile.chapter_id == chapter_entry.chapter_id,
-        VerseFile.verse == verse
-    ).first()
+    # Validate and retrieve the verse entry
+    verse_entry = db.query(VerseFile).filter(VerseFile.verse_id == verse_id).first()
     if not verse_entry:
         raise HTTPException(status_code=404, detail="Verse not found")
-
     # Determine the file path
     file_path = verse_entry.tts_path if verse_entry.modified else verse_entry.path
-
-    # Ensure the file is a valid WAV file with the correct sample rate
-    try:
-        file_path = convert_to_wav(file_path)
-    except HTTPException as e:
-        logging.error(f"Error converting audio file: {e.detail}")
-        raise e
-
+    # Ensure the file exists
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    # Determine the file extension
+    file_extension = os.path.splitext(file_path)[-1].lower()
+    # Process WAV files: Validate and resample if needed
+    if file_extension == ".wav":
+        try:
+            file_path = crud.validate_and_resample_wav(file_path)
+            media_type = "audio/wav"
+        except HTTPException as e:
+            logging.error(f"Error processing WAV file: {e.detail}")
+            raise e
+    elif file_extension == ".mp3":
+        # Stream MP3 files directly
+        media_type = "audio/mpeg"
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported audio format: {file_extension}")
     # Stream the audio file
     def iter_file():
         with open(file_path, "rb") as audio_file:
             while chunk := audio_file.read(1024 * 1024):  # Read in chunks of 1MB
                 yield chunk
 
-    return StreamingResponse(iter_file(), media_type="audio/wav")
+    return StreamingResponse(iter_file(), media_type=media_type)
 
 
 
-@router.get("/generate-usfm/")
+
+
+
+
+@router.get("/generate-usfm/", tags=["Project"])
 async def generate_usfm(
     project_id: int,
     book: str,
@@ -1049,8 +1107,13 @@ async def generate_usfm(
         usfm_text += f"\\v {verse.verse} {verse.text.strip()}\n"
 
     # Write the USFM content to a temporary file
-    usfm_file_path = f"usfm_files/{book}.usfm"
-    os.makedirs(os.path.dirname(usfm_file_path), exist_ok=True)
+    # usfm_file_path = f"usfm_files/{book}.usfm"
+    # os.makedirs(os.path.dirname(usfm_file_path), exist_ok=True)
+    # Define the path to save the USFM file
+    project_output_path = BASE_DIR / str(project_id) / "output" / project.name / "text-1" / "ingredients"
+    os.makedirs(project_output_path, exist_ok=True)
+
+    usfm_file_path = project_output_path / f"{book}.usfm"
     with open(usfm_file_path, "w", encoding="utf-8") as usfm_file:
         usfm_file.write(usfm_text)
 
@@ -1065,136 +1128,16 @@ async def generate_usfm(
 
 
 
-
-# @router.get("/download-processed-project-zip/")
-# async def download_processed_project_zip(
-#     project_id: int,
-#     db: Session = Depends(dependency.get_db),
-#     current_user: User = Depends(auth.get_current_user),
-# ):
-#     # """
-#     # Generate a zip file with the following steps:
-#     # 1) Copy the project folder from the Input directory matching the project_id name.
-#     # 2) Replace audio files in the ingredients/audio folder with edited audios if `text_modified` is True.
-#     # 3) Replace USFM files in the input folder (ingredients and text folders) based on matching names from the usfm_files folder.
-#     # 4) Name the zip file based on the project folder name.
-
-#     # Args:
-#     #     project_id (int): ID of the project.
-
-#     # Returns:
-#     #     FileResponse: The zip file containing the updated project folder.
-#     # """
-#     # Fetch project details
-#     project = db.query(Project).filter(
-#         Project.owner_id == current_user.user_id,
-#         Project.project_id == project_id
-#     ).first()
-#     if not project:
-#         raise HTTPException(status_code=404, detail="Project not found for the user.")
-
-#     project_name = project.name
-#     input_folder = os.path.join("Input", project_name)  # Path to the specific project folder
-#     output_folder = "Output"  # Path to output folder
-#     usfm_folder = "usfm_files"  # Path to the USFM files folder
-#     temp_folder = f"Temp_{project_name}"  # Temporary folder for zip preparation
-
-#     # Validate the existence of the project folder in Input
-#     if not os.path.exists(input_folder):
-#         raise HTTPException(status_code=404, detail=f"Project folder '{project_name}' not found in Input.")
-
-#     # Prepare the temporary folder
-#     if os.path.exists(temp_folder):
-#         shutil.rmtree(temp_folder)  # Clean up if temp folder exists
-#     shutil.copytree(input_folder, temp_folder)
-
-#     # Replace audio files with edited audios in the temp folder
-#     for root, dirs, files in os.walk(temp_folder):
-#         if "audio" in root and "ingredients" in root:  # Focus on the audio/ingredients folder
-#             for file in files:
-#                 if file.endswith(".wav"):  # Only process .wav files
-#                     # Extract book, chapter, and verse from the file path
-#                     relative_path = os.path.relpath(root, temp_folder)
-#                     parts = relative_path.split(os.sep)
-#                     if len(parts) >= 3:  # Ensure book/chapter structure exists
-#                         book = parts[-2]  # Get book folder name
-#                         chapter = parts[-1]  # Get chapter folder name
-#                         verse_file = db.query(VerseFile).join(Chapter).filter(
-#                             Chapter.project_id == project_id,
-#                             Chapter.book == book,
-#                             Chapter.chapter == int(chapter),
-#                             VerseFile.name == file,
-#                             VerseFile.modified.is_(True),
-#                         ).first()
-
-#                         if verse_file:
-#                             # Path to the edited audio in the Output folder
-#                             edited_audio_path = os.path.join(output_folder, book, chapter, verse_file.name)
-
-#                             if os.path.exists(edited_audio_path):  # Replace with edited audio if it exists
-#                                 destination_path = os.path.join(root, file)
-#                                 shutil.copy2(edited_audio_path, destination_path)
-#                                 logging.info(f"Replaced {file} with edited audio: {edited_audio_path}")
-
-#     # Replace USFM files in the `text/ingredients` folder
-#     text_ingredients_folder = os.path.join(temp_folder, "text-1", "ingredients")
-#     print("PATH",text_ingredients_folder)
-
-#     # Ensure the folder exists
-#     os.makedirs(temp_folder, exist_ok=True)
-#     print("Contents of text/ingredients folder before processing:")
-#     for root, dirs, files in os.walk(temp_folder):
-#         for text_file in files:
-#             print(f"File found: {text_file}")
-
-#     # Iterate over USFM files in the usfm_files folder
-#     for usfm_file in os.listdir(usfm_folder):
-#         if usfm_file.endswith(".usfm"):
-#             usfm_file_path = os.path.join(usfm_folder, usfm_file)
-#             print(f"Processing USFM file: {usfm_file}")
-
-#             # Check for matching file names in the `text/ingredients` folder
-#             for root, dirs, files in os.walk(temp_folder):
-#                 for text_file in files:
-#                     print(f"Comparing with file: {text_file}")
-#                     if text_file == usfm_file:  # Match based on file name
-#                         text_usfm_path = os.path.join(root, text_file)
-#                         print(f"###### Matched file name: {text_file} -> {text_usfm_path}")
-                        
-#                         # Replace the file with the one from usfm_files
-#                         shutil.copy2(usfm_file_path, text_usfm_path)
-#                         print(f"Replaced USFM file: {usfm_file} in text/ingredients folder")
-
-
-#     # Prepare the zip file
-#     zip_file_name = f"{project_name}.zip"
-#     zip_file_path = os.path.join(".", zip_file_name)
-#     with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-#         for root, dirs, files in os.walk(temp_folder):
-#             for file in files:
-#                 if not file.endswith(".converted.wav"): 
-#                     file_path = os.path.join(root, file)
-#                     arcname = os.path.relpath(file_path, temp_folder)  
-#                     zip_file.write(file_path, arcname)
-
-#     # Clean up the temporary folder
-#     shutil.rmtree(temp_folder)
-
-#     # Return the zip file as a downloadable response
-#     return FileResponse(
-#         zip_file_path,
-#         media_type="application/zip",
-#         filename=zip_file_name,
-#     )
-
-
-
-@router.get("/download-processed-project-zip/")
+@router.get("/download-processed-project-zip/", tags=["Project"])
 async def download_processed_project_zip(
     project_id: int,
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
+    """
+    Create a zip file for the processed project, replacing audio files in the ingredients folder
+    with the corresponding files from the Output folder, and include USFM files.
+    """
     # Fetch the project
     project = db.query(Project).filter(
         Project.owner_id == current_user.user_id,
@@ -1217,7 +1160,6 @@ async def download_processed_project_zip(
     if metadata_file.exists():
         shutil.copy(metadata_file, target_metadata_file)
     else:
-        # Create an empty metadata.json file if it doesn't exist in the source
         with open(target_metadata_file, "w", encoding="utf-8") as f:
             json.dump({"info": "No metadata available"}, f)
 
@@ -1233,17 +1175,14 @@ async def download_processed_project_zip(
         if "ingredients" in dirs:
             ingredients_path = Path(root) / "ingredients"
             break
-
     # Copy ingredients to audio folder
     if ingredients_path and ingredients_path.is_dir():
         shutil.copytree(ingredients_path, audio_dir / "ingredients", dirs_exist_ok=True)
     else:
         (audio_dir / "ingredients").mkdir(parents=True, exist_ok=True)
-
     # Ensure text/ingredients folder exists
     text_ingredients_dir = text_dir / "ingredients"
     text_ingredients_dir.mkdir(parents=True, exist_ok=True)
-
     # Locate books and copy USFM files for each book
     books = db.query(Book).filter(Book.project_id == project.project_id).all()
     for book in books:
@@ -1251,14 +1190,37 @@ async def download_processed_project_zip(
         usfm_file_path = f"usfm_files/{book.book}.usfm"
         if os.path.exists(usfm_file_path):
             shutil.copy(usfm_file_path, text_ingredients_dir / f"{book.book}.usfm")
-
+    # Add logic to replace input audio files with output audio files
+    output_dir = Path("Output")
+    for book in books:
+        book_output_dir = output_dir / book.book  
+        book_audio_dir = audio_dir / "ingredients" / book.book  
+        if book_output_dir.exists():
+            # Iterate through chapters in the Output folder
+            for chapter_dir in book_output_dir.iterdir():
+                if chapter_dir.is_dir():
+                    chapter_audio_dir = book_audio_dir / chapter_dir.name
+                    chapter_audio_dir.mkdir(parents=True, exist_ok=True)
+                    # Iterate through verse files in the Output chapter
+                    for output_verse_file in chapter_dir.iterdir():
+                        if output_verse_file.is_file():
+                            output_verse_name = output_verse_file.stem 
+                            # Search for the matching verse file in the input chapter folder
+                            input_verse_files = chapter_audio_dir.glob(f"{output_verse_name}.*")
+                            for input_verse_file in input_verse_files:
+                                # Replace the input file with the output file
+                                shutil.copy(output_verse_file, input_verse_file)
+                                break  # Replace only the first match
+                            else:
+                                # If no match is found, copy the output file into the chapter folder
+                                shutil.copy(output_verse_file, chapter_audio_dir / output_verse_file.name)
     # Create a ZIP file of the processed project directory
     zip_file_path = f"{target_dir}.zip"
     with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
         for root, dirs, files in os.walk(target_dir):
             for file in files:
                 file_path = Path(root) / file
-                arcname = file_path.relative_to(target_dir.parent)  # Relative path for the zip file
+                arcname = file_path.relative_to(target_dir.parent)
                 zipf.write(file_path, arcname)
 
     # Serve ZIP file as a downloadable response
@@ -1267,5 +1229,4 @@ async def download_processed_project_zip(
         media_type="application/zip",
         filename=f"{project.name}.zip",
     )
-
 

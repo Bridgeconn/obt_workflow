@@ -8,6 +8,8 @@ from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, MetaData, text
 from sqlalchemy.schema import CreateSchema
+from utils import get_password_hash  # Import from utils instead of auth
+
 
 postgres_host = os.environ.get("VACHAN_POSTGRES_HOST", "localhost")
 postgres_user = os.environ.get("VACHAN_POSTGRES_USER", "postgres")
@@ -48,7 +50,8 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=True)  
-    role = Column(String, nullable=True) 
+    # role = Column(String, nullable=True) 
+    role = Column(String, nullable=False, default="User")
     last_login = Column(DateTime, nullable=True)  
     token = Column(String, nullable=True)
     active = Column(Boolean, default=True, nullable=False)  
@@ -73,7 +76,7 @@ class Book(Base):
     book_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  
     project_id = Column(Integer, ForeignKey("project.project_id"), nullable=False)  
     book = Column(String, nullable=False)  
-    approved = Column(Boolean, default=False) 
+    # approved = Column(Boolean, default=False) 
 
 
 class Chapter(Base):
@@ -115,3 +118,26 @@ class Job(Base):
 # Create Tables in Database
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+ # Create hardcoded Admin user
+    session = SessionLocal()
+    try:
+        admin_user = session.query(User).filter(User.username == "OBTAdmin").first()
+        if not admin_user:
+            admin_user = User(
+                username="OBTAdmin",
+                hashed_password=get_password_hash("password"),  # Default password
+                role="Admin",
+                email="",  # You can customize this
+                active=True,
+            )
+            session.add(admin_user)
+            session.commit()
+            print("Admin user created with default credentials")
+        else:
+            print("Admin user already exists. Skipping creation.")
+    except Exception as e:
+        session.rollback()
+        print(f"Error during admin user creation: {e}")
+    finally:
+        session.close()
