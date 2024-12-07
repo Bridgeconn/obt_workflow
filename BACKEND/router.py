@@ -14,6 +14,7 @@ import dependency
 import crud
 from fastapi.responses import StreamingResponse
 import subprocess
+import tempfile
 import shutil
 import datetime
 from pydantic import EmailStr
@@ -33,8 +34,8 @@ if not BASE_DIRECTORY:
 BASE_DIR = Path(BASE_DIRECTORY)
 router = APIRouter()
 
-UPLOAD_DIR = "Input"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# UPLOAD_DIR = "Input"
+# os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 
@@ -331,6 +332,7 @@ async def get_user_projects(
             books = db.query(Book).filter(Book.project_id == project.project_id).all()
             # Fetch the owner of the project
             owner = db.query(User).filter(User.user_id == project.owner_id).first()
+            
             # Prepare the response for a single project
             return {
                 "message": "Project retrieved successfully",
@@ -342,11 +344,15 @@ async def get_user_projects(
                     "metadata_info": project.metadata_info,
                     "owner_id": project.owner_id,
                     "user_name": owner.username if owner else None,
+                    "archive": project.archive,
                     "books": [
                         {
                             "book_id": book.book_id,
                             "book": book.book,
                             # "approved": book.approved,
+                            # "approved" : all(
+                            #         chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
+                            #     ),
                         }
                         for book in books
                     ],
@@ -372,11 +378,15 @@ async def get_user_projects(
                         "metadata_info": project.metadata_info,
                         "owner_id": project.owner_id,
                         "user_name": owner.username if owner else None,
+                        "archive": project.archive,
                         "books": [
                             {
                                 "book_id": book.book_id,
                                 "book": book.book,
                                 # "approved": book.approved,
+                                 # "approved" : all(
+                            #         chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
+                            #     ),
                             }
                             for book in books
                         ],
@@ -414,11 +424,15 @@ async def get_user_projects(
                     "metadata_info": project.metadata_info,
                     "owner_id": project.owner_id,
                     "user_name": current_user.username,
+                    "archive": project.archive,
                     "books": [
                         {
                             "book_id": book.book_id,
                             "book": book.book,
                             # "approved": book.approved,
+                             # "approved" : all(
+                            #         chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
+                            #     ),
                         }
                         for book in books
                     ],
@@ -444,11 +458,15 @@ async def get_user_projects(
                         "metadata_info": project.metadata_info,
                         "owner_id": project.owner_id,
                         "user_name": current_user.username,
+                        "archive": project.archive,
                         "books": [
                             {
                                 "book_id": book.book_id,
                                 "book": book.book,
                                 # "approved": book.approved,
+                                 # "approved" : all(
+                            #         chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
+                            #     ),
                             }
                             for book in books
                         ],
@@ -497,7 +515,9 @@ async def get_project_details(
                 {
                     "book_id": book.book_id,
                     "book": book.book,
-                    # "approved": book.approved,
+                    "approved" : all(
+                                    chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
+                                ),
                     "chapters": [
                         {
                             "chapter_id": chapter.chapter_id,
@@ -814,6 +834,14 @@ async def get_chapter_status(
             "stt": verse.stt,
             "stt_msg": verse.stt_msg,
             "text": verse.text,
+            "tts": verse.tts,
+            "tts_path": verse.tts_path,
+            "modified": verse.modified,
+            "size": verse.size,
+            "format": verse.format,
+            "path": verse.path,
+            "name": verse.name,
+            "tts_msg": verse.tts_msg
         }
         for verse in verses
     ]
@@ -822,6 +850,7 @@ async def get_chapter_status(
         "chapter_info": {
             "project_id": project_id,
             "book_code": book_code,
+            "chapter_id": chapter.chapter_id,
             "chapter_number": chapter_number,
         },
         "data": verse_statuses,
@@ -983,7 +1012,7 @@ async def convert_to_speech(
 
 
 
-@router.get("/project/verse/{verse_id}/audio", tags=["Project"])
+@router.get("/project/verse/audio", tags=["Project"])
 async def stream_audio(
     verse_id: int,
     db: Session = Depends(dependency.get_db),
@@ -998,6 +1027,7 @@ async def stream_audio(
         raise HTTPException(status_code=404, detail="Verse not found")
     # Determine the file path
     file_path = verse_entry.tts_path if verse_entry.modified else verse_entry.path
+    
     # Ensure the file exists
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Audio file not found")
@@ -1029,7 +1059,6 @@ async def stream_audio(
 
 
 
-
 @router.get("/generate-usfm/", tags=["Project"])
 async def generate_usfm(
     project_id: int,
@@ -1046,7 +1075,8 @@ async def generate_usfm(
     # Returns:
     #     FileResponse: USFM file as a response.
     # """
-    # Validate project
+    
+    #Validate project
     project = db.query(Project).filter(
         Project.owner_id == current_user.user_id,
         Project.project_id == project_id
@@ -1105,11 +1135,15 @@ async def generate_usfm(
             usfm_text += f"\\c {chapter.chapter}\n\\p\n"
             current_chapter = chapter.chapter
         usfm_text += f"\\v {verse.verse} {verse.text.strip()}\n"
-
+    
+  
     # Write the USFM content to a temporary file
     # usfm_file_path = f"usfm_files/{book}.usfm"
     # os.makedirs(os.path.dirname(usfm_file_path), exist_ok=True)
     # Define the path to save the USFM file
+    
+    # usfm_text, project_name = crud.generate_usfm_content(project_id, book, current_user, db)
+    
     project_output_path = BASE_DIR / str(project_id) / "output" / project.name / "text-1" / "ingredients"
     os.makedirs(project_output_path, exist_ok=True)
 
@@ -1123,9 +1157,7 @@ async def generate_usfm(
         media_type="text/plain",
         filename=f"{book}.usfm",
     )
-
-
-
+        
 
 
 @router.get("/download-processed-project-zip/", tags=["Project"])
@@ -1134,99 +1166,125 @@ async def download_processed_project_zip(
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
-    """
-    Create a zip file for the processed project, replacing audio files in the ingredients folder
-    with the corresponding files from the Output folder, and include USFM files.
-    """
-    # Fetch the project
     project = db.query(Project).filter(
         Project.owner_id == current_user.user_id,
         Project.project_id == project_id
     ).first()
 
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found for the user.")
+        raise HTTPException(status_code=404, detail="Project not found.")
 
-    # Source and target directories
-    source_dir = Path(UPLOAD_DIR) / project.name
-    if not source_dir.exists():
-        raise HTTPException(status_code=404, detail="Project directory not found.")
-    target_dir = Path("ProcessedProjects") / project.name
-    target_dir.mkdir(parents=True, exist_ok=True)
+    base_dir = Path(BASE_DIRECTORY) / str(project.project_id)
+    input_dir = base_dir / "input" / project.name
+    output_dir = base_dir / "output" / project.name
+    
+    final_dir = base_dir / project.name
+    zip_path = f"{final_dir}.zip"
 
-    # Copy metadata.json if it exists, otherwise create an empty one
-    metadata_file = source_dir / "metadata.json"
-    target_metadata_file = target_dir / "metadata.json"
-    if metadata_file.exists():
-        shutil.copy(metadata_file, target_metadata_file)
-    else:
-        with open(target_metadata_file, "w", encoding="utf-8") as f:
-            json.dump({"info": "No metadata available"}, f)
+    # Cleanup logic: Remove existing folders or zip files with the same name
+    if final_dir.exists():
+        shutil.rmtree(final_dir, ignore_errors=True)
+        logging.info(f"Removed existing directory: {final_dir}")
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+        logging.info(f"Removed existing zip file: {zip_path}")
 
-    # Ensure audio and text folders exist in the target directory
-    audio_dir = target_dir / "audio"
-    text_dir = target_dir / "text"
-    audio_dir.mkdir(parents=True, exist_ok=True)
-    text_dir.mkdir(parents=True, exist_ok=True)
+    if not input_dir.exists() or not output_dir.exists():
+        raise HTTPException(status_code=404, detail="Input or output directory not found.")
 
-    # Search for ingredients folder in the source directory
-    ingredients_path = None
-    for root, dirs, files in os.walk(source_dir):
-        if "ingredients" in dirs:
-            ingredients_path = Path(root) / "ingredients"
-            break
-    # Copy ingredients to audio folder
-    if ingredients_path and ingredients_path.is_dir():
-        shutil.copytree(ingredients_path, audio_dir / "ingredients", dirs_exist_ok=True)
-    else:
-        (audio_dir / "ingredients").mkdir(parents=True, exist_ok=True)
-    # Ensure text/ingredients folder exists
-    text_ingredients_dir = text_dir / "ingredients"
-    text_ingredients_dir.mkdir(parents=True, exist_ok=True)
-    # Locate books and copy USFM files for each book
-    books = db.query(Book).filter(Book.project_id == project.project_id).all()
-    for book in books:
-        # Locate USFM file for the book
-        usfm_file_path = f"usfm_files/{book.book}.usfm"
-        if os.path.exists(usfm_file_path):
-            shutil.copy(usfm_file_path, text_ingredients_dir / f"{book.book}.usfm")
-    # Add logic to replace input audio files with output audio files
-    output_dir = Path("Output")
-    for book in books:
-        book_output_dir = output_dir / book.book  
-        book_audio_dir = audio_dir / "ingredients" / book.book  
-        if book_output_dir.exists():
-            # Iterate through chapters in the Output folder
-            for chapter_dir in book_output_dir.iterdir():
-                if chapter_dir.is_dir():
-                    chapter_audio_dir = book_audio_dir / chapter_dir.name
-                    chapter_audio_dir.mkdir(parents=True, exist_ok=True)
-                    # Iterate through verse files in the Output chapter
-                    for output_verse_file in chapter_dir.iterdir():
-                        if output_verse_file.is_file():
-                            output_verse_name = output_verse_file.stem 
-                            # Search for the matching verse file in the input chapter folder
-                            input_verse_files = chapter_audio_dir.glob(f"{output_verse_name}.*")
-                            for input_verse_file in input_verse_files:
-                                # Replace the input file with the output file
-                                shutil.copy(output_verse_file, input_verse_file)
-                                break  # Replace only the first match
-                            else:
-                                # If no match is found, copy the output file into the chapter folder
-                                shutil.copy(output_verse_file, chapter_audio_dir / output_verse_file.name)
-    # Create a ZIP file of the processed project directory
-    zip_file_path = f"{target_dir}.zip"
-    with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(target_dir):
-            for file in files:
-                file_path = Path(root) / file
-                arcname = file_path.relative_to(target_dir.parent)
-                zipf.write(file_path, arcname)
+    # Create a temporary directory
+    with tempfile.TemporaryDirectory(dir=base_dir) as temp_dir_path:
+        temp_dir = Path(temp_dir_path)
+        temp_audio_dir = temp_dir / "audio" / "ingredients"
+        temp_text_dir = temp_dir / "text-1" / "ingredients"
 
-    # Serve ZIP file as a downloadable response
-    return FileResponse(
-        zip_file_path,
-        media_type="application/zip",
-        filename=f"{project.name}.zip",
-    )
+        temp_audio_dir.mkdir(parents=True, exist_ok=True)
+        temp_text_dir.mkdir(parents=True, exist_ok=True)
 
+        # Step 2: Copy the output folder into the temporary directory
+        shutil.copytree(output_dir, temp_dir / "output", dirs_exist_ok=True)
+
+        # Step 3: Process audio files
+        input_audio_dir = input_dir / "audio" / "ingredients"
+        if not input_audio_dir.exists():
+            input_audio_dir = input_dir / "ingredients"
+
+        for book_dir in input_audio_dir.iterdir():
+            if book_dir.is_dir():
+                temp_book_dir = temp_audio_dir / book_dir.name
+                temp_book_dir.mkdir(parents=True, exist_ok=True)
+                for chapter_dir in book_dir.iterdir():
+                    if chapter_dir.is_dir():
+                        temp_chapter_dir = temp_book_dir / chapter_dir.name
+                        temp_chapter_dir.mkdir(parents=True, exist_ok=True)
+
+                        output_chapter_dir = output_dir / "audio" / "ingredients" / book_dir.name / chapter_dir.name
+                        output_files = {f.stem: f for f in output_chapter_dir.iterdir() if f.is_file()} if output_chapter_dir.exists() else {}
+
+                        for input_file in chapter_dir.iterdir():
+                            if input_file.is_file():
+                                # Use the output file if it exists, otherwise retain the input file
+                                output_file = output_files.get(input_file.stem)
+                                if output_file:
+                                    shutil.copy(output_file, temp_chapter_dir / output_file.name)
+                                else:
+                                    shutil.copy(input_file, temp_chapter_dir / input_file.name)
+
+        for additional_file in input_audio_dir.iterdir():
+            if additional_file.is_file() and additional_file.suffix in {".json", ".md"}:
+                # Copy the file to both temp_audio_dir and temp_text_dir
+                shutil.copy(additional_file, temp_audio_dir / additional_file.name)
+                shutil.copy(additional_file, temp_text_dir / additional_file.name)
+
+        # Step 4: Handle text files
+        input_text_dir = input_dir / "text-1" / "ingredients"
+        output_text_dir = output_dir / "text-1" / "ingredients"
+
+        # Step 4.1: By default, copy all USFM files from output directory to the temporary directory
+        if output_text_dir.exists():
+            for output_file in output_text_dir.iterdir():
+                if output_file.suffix == ".usfm" and output_file.is_file():
+                    shutil.copy(output_file, temp_text_dir / output_file.name)
+
+        if input_text_dir.exists():
+            temp_text_files = {f.stem: f for f in temp_text_dir.iterdir() if f.is_file()}
+
+            for input_file in input_text_dir.iterdir():
+                if input_file.suffix == ".usfm" and input_file.is_file():
+                    # Overwrite or copy files to temporary directory as per conditions
+                    if input_file.stem in temp_text_files:
+                        # Skip copying, retain the temporary directory's file
+                        continue
+                    else:
+                        # Copy the file from input to the temp directory
+                        shutil.copy(input_file, temp_text_dir / input_file.name)
+
+
+        # Step 5: Copy metadata
+        metadata_file = input_dir / "metadata.json"
+        if metadata_file.exists():
+            metadata_text_dir = temp_dir / "text-1"
+            metadata_text_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy(metadata_file, temp_dir / "metadata.json")
+            shutil.copy(metadata_file, metadata_text_dir / "metadata.json")
+
+        # Step 6: Remove unnecessary directories
+        shutil.rmtree(temp_dir / "output", ignore_errors=True)
+
+        # Step 7: Rename and zip the directory
+        final_dir = base_dir / project.name
+        shutil.move(temp_dir, final_dir)
+
+        zip_path = f"{final_dir}.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(final_dir):
+                for file in files:
+                    file_path = Path(root) / file
+                    arcname = file_path.relative_to(final_dir)
+                    zipf.write(file_path, arcname)
+
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename=f"{project.name}.zip",
+        )
