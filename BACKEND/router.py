@@ -1059,31 +1059,127 @@ async def stream_audio(
 
 
 
+# @router.get("/generate-usfm/", tags=["Project"])
+# async def generate_usfm(
+#     project_id: int,
+#     book: str,
+#     db: Session = Depends(dependency.get_db),
+#     current_user: User = Depends(auth.get_current_user)
+# ):
+#     # """
+#     # Generate a USFM file based on the project ID and book.
+#     # Args:
+#     #     project_id (int): ID of the project.
+#     #     book (str): Book code.
+
+#     # Returns:
+#     #     FileResponse: USFM file as a response.
+#     # """
+    
+#     #Validate project
+#     project = db.query(Project).filter(
+#         Project.owner_id == current_user.user_id,
+#         Project.project_id == project_id
+#     ).first()
+#     if not project:
+#         raise HTTPException(status_code=404, detail="Project not found for the user.")
+    
+#     # Validate book
+#     book_entry = (
+#         db.query(Book)
+#         .filter(Book.project_id == project_id, Book.book == book)
+#         .first()
+#     )
+#     if not book_entry:
+#         raise HTTPException(status_code=404, detail=f"Book '{book}' not found in the project.")
+
+
+#     # Load book metadata from the JSON file
+#     METADATA_FILE = "metadatainfo.json"
+#     try:
+#         with open(METADATA_FILE, "r", encoding="utf-8") as file:
+#             book_metadata = json.load(file)
+#     except FileNotFoundError:
+#         raise HTTPException(status_code=500, detail="Metadata file not found.")
+#     except json.JSONDecodeError:
+#         raise HTTPException(status_code=500, detail="Invalid metadata JSON format.")
+
+#     # Validate if the book exists in metadata
+#     if book not in book_metadata:
+#         raise HTTPException(status_code=404, detail=f"Metadata not found for book {book}.")
+
+#     # Fetch metadata for the book
+#     short_title = book_metadata[book]["short"]["en"]
+#     abbr = book_metadata[book]["abbr"]["en"]
+#     long_title = book_metadata[book]["long"]["en"]
+
+#     # Fetch chapters and verses for the given book
+#     chapters = db.query(Chapter).filter(Chapter.book_id == book_entry.book_id).all()
+#     if not chapters:
+#         raise HTTPException(status_code=404, detail=f"No chapters found for book {book} in the project.")
+
+#     # Retrieve all verses and sort them by chapter and verse number
+#     verses = db.query(VerseFile, Chapter).join(Chapter, VerseFile.chapter_id == Chapter.chapter_id).filter(
+#         Chapter.book_id == book_entry.book_id
+#     ).order_by(Chapter.chapter, VerseFile.verse).all()
+
+#     if not verses:
+#         raise HTTPException(status_code=404, detail=f"No verses found for book {book} in the project.")
+
+#     # USFM content generation
+#     usfm_text = f"\\id {book}\n\\usfm 3.0\n\\ide UTF-8\n\\h {short_title}\n\\toc1 {abbr}\n\\toc2 {short_title}\n\\toc3 {long_title}\n\\mt {abbr}\n"
+
+#     current_chapter = None
+#     for verse, chapter in verses:
+#         if chapter.chapter != current_chapter:  # Use the actual chapter number
+#             usfm_text += f"\\c {chapter.chapter}\n\\p\n"
+#             current_chapter = chapter.chapter
+#         usfm_text += f"\\v {verse.verse} {verse.text.strip()}\n"
+    
+  
+#     # Write the USFM content to a temporary file
+#     # usfm_file_path = f"usfm_files/{book}.usfm"
+#     # os.makedirs(os.path.dirname(usfm_file_path), exist_ok=True)
+#     # Define the path to save the USFM file
+    
+#     # usfm_text, project_name = crud.generate_usfm_content(project_id, book, current_user, db)
+    
+#     project_output_path = BASE_DIR / str(project_id) / "output" / project.name / "text-1" / "ingredients"
+#     os.makedirs(project_output_path, exist_ok=True)
+
+#     usfm_file_path = project_output_path / f"{book}.usfm"
+#     with open(usfm_file_path, "w", encoding="utf-8") as usfm_file:
+#         usfm_file.write(usfm_text)
+
+#     # Return the USFM file as a response
+#     return FileResponse(
+#         usfm_file_path,
+#         media_type="text/plain",
+#         filename=f"{book}.usfm",
+#     )
+        
+
+
+
 @router.get("/generate-usfm/", tags=["Project"])
 async def generate_usfm(
     project_id: int,
     book: str,
+    chapter: int = None,
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user)
 ):
-    # """
-    # Generate a USFM file based on the project ID and book.
-    # Args:
-    #     project_id (int): ID of the project.
-    #     book (str): Book code.
-
-    # Returns:
-    #     FileResponse: USFM file as a response.
-    # """
-    
-    #Validate project
+    """
+    Generate a USFM file for a book or specific chapter, replacing missing chapters or verses with placeholders.
+    """
+    # Validate project
     project = db.query(Project).filter(
         Project.owner_id == current_user.user_id,
         Project.project_id == project_id
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found for the user.")
-    
+
     # Validate book
     book_entry = (
         db.query(Book)
@@ -1092,9 +1188,29 @@ async def generate_usfm(
     )
     if not book_entry:
         raise HTTPException(status_code=404, detail=f"Book '{book}' not found in the project.")
-
-
-    # Load book metadata from the JSON file
+    
+    project_id = project.project_id
+    project_base_path = BASE_DIR / str(project_id)
+    input_path = project_base_path / "input" 
+    
+    # Load `versification.json`
+    project_input_path = next(input_path.iterdir(), None)
+    if not project_input_path or not project_input_path.is_dir():
+        logging.error("Project directory not found under input path.")
+        raise HTTPException(status_code=400, detail="Project directory not found under input path")
+    # Locate versification.json
+    versification_path = next(project_input_path.rglob("versification.json"), None)
+    if not versification_path:
+        logging.error("versification.json not found in the project folder.")
+        raise HTTPException(status_code=400, detail="versification.json not found in the project folder")
+    # Read versification.json
+    with open(versification_path, "r", encoding="utf-8") as versification_file:
+        versification_data = json.load(versification_file)
+    max_verses = versification_data.get("maxVerses", {}).get(book, [])
+    if not max_verses:
+        raise HTTPException(status_code=404, detail=f"Versification data not found for book '{book}'.")
+    
+    # Load book metadata
     METADATA_FILE = "metadatainfo.json"
     try:
         with open(METADATA_FILE, "r", encoding="utf-8") as file:
@@ -1113,37 +1229,41 @@ async def generate_usfm(
     abbr = book_metadata[book]["abbr"]["en"]
     long_title = book_metadata[book]["long"]["en"]
 
-    # Fetch chapters and verses for the given book
+    # Fetch chapters and verses
     chapters = db.query(Chapter).filter(Chapter.book_id == book_entry.book_id).all()
-    if not chapters:
-        raise HTTPException(status_code=404, detail=f"No chapters found for book {book} in the project.")
+    chapter_map = {chapter.chapter: chapter for chapter in chapters}
 
-    # Retrieve all verses and sort them by chapter and verse number
-    verses = db.query(VerseFile, Chapter).join(Chapter, VerseFile.chapter_id == Chapter.chapter_id).filter(
-        Chapter.book_id == book_entry.book_id
-    ).order_by(Chapter.chapter, VerseFile.verse).all()
+     # Prepare USFM content
+    usfm_text = (
+        f"\\id {book}\n\\usfm 3.0\n\\ide UTF-8\n"
+        f"\\h {short_title}\n\\toc1 {abbr}\n\\toc2 {short_title}\n\\toc3 {long_title}\n\\mt {abbr}\n"
+    )
+    for chapter_number, num_verses in enumerate(max_verses, start=1):
+        try:
+            num_verses = int(num_verses)  # Convert num_verses to an integer
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid verse count '{num_verses}' for chapter {chapter_number} in book '{book}'"
+            )
+        
+        usfm_text += f"\\c {chapter_number}\n\\p\n"
 
-    if not verses:
-        raise HTTPException(status_code=404, detail=f"No verses found for book {book} in the project.")
+        if chapter_number in chapter_map:
+            # Chapter exists, fetch verses
+            chapter = chapter_map[chapter_number]
+            verses = db.query(VerseFile).filter(VerseFile.chapter_id == chapter.chapter_id).all()
+            verse_map = {verse.verse: verse.text for verse in verses}
 
-    # USFM content generation
-    usfm_text = f"\\id {book}\n\\usfm 3.0\n\\ide UTF-8\n\\h {short_title}\n\\toc1 {abbr}\n\\toc2 {short_title}\n\\toc3 {long_title}\n\\mt {abbr}\n"
+            for verse_number in range(1, num_verses + 1):
+                verse_text = verse_map.get(verse_number, "...")
+                usfm_text += f"\\v {verse_number} {verse_text}\n"
+        else:
+            # Add placeholder verses for missing chapters
+            for verse_number in range(1, num_verses + 1):
+                usfm_text += f"\\v {verse_number} ...\n"
 
-    current_chapter = None
-    for verse, chapter in verses:
-        if chapter.chapter != current_chapter:  # Use the actual chapter number
-            usfm_text += f"\\c {chapter.chapter}\n\\p\n"
-            current_chapter = chapter.chapter
-        usfm_text += f"\\v {verse.verse} {verse.text.strip()}\n"
-    
-  
-    # Write the USFM content to a temporary file
-    # usfm_file_path = f"usfm_files/{book}.usfm"
-    # os.makedirs(os.path.dirname(usfm_file_path), exist_ok=True)
-    # Define the path to save the USFM file
-    
-    # usfm_text, project_name = crud.generate_usfm_content(project_id, book, current_user, db)
-    
+    # Save USFM file
     project_output_path = BASE_DIR / str(project_id) / "output" / project.name / "text-1" / "ingredients"
     os.makedirs(project_output_path, exist_ok=True)
 
@@ -1151,14 +1271,14 @@ async def generate_usfm(
     with open(usfm_file_path, "w", encoding="utf-8") as usfm_file:
         usfm_file.write(usfm_text)
 
-    # Return the USFM file as a response
     return FileResponse(
         usfm_file_path,
         media_type="text/plain",
         filename=f"{book}.usfm",
     )
-        
 
+
+        
 
 @router.get("/download-processed-project-zip/", tags=["Project"])
 async def download_processed_project_zip(
