@@ -10,13 +10,11 @@ from sqlalchemy import create_engine, MetaData, text
 from sqlalchemy.schema import CreateSchema
 from utils import get_password_hash  # Import from utils instead of auth
 
-
-postgres_host = os.environ.get("VACHAN_POSTGRES_HOST", "localhost")
-postgres_user = os.environ.get("VACHAN_POSTGRES_USER", "postgres")
-postgres_database = os.environ.get("VACHAN_POSTGRES_DATABASE", "vachan_db")
-postgres_password = os.environ.get("VACHAN_POSTGRES_PASSWORD", "secret")
-postgres_port = os.environ.get("VACHAN_POSTGRES_PORT", "5432")
-postgres_schema = os.environ.get("VACHAN_POSTGRES_SCHEMA", "vachan_obt")
+postgres_host = os.environ.get("AI_OBT_POSTGRES_HOST", "localhost")
+postgres_user = os.environ.get("AI_OBT_POSTGRES_USER", "postgres")
+postgres_database = os.environ.get("AI_OBT_POSTGRES_DATABASE", "vachan_db")
+postgres_password = os.environ.get("AI_OBT_POSTGRES_PASSWORD", "secret")
+postgres_port = os.environ.get("AI_OBT_POSTGRES_PORT", "5432")
 
 encoded_password = urllib.parse.quote(postgres_password, safe="")
 
@@ -24,33 +22,20 @@ encoded_password = urllib.parse.quote(postgres_password, safe="")
 DATABASE_URL = (
     f"postgresql+psycopg2://{postgres_user}:{encoded_password}@"
     f"{postgres_host}:{postgres_port}/{postgres_database}"
-    f"?options=--search_path={postgres_schema}"
 )
 
 engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20)
 conn = engine.connect()
-if not conn.dialect.has_schema(conn, postgres_schema):
-    conn.execute(CreateSchema(postgres_schema))
-    conn.commit()
-conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm;"))
-conn.execute(text("CREATE EXTENSION IF NOT EXISTS fuzzystrmatch;"))
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
-metadata_obj = MetaData(schema=postgres_schema)
-Base.metadata = metadata_obj
-
-
-
-
 
 class User(Base):
-    __tablename__ = "usertable"
+    __tablename__ = "user"
 
     user_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=True)  
-    # role = Column(String, nullable=True) 
     role = Column(String, nullable=False, default="User")
     last_login = Column(DateTime, nullable=True)  
     token = Column(String, nullable=True)
@@ -62,10 +47,10 @@ class Project(Base):
     __tablename__ = "project"
     project_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False)
-    owner_id = Column(Integer, ForeignKey("usertable.user_id"), nullable=False)
+    owner_id = Column(Integer, ForeignKey("user.user_id"), nullable=False)
     script_lang = Column(String, nullable=True)  
     audio_lang = Column(String, nullable=True)   
-    metadata_info = Column(String, nullable=False)
+    meta_data = Column(String, nullable=False)
     archive = Column(Boolean, default=False)
 
 
@@ -76,7 +61,6 @@ class Book(Base):
     book_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  
     project_id = Column(Integer, ForeignKey("project.project_id"), nullable=False)  
     book = Column(String, nullable=False)  
-    # approved = Column(Boolean, default=False) 
 
 
 class Chapter(Base):
@@ -88,8 +72,8 @@ class Chapter(Base):
     approved = Column(Boolean, default=False)  
 
 
-class VerseFile(Base):
-    __tablename__ = "versefile"
+class Verse(Base):
+    __tablename__ = "verse"
     verse_id = Column(Integer, primary_key=True, index=True, autoincrement=True)  
     chapter_id = Column(Integer, ForeignKey("chapter.chapter_id"), nullable=False)  
     verse = Column(Integer, nullable=False)  
@@ -110,8 +94,8 @@ class VerseFile(Base):
 class Job(Base):
     __tablename__ = "jobs"
 
-    jobid = Column(Integer, primary_key=True, autoincrement=True)  
-    verse_id = Column(Integer, ForeignKey("versefile.verse_id"))  
+    job_id = Column(Integer, primary_key=True, autoincrement=True)  
+    verse_id = Column(Integer, ForeignKey("verse.verse_id"))  
     ai_jobid = Column(String, unique=True)  
     status = Column(String, default="pending") 
 

@@ -51,7 +51,14 @@ def get_current_user(
 
         user = db.query(User).filter(User.user_id == user_id).first()
         if not user or user.token != token:  # Ensure token matches
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
+            raise HTTPException(status_code=401, detail="Invalid user or token")
+
+        if not user.active:
+            raise HTTPException(status_code=401, detail="Inactive user")    
+        
+        # check if token is expired 
+        if datetime.utcnow() > user.last_login + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES):
+            raise HTTPException(status_code=401, detail="Token expired")
 
         return user
     except jwt.ExpiredSignatureError:
