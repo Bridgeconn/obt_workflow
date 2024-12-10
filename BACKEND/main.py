@@ -15,6 +15,7 @@ init_db()
 app = FastAPI()
 
 
+# ToDo: Add CORS when deploying to server to allow only UI origin
 
 app.add_middleware(
     CORSMiddleware,

@@ -2,7 +2,7 @@
 from sqlalchemy.orm import Session
 import zipfile
 import os
-from database import SessionLocal, User,VerseFile,Chapter,Job
+from database import SessionLocal, User,Verse,Chapter,Job
 import logging
 import requests
 import time
@@ -113,7 +113,7 @@ def process_project_files(input_path, output_path, db, project):
                             if verse_file.is_file() and "_" in verse_file.stem:
                                 try:
                                     verse_number = int(verse_file.stem.split("_")[1])
-                                    verse = VerseFile(
+                                    verse = Verse(
                                         chapter_id=chapter_entry.chapter_id,
                                         verse=verse_number,
                                         name=verse_file.name,
@@ -143,8 +143,8 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
     """
     try:
         for file_path in file_paths:
-            # Retrieve the VerseFile entry based on the file path
-            verse = db_session.query(VerseFile).filter(VerseFile.path == file_path).first()
+            # Retrieve the Verse entry based on the file path
+            verse = db_session.query(Verse).filter(Verse.path == file_path).first()
             if not verse:
                 logging.error(f"Verse file not found for path: {file_path}")
                 continue
@@ -501,70 +501,4 @@ def validate_and_resample_wav(file_path: str) -> str:
         logging.error(f"Failed to resample WAV file: {e.stderr.decode()}")
         raise HTTPException(status_code=500, detail="Failed to resample WAV audio file")
     return file_path
-
-# def generate_usfm_content(project_id: int, book: str, current_user: User, db: Session):
-#     # Validate project
-#     project = db.query(Project).filter(
-#         Project.owner_id == current_user.user_id,
-#         Project.project_id == project_id
-#     ).first()
-#     if not project:
-#         raise HTTPException(status_code=404, detail="Project not found for the user.")
-    
-#     # Validate book
-#     book_entry = (
-#         db.query(Book)
-#         .filter(Book.project_id == project_id, Book.book == book)
-#         .first()
-#     )
-#     if not book_entry:
-#         raise HTTPException(status_code=404, detail=f"Book '{book}' not found in the project.")
-
-
-#     # Load book metadata from the JSON file
-#     METADATA_FILE = "metadatainfo.json"
-#     try:
-#         with open(METADATA_FILE, "r", encoding="utf-8") as file:
-#             book_metadata = json.load(file)
-#     except FileNotFoundError:
-#         raise HTTPException(status_code=500, detail="Metadata file not found.")
-#     except json.JSONDecodeError:
-#         raise HTTPException(status_code=500, detail="Invalid metadata JSON format.")
-
-#     # Validate if the book exists in metadata
-#     if book not in book_metadata:
-#         raise HTTPException(status_code=404, detail=f"Metadata not found for book {book}.")
-
-#     # Fetch metadata for the book
-#     short_title = book_metadata[book]["short"]["en"]
-#     abbr = book_metadata[book]["abbr"]["en"]
-#     long_title = book_metadata[book]["long"]["en"]
-
-#     # Fetch chapters and verses for the given book
-#     chapters = db.query(Chapter).filter(Chapter.book_id == book_entry.book_id).all()
-#     if not chapters:
-#         raise HTTPException(status_code=404, detail=f"No chapters found for book {book} in the project.")
-
-#     # Retrieve all verses and sort them by chapter and verse number
-#     verses = db.query(VerseFile, Chapter).join(Chapter, VerseFile.chapter_id == Chapter.chapter_id).filter(
-#         Chapter.book_id == book_entry.book_id
-#     ).order_by(Chapter.chapter, VerseFile.verse).all()
-
-#     if not verses:
-#         raise HTTPException(status_code=404, detail=f"No verses found for book {book} in the project.")
-
-#     # USFM content generation
-#     usfm_text = f"\\id {book}\n\\usfm 3.0\n\\ide UTF-8\n\\h {short_title}\n\\toc1 {abbr}\n\\toc2 {short_title}\n\\toc3 {long_title}\n\\mt {abbr}\n"
-
-#     current_chapter = None
-#     for verse, chapter in verses:
-#         if chapter.chapter != current_chapter:  # Use the actual chapter number
-#             usfm_text += f"\\c {chapter.chapter}\n\\p\n"
-#             current_chapter = chapter.chapter
-#         usfm_text += f"\\v {verse.verse} {verse.text.strip()}\n"
-
-#     return usfm_text, project.name
-
-    
-
-    
+     
