@@ -1,14 +1,97 @@
-import React from 'react';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from './lib/queryClient';
-import { Button } from './components/ui/button';
+import { useEffect, useState } from "react";
+import useAuthStore from "@/store/useAuthStore";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useLocation,
+  Navigate,
+} from "react-router-dom";
+import { Toaster } from "@/components/ui/toaster";
+import LoginPage from "@/pages/Login";
+import SignupPage from "@/pages/Signup";
+import Navbar from "@/components/Navbar/Navbar";
+import Projects from "@/pages/Projects";
+import ProfilePage from "./pages/Profile";
+import UsersTable from "./pages/Users";
 
-const App: React.FC = () => {
+function AppContent() {
+  const { checkAuthStatus } = useAuthStore();
+  const location = useLocation();
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const hideNavbarPaths = ["/login", "/signup"];
+  useEffect(() => {
+    const checkAuth = async () => {
+      const isAuthenticated = await checkAuthStatus();
+
+      setIsAuthenticated(isAuthenticated);
+      setLoading(false);
+    };
+
+    checkAuth();
+  }, [location.pathname]);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+  let user;
+  if (isAuthenticated) {
+    user = useAuthStore.getState().user;
+  }
+
+  const showNavbar = isAuthenticated;
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <Button variant="default">Hello</Button>
-    </QueryClientProvider>
+    <>
+      {showNavbar && !hideNavbarPaths.includes(location.pathname) && <Navbar />}
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
+          }
+        />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route
+          path="/profile"
+          element={
+            isAuthenticated ? <ProfilePage /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route
+          path="/users"
+          element={
+            isAuthenticated ? (
+              user?.role === "Admin" ? (
+                <UsersTable />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/"
+          element={
+            isAuthenticated ? <Projects /> : <Navigate to="/login" replace />
+          }
+        />
+      </Routes>
+    </>
   );
-};
+}
+
+function App() {
+  return (
+    <Router>
+      <Toaster />
+      <AppContent />
+    </Router>
+  );
+}
 
 export default App;
