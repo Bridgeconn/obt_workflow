@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import Depends, File, UploadFile, HTTPException, APIRouter, Query
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -190,28 +191,59 @@ async def get_all_users(
     return users_data
 
 
-@router.put("/user/role/", tags=["User"])
-async def update_role(
+# @router.put("/user/role/", tags=["User"])
+# async def update_role(
+#     user_id: int,
+#     role: str,
+#     db: Session = Depends(dependency.get_db),
+#     current_user: User = Depends(auth.get_current_user),
+# ):
+#     """
+#     Update the role of a user.
+#     Only users with the 'Admin' role can perform this action.
+#     """
+#     # Ensure the current user has an Admin role
+#     if current_user.role != "Admin":
+#         raise HTTPException(status_code=403, detail="Only admins can update user roles")
+
+#     # Validate the new role
+#     valid_roles = ["Admin", "AI", "User"]
+#     if role not in valid_roles:
+#         raise HTTPException(
+#             status_code=400,
+#             detail=f"Invalid role. Valid roles are: {', '.join(valid_roles)}",
+#         )
+
+#     # Fetch the user whose role is to be updated
+#     user = db.query(User).filter(User.user_id == user_id).first()
+#     if not user:
+#         raise HTTPException(status_code=404, detail="User not found")
+
+#     # Update the role
+#     user.role = role  # Keep the role as it is in the valid_roles list
+#     db.commit()
+#     db.refresh(user)
+
+#     return {"message": f"Role updated successfully to '{role}' for user ID {user_id}"}
+
+@router.put("/user/", tags=["User"])
+async def update_user(
     user_id: int,
-    role: str,
+    role: Optional[str] = None,
+    active: Optional[bool] = True,
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
     """
-    Update the role of a user.
+    Update the role or status of a user.
     Only users with the 'Admin' role can perform this action.
     """
     # Ensure the current user has an Admin role
     if current_user.role != "Admin":
-        raise HTTPException(status_code=403, detail="Only admins can update user roles")
-
-    # Validate the new role
-    valid_roles = ["Admin", "AI", "User"]
-    if role not in valid_roles:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid role. Valid roles are: {', '.join(valid_roles)}",
-        )
+        raise HTTPException(status_code=403, detail="Only admins can update user data")
+    
+    # if not role or not active:
+    #     raise HTTPException(status_code=400, detail="Both role and active status must be provided")
 
     # Fetch the user whose role is to be updated
     user = db.query(User).filter(User.user_id == user_id).first()
@@ -219,11 +251,22 @@ async def update_role(
         raise HTTPException(status_code=404, detail="User not found")
 
     # Update the role
-    user.role = role  # Keep the role as it is in the valid_roles list
+    if(role!= None):
+        valid_roles = ["Admin", "AI", "User"]
+        if role not in ["Admin", "AI", "User"]:
+            raise HTTPException(status_code=400, detail=f"Invalid role. Valid roles are: {', '.join(valid_roles)}")
+        user.role = role
+        
+    user.active = active
+
     db.commit()
     db.refresh(user)
 
-    return {"message": f"Role updated successfully to '{role}' for user ID {user_id}"}
+    # return {"message": f"Role updated successfully to '{role}' for user ID {user_id}"}
+    return {
+        "message": "User updated successfully.",
+        "user_id": user.user_id,
+    }
 
 
 @router.post("/Projects", tags=["Project"])

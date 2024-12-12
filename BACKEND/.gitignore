@@ -1,2 +1,4 @@
 /obt_venv
 /__pycache__
+/venv
+.env
