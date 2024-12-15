@@ -25,16 +25,12 @@ import major_languages from "../data/major_languages.json";
 import lang_codes from "../data/language_codes.json";
 
 const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
-  const {
-    project,
-    fetchProjectDetails,
-    transcribeBook,
-  } = useProjectDetailsStore();
+  const { project, fetchProjectDetails, transcribeBook } =
+    useProjectDetailsStore();
   const [scriptLanguage, setScriptLanguage] = useState("");
   const [audioLanguage, setAudioLanguage] = useState("");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-
 
   useEffect(() => {
     fetchProjectDetails(projectId);
@@ -54,20 +50,24 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       return;
     }
     setScriptLanguage(String(selectedLanguage.id));
-    const lang_code = lang_codes[selectedLanguage.major_language as keyof typeof lang_codes]?.tts;
+    const lang_code =
+      lang_codes[selectedLanguage.major_language as keyof typeof lang_codes]
+        ?.tts;
     const token = useAuthStore.getState().token;
-    const response = await fetch(
-      `http://localhost:8000/projects/${project?.project_id}/script_language/${lang_code}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    const data = await response.json();
-    console.log("script language response data", data);
+    try {
+      await fetch(
+        `http://localhost:8000/projects/${project?.project_id}/script_language/${lang_code}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    } catch (error) {
+      console.log("error", error);
+    }
   };
 
   const handleAudioLanguageChange = async (selectedId: string) => {
@@ -75,27 +75,30 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     const selectedLanguage = source_languages.find(
       (language) => language.id === id
     );
-    console.log("selected language", selectedLanguage)
     if (!selectedLanguage) {
       console.error("Selected language not found.");
       return;
     }
 
     setAudioLanguage(String(selectedLanguage.id));
-    const lang_code = lang_codes[selectedLanguage.source_language as keyof typeof lang_codes]?.stt;
+    const lang_code =
+      lang_codes[selectedLanguage.source_language as keyof typeof lang_codes]
+        ?.stt;
     const token = useAuthStore.getState().token;
-    const response = await fetch(
-      `http://localhost:8000/projects/${project?.project_id}/audio_language/${lang_code}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    const data = await response.json();
-    console.log("audio language response data", data);
+    try {
+      await fetch(
+        `http://localhost:8000/projects/${project?.project_id}/audio_language/${lang_code}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    } catch (error) {
+      console.log("error", error);
+    }
   };
 
   const handleDownloadProject = (bookId: number) => {
@@ -127,7 +130,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             </SelectTrigger>
             <SelectContent>
               {source_languages.map((language) => (
-                <SelectItem key={language.language_name} value={String(language.id)} disabled={["Kannada", "Marathi"].includes(language.source_language)}>
+                <SelectItem
+                  key={language.language_name}
+                  value={String(language.id)}
+                  disabled={["Kannada", "Marathi"].includes(
+                    language.source_language
+                  )}
+                >
                   {language.language_name}
                 </SelectItem>
               ))}
@@ -148,7 +157,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             </SelectTrigger>
             <SelectContent>
               {major_languages.map((language) => (
-                <SelectItem key={language.language_name} value={String(language.id)} disabled={["Kannada", "Marathi"].includes(language.major_language)}>
+                <SelectItem
+                  key={language.language_name}
+                  value={String(language.id)}
+                  disabled={["Kannada", "Marathi"].includes(
+                    language.major_language
+                  )}
+                >
                   {language.language_name}
                 </SelectItem>
               ))}
@@ -162,9 +177,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         <Table className="w-full min-w-[600px] border">
           <TableHeader>
             <TableRow className="bg-gray-100">
-              <TableHead className="font-semibold text-center px-2 py-3 w-[40px]">
-                
-              </TableHead>
+              <TableHead className="font-semibold text-center px-2 py-3 w-[40px]"></TableHead>
               <TableHead className="font-semibold text-center text-primary px-3 py-3">
                 Books
               </TableHead>
@@ -203,7 +216,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       <div
                         key={chapter.chapter_id}
                         className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
-                          chapter.status === "transcribed"
+                          chapter.status === "approved"
+                            ? "text-blue-700 border border-blue-600 bg-blue-200"
+                            : chapter.status === "transcribed"
                             ? "text-green-700 border border-green-600 bg-green-200"
                             : chapter.status === "inProgress"
                             ? "text-orange-700 border border-gray-100 bg-orange-200"
@@ -226,20 +241,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 <TableCell className="text-center">
                   {book.status === "approved" ? (
                     <Button
-                      className="bg-blue-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-blue-600"
+                      className="bg-blue-600 text-white font-bold px-4 py-2 min-w-32 rounded-lg hover:bg-blue-600"
                       disabled
                     >
                       Approved
                     </Button>
                   ) : book.status === "transcribed" ? (
                     <Button
-                      className="bg-green-600 text-white font-bold px-4 py-2 rounded-lg hover:bg-green-600"
+                      className="bg-green-600 text-white font-bold px-4 py-2 min-w-32 rounded-lg hover:bg-green-600"
                       disabled
                     >
                       Transcribed
                     </Button>
                   ) : (
                     <Button
+                      className="text-white font-bold px-4 py-2 min-w-32 rounded-lg"
                       disabled={
                         book.status === "inProgress" ||
                         !scriptLanguage ||
@@ -277,11 +293,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
       {/* Close Button */}
       <div className="flex justify-left mt-6">
-        <Button
-          onClick={handleCloseProject}
-        >
-          Close
-        </Button>
+        <Button onClick={handleCloseProject}>Close</Button>
       </div>
     </div>
   );

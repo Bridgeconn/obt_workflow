@@ -109,10 +109,11 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
               const allTranscribed = verses.every((verse) => verse.stt);
               const completed = verses.filter((verse) => verse.stt).length;
               const total = verses.length;
+              const isApproved = chapter.approved
 
               return {
                 ...chapter,
-                status: allTranscribed ? 'transcribed' : 'notTranscribed',
+                status: isApproved && allTranscribed ? "approved" : (allTranscribed ? 'transcribed' : 'notTranscribed'),
                 progress: allTranscribed ? '' : `${completed} out of ${total} done`,
                 verses: verses
               };
@@ -120,11 +121,14 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
           );
 
           // Determine book-level status
-          const bookStatus = chapterStatuses.every(ch => ch.status === 'transcribed') 
-            ? 'transcribed'
-            : chapterStatuses.some(ch => ch.status === 'inProgress')
-            ? 'inProgress'
-            : 'notTranscribed';
+          const bookStatus = chapterStatuses.every(ch => ch.status === "approved")
+            ? "approved"
+            : chapterStatuses.every(ch => ch.status === "transcribed")
+            ? "transcribed"
+            : chapterStatuses.some(ch => ch.status === "inProgress")
+            ? "inProgress"
+            : "notTranscribed";
+
 
           return {
             ...book,
