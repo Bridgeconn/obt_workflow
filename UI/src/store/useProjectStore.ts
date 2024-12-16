@@ -6,6 +6,7 @@ interface ProjectDetailsState {
   project: Project | null;
   isLoading: boolean;
   error: string | null;
+  setProject: (updater: (project: Project | null) => Project | null) => void;
   fetchProjectDetails: (projectId: number) => void;
   transcribeBook: (bookId: number, queryClient?: QueryClient) => Promise<void>;
 }
@@ -66,13 +67,23 @@ interface ChapterStatusResponse {
   data: Verse[];
 }
 
+interface ChapterDetailsState {
+  chapterVerses: Verse[] | null;
+  fetchChapterDetails: (projectId: number, book: string, chapter: number) => void;
+  updateVerseText: (verseId: number, newText: string) => void;
+  approveChapter: (projectId: number, book: string, chapter: number, approve: boolean) => Promise<void>;
+}
+
 export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => ({
   project: null,
   scriptLanguage: '',
   audioLanguage: '',
   isLoading: false,
   error: null,
-  
+  setProject: (updater) =>
+    set((state) => ({
+      project: typeof updater === "function" ? updater(state.project) : updater,
+    })),
   fetchProjectDetails: async (projectId: number) => {
     set({ isLoading: true, error: null });
     const token = useAuthStore.getState().token;
@@ -269,4 +280,104 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
       set({ error: 'Error transcribing book', isLoading: false });
     }
   },
+}));
+
+export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
+  chapterVerses: null,
+
+  fetchChapterDetails: async (projectId, book, chapter) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8000/project/${projectId}/${book}/${chapter}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${useAuthStore.getState().token}` },
+
+        }
+      );
+      const data = await response.json();
+      set({ chapterVerses: data.data });
+    } catch (error) {
+      console.error("Failed to fetch chapter details:", error);
+    }
+  },
+
+  updateVerseText: async (verseId, newText) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8000/project/verse/${verseId}?verse_text=${newText}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${useAuthStore.getState().token}` },
+        }
+      );
+      if (response.ok) {
+        // Update local state
+        set((state) => ({
+          chapterVerses: state.chapterVerses?.map((verse) =>
+            verse.verse_id === verseId
+              ? { ...verse, text: newText, tts: false }
+              : verse
+          ),
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to update verse:", error);
+    }
+  },
+  approveChapter: async (projectId, book, chapter, approve) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8000/chapter/approve?project_id=${projectId}&book=${book}&chapter=${chapter}&approve=${approve}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${useAuthStore.getState().token}` },
+        }
+      );
+  
+      if (response.ok) {
+        // Update the project state in useProjectDetailsStore
+        useProjectDetailsStore.getState().setProject((prevProject) => {
+          if (!prevProject) return null;
+  
+          // Modify the books and chapters based on approval
+          const updatedBooks = prevProject.books.map((b) => {
+            if (b.book === book) {
+              const updatedChapters = b.chapters.map((ch) => {
+                if (ch.chapter === chapter) {
+                  return {
+                    ...ch,
+                    approved: approve,
+                    status: approve ? "approved" : ch.status,
+                  };
+                }
+                return ch;
+              });
+  
+              const updatedBookStatus = updatedChapters.every(ch => ch.approved)
+                ? "approved"
+                : b.status;
+  
+              return {
+                ...b,
+                chapters: updatedChapters,
+                status: updatedBookStatus,
+              };
+            }
+            return b;
+          });
+  
+          // Ensure the full project structure is maintained and returned
+          return {
+            ...prevProject,
+            books: updatedBooks,
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Failed to approve chapter:", error);
+    }
+  }
+  
+  
 }));

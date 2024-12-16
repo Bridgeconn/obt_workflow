@@ -22,13 +22,38 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import source_languages from "../data/source_languages.json";
 import major_languages from "../data/major_languages.json";
-import lang_codes from "../data/language_codes.json";
+import ChapterModal from "@/components/ChapterModal";
+
+interface Book {
+  book_id: number;
+  book: string;
+  approved: boolean;
+  chapters: Chapter[];
+  status?: string;
+  progress?: string;
+}
+
+interface Chapter {
+  chapter_id: number;
+  chapter: number;
+  approved: boolean;
+  missing_verses: number[];
+  status?: string;
+  progress?: string;
+}
+
+interface SelectedChapter extends Chapter {
+  bookName: string;
+}
 
 const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const { project, fetchProjectDetails, transcribeBook } =
     useProjectDetailsStore();
   const [scriptLanguage, setScriptLanguage] = useState("");
   const [audioLanguage, setAudioLanguage] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedChapter, setSelectedChapter] =
+    useState<SelectedChapter | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -50,13 +75,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       return;
     }
     setScriptLanguage(String(selectedLanguage.id));
-    const lang_code =
-      lang_codes[selectedLanguage.major_language as keyof typeof lang_codes]
-        ?.tts;
+    // const lang_code =
+    //   lang_codes[selectedLanguage.major_language as keyof typeof lang_codes]
+    //     ?.tts;
     const token = useAuthStore.getState().token;
     try {
       await fetch(
-        `http://localhost:8000/projects/${project?.project_id}/script_language/${lang_code}`,
+        `http://localhost:8000/projects/${project?.project_id}/script_language/${selectedLanguage.major_language}`,
         {
           method: "PUT",
           headers: {
@@ -81,13 +106,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
 
     setAudioLanguage(String(selectedLanguage.id));
-    const lang_code =
-      lang_codes[selectedLanguage.source_language as keyof typeof lang_codes]
-        ?.stt;
+    // const lang_code =
+    //   lang_codes[selectedLanguage.source_language as keyof typeof lang_codes]
+    //     ?.stt;
     const token = useAuthStore.getState().token;
     try {
       await fetch(
-        `http://localhost:8000/projects/${project?.project_id}/audio_language/${lang_code}`,
+        `http://localhost:8000/projects/${project?.project_id}/audio_language/${selectedLanguage.source_language}`,
         {
           method: "PUT",
           headers: {
@@ -98,6 +123,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       );
     } catch (error) {
       console.log("error", error);
+    }
+  };
+
+  const openChapterModal = (chapter: Chapter, book: Book) => {
+    if (["transcribed", "approved"].includes(chapter.status || "")) {
+      setSelectedChapter({ ...chapter, bookName: book.book });
+      setModalOpen(true);
     }
   };
 
@@ -217,13 +249,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                         key={chapter.chapter_id}
                         className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
                           chapter.status === "approved"
-                            ? "text-blue-700 border border-blue-600 bg-blue-200"
+                            ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
                             : chapter.status === "transcribed"
-                            ? "text-green-700 border border-green-600 bg-green-200"
+                            ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
                             : chapter.status === "inProgress"
                             ? "text-orange-700 border border-gray-100 bg-orange-200"
                             : "text-gray-700 border border-gray-300"
                         }`}
+                        onClick={() => openChapterModal(chapter, book)}
                       >
                         {chapter.missing_verses?.length > 0 &&
                           chapter.status === "notTranscribed" && (
@@ -289,6 +322,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             ))}
           </TableBody>
         </Table>
+
+        {project && project.project_id !== undefined && selectedChapter && (
+          <ChapterModal
+            isOpen={modalOpen}
+            onClose={() => setModalOpen(false)}
+            projectId={project.project_id}
+            bookName={selectedChapter.bookName}
+            chapter={selectedChapter.chapter}
+          />
+        )}
       </div>
 
       {/* Close Button */}
