@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
 interface User {
   user_id: string;
   username: string;
@@ -36,7 +38,7 @@ const useAuthStore = create<AuthState>()(
           payload.append('username', username);
           payload.append('password', password);
 
-          const response = await fetch(`http://localhost:8000/token`, {
+          const response = await fetch(`${BASE_URL}/token`, {
             body: payload,
             method: 'POST',
             headers: {
@@ -64,7 +66,7 @@ const useAuthStore = create<AuthState>()(
       signup: async (username, email, password) => {
         try {
           const response = await fetch(
-            `http://localhost:8000/user/signup?username=${username}&email=${email}&password=${password}`,
+            `${BASE_URL}/user/signup?username=${username}&email=${email}&password=${password}`,
             {
               method: 'POST',
               headers: {
@@ -90,7 +92,7 @@ const useAuthStore = create<AuthState>()(
             throw new Error('User is not authenticated');
           }
 
-          const response = await fetch('http://localhost:8000/user/logout/', {
+          const response = await fetch(`${BASE_URL}/user/logout/`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,
@@ -116,7 +118,7 @@ const useAuthStore = create<AuthState>()(
         }
 
         const response = await fetch(
-          `http://localhost:8000/user/?user_id=${userId}&role=${role}`,
+          `${BASE_URL}/user/?user_id=${userId}&role=${role}`,
           {
             method: 'PUT',
             headers: {
@@ -156,7 +158,7 @@ const useAuthStore = create<AuthState>()(
           throw new Error('User not authenticated');
         }
 
-        const response = await fetch('http://localhost:8000/user/', {
+        const response = await fetch(`${BASE_URL}/user/`, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,

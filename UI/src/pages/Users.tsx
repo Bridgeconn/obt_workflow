@@ -21,6 +21,8 @@ import { Edit } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { toast } from "@/hooks/use-toast";
 
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
 interface User {
   user_id: string;
   username: string;
@@ -35,7 +37,7 @@ interface User {
 const fetchUsers = async (token: string | null): Promise<User[]> => {
   if (!token) throw new Error("Missing token");
 
-  const response = await fetch("http://localhost:8000/users", {
+  const response = await fetch(`${BASE_URL}/users`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -70,7 +72,7 @@ const UsersTable = () => {
     try {
       setIsUpdating(true);
       const response = await fetch(
-        `http://localhost:8000/user/?user_id=${userId}&role=${role}`,
+        `${BASE_URL}/user/?user_id=${userId}&role=${role}`,
         {
           method: "PUT",
           headers: {
@@ -98,7 +100,7 @@ const UsersTable = () => {
     try {
       setIsUpdating(true);
       const response = await fetch(
-        `http://localhost:8000/user/?user_id=${userId}&active=${active === "Yes" ? true : false}`,
+        `${BASE_URL}/user/?user_id=${userId}&active=${active === "Yes" ? true : false}`,
         {
           method: "PUT",
           headers: {

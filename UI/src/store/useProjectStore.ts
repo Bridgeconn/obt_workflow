@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { QueryClient } from '@tanstack/react-query';
 import useAuthStore from './useAuthStore';
 
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
 interface ProjectDetailsState {
   project: Project | null;
   isLoading: boolean;
@@ -9,6 +11,7 @@ interface ProjectDetailsState {
   setProject: (updater: (project: Project | null) => Project | null) => void;
   fetchProjectDetails: (projectId: number) => void;
   transcribeBook: (bookId: number, queryClient?: QueryClient) => Promise<void>;
+  archiveProject: (projectId: number, archive: boolean) => Promise<void>;
 }
 
 interface Project {
@@ -72,6 +75,7 @@ interface ChapterDetailsState {
   fetchChapterDetails: (projectId: number, book: string, chapter: number) => void;
   updateVerseText: (verseId: number, newText: string) => void;
   approveChapter: (projectId: number, book: string, chapter: number, approve: boolean) => Promise<void>;
+  convertToSpeech: (project_id: number, bookName: string, chapter: Chapter) => Promise<string>;
 }
 
 export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => ({
@@ -89,7 +93,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
     const token = useAuthStore.getState().token;
     try {
       // Fetch initial project details
-      const response = await fetch(`http://localhost:8000/project/details?project_id=${projectId}`, {
+      const response = await fetch(`${BASE_URL}/project/details?project_id=${projectId}`, {
         method: "GET",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -104,7 +108,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
           const chapterStatuses = await Promise.all(
             book.chapters.map(async (chapter) => {
               const chapterStatusResponse = await fetch(
-                `http://localhost:8000/project/${data.project.project_id}/${book.book}/${chapter.chapter}`,
+                `${BASE_URL}/project/${data.project.project_id}/${book.book}/${chapter.chapter}`,
                 {
                   method: "GET",
                   headers: {
@@ -118,13 +122,14 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
               // Determine chapter status
               const verses = chapterStatusData.data;
               const allTranscribed = verses.every((verse) => verse.stt);
+              const allConverted = verses.every((verse) => verse.tts);
               const completed = verses.filter((verse) => verse.stt).length;
               const total = verses.length;
               const isApproved = chapter.approved
 
               return {
                 ...chapter,
-                status: isApproved && allTranscribed ? "approved" : (allTranscribed ? 'transcribed' : 'notTranscribed'),
+                status : isApproved && allTranscribed ? "approved" : (allConverted ? 'converted' : (allTranscribed ? 'transcribed' : 'notTranscribed')),
                 progress: allTranscribed ? '' : `${completed} out of ${total} done`,
                 verses: verses
               };
@@ -132,14 +137,15 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
           );
 
           // Determine book-level status
-          const bookStatus = chapterStatuses.every(ch => ch.status === "approved")
+            const bookStatus = chapterStatuses.every(ch => ch.status === "approved")
             ? "approved"
+            : chapterStatuses.every(ch => ch.status === " converted")
+            ? "converted"
             : chapterStatuses.every(ch => ch.status === "transcribed")
             ? "transcribed"
             : chapterStatuses.some(ch => ch.status === "inProgress")
             ? "inProgress"
             : "notTranscribed";
-
 
           return {
             ...book,
@@ -181,7 +187,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
       for (const chapter of book.chapters) {
         // Start transcription for each chapter
         await fetch(
-          `http://localhost:8000/transcribe?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
+          `${BASE_URL}/transcribe?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
           {
             method: "POST",
             headers: {
@@ -196,7 +202,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
           const pollChapterStatus = async () => {
             try {
               const response = await fetch(
-                `http://localhost:8000/project/${currentProject.project_id}/${book.book}/${chapter.chapter}`,
+                `${BASE_URL}/project/${currentProject.project_id}/${book.book}/${chapter.chapter}`,
                 {
                   method: "GET",
                   headers: {
@@ -259,7 +265,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
               if (allTranscribed) {
                 resolve();
               } else {
-                setTimeout(pollChapterStatus, 10000); // 10 seconds
+                setTimeout(pollChapterStatus, 10000);
               }
             } catch (error) {
               reject(error);
@@ -280,15 +286,49 @@ export const useProjectDetailsStore = create<ProjectDetailsState>((set, get) => 
       set({ error: 'Error transcribing book', isLoading: false });
     }
   },
-}));
+  archiveProject: async (projectId, archive) => {
+    console.log("archive value", archive)
+    set({ isLoading: true, error: null });
+  
+    try {
+      const response = await fetch(
+        `${BASE_URL}/projects/${projectId}/archive?archive=${archive}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+  
+      if (!response.ok) {
+        throw new Error("Failed to archive project.");
+      }
+      useProjectDetailsStore.getState().setProject((prevProjects) => {
+        if (!prevProjects) return prevProjects;
+        if(prevProjects.project_id === projectId) {
+          return { ...prevProjects, archive: archive }
+        }else{
+          return prevProjects
+        }
+      });
+    } catch (error) {
+      console.error("Failed to archive project:", error);
+      set({ error: "Error archiving project." });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+}));  
 
-export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
+export const useChapterDetailsStore = create<ChapterDetailsState>((set, get) => ({
   chapterVerses: null,
 
   fetchChapterDetails: async (projectId, book, chapter) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/project/${projectId}/${book}/${chapter}`,
+        `${BASE_URL}/project/${projectId}/${book}/${chapter}`,
         {
           method: "GET",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${useAuthStore.getState().token}` },
@@ -305,7 +345,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
   updateVerseText: async (verseId, newText) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/project/verse/${verseId}?verse_text=${newText}`,
+        `${BASE_URL}/project/verse/${verseId}?verse_text=${newText}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${useAuthStore.getState().token}` },
@@ -328,7 +368,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
   approveChapter: async (projectId, book, chapter, approve) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/chapter/approve?project_id=${projectId}&book=${book}&chapter=${chapter}&approve=${approve}`,
+        `${BASE_URL}/chapter/approve?project_id=${projectId}&book=${book}&chapter=${chapter}&approve=${approve}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${useAuthStore.getState().token}` },
@@ -345,18 +385,22 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
             if (b.book === book) {
               const updatedChapters = b.chapters.map((ch) => {
                 if (ch.chapter === chapter) {
+                  const newStatus = approve ? 'approved' : (ch.status === "approved" ? "transcribed" : ch.status);
                   return {
                     ...ch,
                     approved: approve,
-                    status: approve ? "approved" : ch.status,
+                    status: newStatus,
                   };
                 }
                 return ch;
               });
   
-              const updatedBookStatus = updatedChapters.every(ch => ch.approved)
+
+                const updatedBookStatus = updatedChapters.every(ch => ch.approved)
                 ? "approved"
-                : b.status;
+                : updatedChapters.every(ch => ch.status === "transcribed")
+                ? "transcribed"
+                : b.status || "notTranscribed";
   
               return {
                 ...b,
@@ -377,7 +421,78 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
     } catch (error) {
       console.error("Failed to approve chapter:", error);
     }
+  },
+
+  convertToSpeech: async (project_id, bookName, chapter): Promise<string> => {
+
+    try {
+      const response = await fetch(
+        `${BASE_URL}/project/chapter/${chapter.chapter_id}/tts`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+      const responseData = await response.json();
+  
+      if (response.ok) {
+        await get().fetchChapterDetails(project_id, bookName, chapter.chapter);
+        const chapterDetails = get().chapterVerses;
+  
+        const hasModifiedVerses = chapterDetails?.some((verse) => verse.modified);
+        if (!hasModifiedVerses) {
+          console.log("No modified verses found.");
+          return responseData.detail;
+        }
+  
+        const pollForTTSStatus = async (): Promise<string> => {
+          return new Promise((resolve, reject) => {
+            const checkStatus = async () => {
+              try {
+                await get().fetchChapterDetails(project_id, bookName, chapter.chapter);
+                const chapterDetails = get().chapterVerses;
+                console.log("chapter details", chapterDetails)
+                if (chapterDetails) {
+                  const modifiedVerses = chapterDetails.filter((verse) => verse.modified);
+        
+                  const allModifiedConverted = modifiedVerses.every((verse) => verse.tts);
+        
+                  if (allModifiedConverted) {
+                    const verseWithTTSMsg = modifiedVerses.find((verse) => verse.tts_msg);
+        
+                    if (verseWithTTSMsg && verseWithTTSMsg.tts_msg) {
+                      resolve(verseWithTTSMsg.tts_msg);
+                      return;
+                    } else {
+                      resolve("Text-to-speech conversion completed successfully.");
+                      return;
+                    }
+                  }
+                }
+                setTimeout(checkStatus, 10000);
+              } catch (error) {
+                reject(error instanceof Error ? error.message : "Unknown error occurred.");
+              }
+            };
+  
+            checkStatus();
+          });
+        };
+  
+        const resultMsg = await pollForTTSStatus();
+        return resultMsg;
+      } else {
+        throw new Error("Failed to initiate text-to-speech conversion.");
+      }
+    } catch (error) {
+      console.error("Failed to approve chapter:", error);
+      if (error instanceof Error) {
+        return error.message;
+      }
+      return "An unknown error occurred.";
+    }
   }
-  
-  
 }));

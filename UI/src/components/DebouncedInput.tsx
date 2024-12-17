@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 export function DebouncedInput({
     value: initialValue,
     onChange,
-    debounce = 500,
+    debounce = 300,
     ...props
   }: {
     value: string | number

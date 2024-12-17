@@ -11,13 +11,25 @@ import {
 import { PlayIcon, PauseIcon } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { Textarea } from "./ui/textarea";
+import { toast } from "@/hooks/use-toast";
+
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
+interface Chapter {
+  chapter_id: number;
+  chapter: number;
+  approved: boolean;
+  missing_verses: number[];
+  status?: string;
+  progress?: string;
+}
 
 interface ChapterModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: number;
   bookName: string;
-  chapter: number;
+  chapter: Chapter;
 }
 
 const ChapterModal: React.FC<ChapterModalProps> = ({
@@ -32,15 +44,27 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     fetchChapterDetails,
     updateVerseText,
     approveChapter,
+    convertToSpeech
   } = useChapterDetailsStore();
   const [playingVerse, setPlayingVerse] = useState<number | null>(null);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [approved, setApproved] = useState<boolean>(false);
+  const [isConverting, setIsConverting] = useState<boolean>(false);
   const [modifiedVerses, setModifiedVerses] = useState<Set<number>>(new Set());
+  const [focusedVerses, setFocusedVerses] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    if (isOpen) fetchChapterDetails(projectId, bookName, chapter);
+    if (isOpen) fetchChapterDetails(projectId, bookName, chapter.chapter);
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen && audio) {
+      audio.pause();
+      setAudio(null);
+      setPlayingVerse(null);
+    }
+  }, [isOpen, audio]);
+  
 
   const handlePlayAudio = async (verseId: number) => {
     if (audio) {
@@ -54,7 +78,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
         // Fetch audio from API
         const response = await fetch(
-          `http://localhost:8000/project/verse/audio?verse_id=${verseId}`,
+          `${BASE_URL}/project/verse/audio?verse_id=${verseId}`,
           {
             method: "GET",
             headers: {
@@ -94,24 +118,51 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const handleApproveChapter = () => {
     const approve = approved ? false : true;
     setApproved(approve);
-    approveChapter(projectId, bookName, chapter, approve);
+    approveChapter(projectId, bookName, chapter.chapter, approve);
     onClose();
   };
 
   const handleVerseUpdate = (verseId: number, newText: string) => {
-    console.log("verseId", verseId, "newText", newText);
     updateVerseText(verseId, newText);
-    setModifiedVerses((prevModifiedVerses) => {
-      const newModifiedVerses = new Set(prevModifiedVerses);
-      newModifiedVerses.add(verseId);
-      return newModifiedVerses;
-    });
+    setModifiedVerses((prev) => new Set(prev).add(verseId));
   };
 
-  const handleConvertToSpeech = () => {
-    // Placeholder function for "Convert to speech" button
-    console.log("Convert chapter to speech logic goes here");
+  const handleConvertToSpeech = async () => {
+    try {
+      setIsConverting(true);
+      const resultMsg = await convertToSpeech(projectId, bookName, chapter);
+      toast({
+        variant: "success",
+        title: resultMsg,
+      });
+      setIsConverting(false);
+    } catch (error) {
+      console.error("Error converting to speech:", error);
+      setIsConverting(false);
+      toast({
+        variant: "destructive",
+        title: error instanceof Error ? error.message : "Error converting to speech",
+      });
+    }
   };
+
+  const handleFocus = (verseId: number) => {
+    setFocusedVerses((prev) => new Set(prev).add(verseId));
+  };
+
+  const handleBlur = (verseId: number, newText: string, originalText: string) => {
+    setFocusedVerses((prev) => {
+      const updated = new Set(prev);
+      updated.delete(verseId);
+      return updated;
+    });
+
+    if (newText.trim() !== originalText.trim()) {
+      handleVerseUpdate(verseId, newText);
+    }
+  };
+  
+  
 
   const sortedVerses = chapterVerses?.sort((a, b) => a.verse_number - b.verse_number);
 
@@ -120,7 +171,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>
-            {bookName} - Chapter {chapter}
+            {bookName} - Chapter {chapter.chapter}
           </DialogTitle>
         </DialogHeader>
         <ScrollArea className="h-96 border rounded p-4">
@@ -135,27 +186,16 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
             >
               <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
               <Textarea
-                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y`}
+                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
+                  modifiedVerses.has(verse.verse_id) || verse.modified ? "border-2 border-yellow-500 bg-yellow-50" : ""
+                }`}
                 defaultValue={verse.text}
-                onBlur={(e) => {
-                  handleVerseUpdate(verse.verse_id, e.target.value);
-                  setModifiedVerses((prevModifiedVerses) => {
-                    const newModifiedVerses = new Set(prevModifiedVerses);
-                    newModifiedVerses.add(verse.verse_id);
-                    return newModifiedVerses;
-                  });
-                }}
-                onFocus={() => {
-                  setModifiedVerses((prevModifiedVerses) => {
-                    const newModifiedVerses = new Set(prevModifiedVerses);
-                    newModifiedVerses.add(verse.verse_id);
-                    return newModifiedVerses;
-                  });
-                }}
+                onFocus={() => handleFocus(verse.verse_id)}
+                onBlur={(e) => handleBlur(verse.verse_id, e.target.value, verse.text)}
                 onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
               />
               <div className="w-[50px]">
-                {verse.stt && !verse.modified && !modifiedVerses.has(verse.verse_id) && (
+                {(verse.tts || verse.stt ) && !modifiedVerses.has(verse.verse_id) && !focusedVerses.has(verse.verse_id) && (
                   <Button
                     size="icon"
                     variant="ghost"
@@ -179,7 +219,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           <Button onClick={handleApproveChapter}>
             {approved ? "Unapprove" : "Approve"}
           </Button>
-          <Button onClick={handleConvertToSpeech}>Convert to Speech</Button>
+          <Button onClick={handleConvertToSpeech} disabled={isConverting}>Convert to Speech</Button>
         </div>
       </DialogContent>
     </Dialog>

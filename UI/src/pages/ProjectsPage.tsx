@@ -27,6 +27,8 @@ import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DebouncedInput } from "@/components/DebouncedInput";
 
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
 // Improved Book Interface
 interface Book {
   book_id: number;
@@ -69,7 +71,7 @@ const fetchProjects = async (): Promise<Project[]> => {
   const token = useAuthStore.getState().token;
   if (!token) throw new Error("Missing token");
 
-  const response = await fetch("http://localhost:8000/projects/", {
+  const response = await fetch(`${BASE_URL}/projects/`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -109,7 +111,7 @@ const uploadProject = async (file: File) => {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("http://localhost:8000/Projects/", {
+  const response = await fetch(`${BASE_URL}/Projects/`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -261,6 +263,7 @@ const ProjectsPage: React.FC = () => {
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       uploadMutation.mutate(files[0]);
@@ -307,8 +310,17 @@ const ProjectsPage: React.FC = () => {
           e.preventDefault();
           setIsDragging(true);
         }}
-        onDragEnter={() => setIsDragging(true)}
-        onDragLeave={() => setIsDragging(false)}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          // Check if leaving the drop area
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDragging(false);
+          }
+        }}
         onDrop={(e) => {
           handleDrop(e);
           setIsDragging(false);
