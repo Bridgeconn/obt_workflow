@@ -238,23 +238,60 @@ def check_ai_job_status(ai_jobid: str) -> dict:
 
 def call_ai_api(file_path: str, script_lang: str) -> dict:
     """
-    Calls the AI API to transcribe the given audio file.
+     Calls the AI API to transcribe the given audio file.
     """
-    ai_api_url = "https://api.vachanengine.org/v2/ai/model/audio/transcribe?model_name=mms-1b-all"
-    # transcription_language = "hin"
-    file_name = os.path.basename(file_path)
+    # File path for the language mapping JSON
+    LANGUAGE_CODES_FILE = "language_codes.json"
+    
+    # AI API Base URL (model_name will be dynamic)
+    BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/transcribe"
+ 
+    # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
+ 
+    # Load the language mapping
+    try:
+        with open(LANGUAGE_CODES_FILE, "r") as file:
+            language_mapping = json.load(file)
+    except Exception as e:
+        logging.error(f"Error loading language_codes.json: {str(e)}")
+        return {"error": "Failed to load language mapping file", "details": str(e)}
+ 
+    # Get the model_name and language_code dynamically
+    try:
+        stt_mapping = language_mapping.get(script_lang, {}).get("stt", {})
+        if not stt_mapping:
+            logging.error(f"No STT model found for script_lang: {script_lang}")
+            return {"error": f"No STT model found for script_lang: {script_lang}"}
+        
+        # Select the first available model dynamically
+        model_name, lang_code = next(iter(stt_mapping.items()))
+        if not lang_code:
+            logging.error(f"No language code found for script_lang: {script_lang}")
+            return {"error": f"No language code found for script_lang: {script_lang}"}
+    except Exception as e:
+        logging.error(f"Error retrieving model and language code: {str(e)}")
+        return {"error": "Failed to retrieve model and language code", "details": str(e)}
+ 
+    # Prepare API URL
+    ai_api_url = f"{BASE_API_URL}?model_name={model_name}"
+ 
+    # Prepare the file and payload
+    file_name = os.path.basename(file_path)
     try:
         with open(file_path, "rb") as audio_file:
             files_payload = {"files": (file_name, audio_file, "audio/wav")}
-            data_payload = {"transcription_language": script_lang}
+            data_payload = {"transcription_language": lang_code}
             headers = {"Authorization": f"Bearer {api_token}"}
-
+ 
             # Make the API request
             response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+ 
         logging.info(f"AI API Response: {response.status_code} - {response.text}")
+ 
+        # Handle API response
         if response.status_code == 201:
-            return response.json()  # {"data": {"jobId": "123", "status": "created"}}
+            return response.json()
         else:
             logging.error(f"AI API Error: {response.status_code} - {response.text}")
             return {"error": "Failed to transcribe", "status_code": response.status_code}
@@ -269,31 +306,33 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
     Generate speech for each verse and update the database, saving files in the appropriate output directory.
     """
     db_session = SessionLocal()
+    extracted_folder = None
+    temp_audio_dirs = []
     try:
         # Fetch the project name for creating the output path
         project = db_session.query(Project).filter(Project.project_id == project_id).first()
         if not project:
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
-
+ 
         # Base directory for output
         output_base_dir = BASE_DIR / str(project_id) / "output" / project.name
         ingredients_audio_dir = output_base_dir / "audio" / "ingredients"
         ingredients_audio_dir.mkdir(parents=True, exist_ok=True)
         temp_audio_dirs = []
-
+ 
         for verse in verses:
             try:
                 chapter = db_session.query(Chapter).filter(Chapter.chapter_id == verse.chapter_id).first()
                 if not chapter:
                     logging.error(f"Chapter not found for verse ID {verse.verse_id}")
                     continue
-
+ 
                 # Create a job entry linked to the verse
                 job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
                 db_session.add(job)
                 db_session.commit()
                 db_session.refresh(job)
-
+ 
                 # Call AI API for text-to-speech
                 result = call_tts_api([verse.text], audio_lang)
                 if "error" in result:
@@ -308,12 +347,12 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                     job.status = "in_progress"
                     db_session.add(job)
                     db_session.commit()
-
+ 
                     # Poll AI job status until it's finished
                     while True:
                         job_result = check_ai_job_status(ai_jobid)
                         job_status = job_result.get("data", {}).get("status")
-
+ 
                         if job_status == "job finished":
                             # Download and extract the audio ZIP file
                             audio_zip_url = f"https://api.vachanengine.org/v2/ai/assets?job_id={ai_jobid}"
@@ -332,7 +371,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                             new_audio_filename = f"{base_name}.wav"  # Add .wav extension
                                             new_audio_path = chapter_folder / new_audio_filename
                                             shutil.move(os.path.join(root, file), new_audio_path)
-
+ 
                                             # Update verse information
                                             verse.tts_path = str(new_audio_path)
                                             verse.tts = True
@@ -350,12 +389,12 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                             verse.tts_msg = "AI TTS job failed"
                             break
                         time.sleep(5)
-
+ 
                 # Save the updated job and verse statuses
                 db_session.add(job)
                 db_session.add(verse)
                 db_session.commit()
-
+ 
             except Exception as e:
                 # Handle errors during TTS
                 job.status = "failed"
@@ -365,23 +404,34 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.add(verse)
                 db_session.commit()
                 logging.error(f"Error during TTS for verse {verse.verse_id}: {str(e)}")
-
+ 
     except Exception as e:
         logging.error(f"Error in generate_speech_for_verses: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error in generate_speech_for_verses: {str(e)}")
-
+ 
     finally:
         db_session.close()
-        for temp_dir in temp_audio_dirs:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                logging.info(f"Deleted temporary folder: {temp_dir}")
-        if extracted_folder:
+        
+        # Cleanup temporary directories
+        if temp_audio_dirs:  # Check if temp directories exist
+            for temp_dir in temp_audio_dirs:
+                if os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                        logging.info(f"Deleted temporary folder: {temp_dir}")
+                    except Exception as e:
+                        logging.warning(f"Failed to delete temporary folder {temp_dir}: {str(e)}")
+ 
+        # Ensure extracted_folder is valid before referencing
+        if extracted_folder and os.path.exists(extracted_folder):
             input_folder = os.path.dirname(extracted_folder)  # Get parent folder of extracted folder
-            if os.path.exists(input_folder):
+            try:
                 shutil.rmtree(input_folder, ignore_errors=True)
                 logging.info(f"Deleted Input folder: {input_folder}")
-
+            except Exception as e:
+                logging.warning(f"Failed to delete Input folder {input_folder}: {str(e)}")
+        else:
+            logging.info("No extracted_folder found for cleanup.")
 
 
 def download_and_extract_audio_zip(audio_zip_url: str) -> str:
@@ -436,22 +486,56 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     """
     Call the AI API for text-to-speech.
     """
-    base_url = "https://api.vachanengine.org/v2/ai/model/audio/generate"
-    model_name = "seamless-m4t-large" 
+    # File path for the language mapping JSON
+    LANGUAGE_CODES_FILE = "language_codes.json"
+    
+    # AI API Base URL
+    BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/generate"
+ 
+    # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
-    print("AUDIO_LAN",audio_lang)
+ 
+    # Load the language mapping
+    try:
+        with open(LANGUAGE_CODES_FILE, "r") as file:
+            language_mapping = json.load(file)
+    except Exception as e:
+        logging.error(f"Error loading language_codes.json: {str(e)}")
+        return {"error": "Failed to load language mapping file", "details": str(e)}
+ 
+    # Get the model_name and language_code dynamically
+    try:
+        tts_mapping = language_mapping.get(audio_lang, {}).get("tts", {})
+        if not tts_mapping:
+            logging.error(f"No TTS model found for audio_lang: {audio_lang}")
+            return {"error": f"No TTS model found for audio_lang: {audio_lang}"}
+        
+        # Select the first available model dynamically
+        model_name, lang_code = next(iter(tts_mapping.items()))
+        print("MODELNAME,LANGUAGECODE",model_name, lang_code)
+        if not lang_code:
+            logging.error(f"No language code found for audio_lang: {audio_lang}")
+            return {"error": f"No language code found for audio_lang: {audio_lang}"}
+    except Exception as e:
+        logging.error(f"Error retrieving model and language code: {str(e)}")
+        return {"error": "Failed to retrieve model and language code", "details": str(e)}
+ 
+    # Prepare API parameters and headers
     params = {
         "model_name": model_name,
-        "language": audio_lang,  
+        "language": lang_code,  # Dynamically mapped language code
     }
-    data_payload = [  text ]
+    data_payload = [text]
     headers = {"Authorization": f"Bearer {api_token}"}
-
+ 
     try:
-        response = requests.post(base_url, params=params, json=data_payload, headers=headers)
+        # Make the API request
+        response = requests.post(BASE_API_URL, params=params, json=data_payload, headers=headers)
         logging.info(f"AI API Response: {response.status_code} - {response.text}")
+ 
+        # Handle API response
         if response.status_code == 201:
-            return response.json() 
+            return response.json()
         else:
             logging.error(f"AI API Error: {response.status_code} - {response.text}")
             return {"error": response.text, "status_code": response.status_code}

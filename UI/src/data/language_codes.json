@@ -1,0 +1,18 @@
+{
+  "Kannada": {
+    "stt": "kan" ,
+    "tts": ""
+  },
+  "Hindi": {
+    "stt": "hin" ,
+    "tts": "hin"
+  },
+  "Telugu": {
+    "stt": "tel",
+    "tts": "tel"
+  },
+  "Marathi": {
+    "stt": "mar",
+    "tts": ""
+  }
+}

@@ -1,0 +1,18 @@
+{
+    "Kannada": {
+      "stt": { "mms-1b-all": "kan" },
+      "tts": ""
+    },
+    "Hindi": {
+      "stt": { "mms-1b-all": "hin" },
+      "tts": { "seamless-m4t-large": "hin" }
+    },
+    "Telugu": {
+      "stt": { "mms-1b-all": "tel" },
+      "tts": { "seamless-m4t-large": "tel" }
+    },
+    "Marathi": {
+      "stt": { "mms-1b-all": "mar" },
+      "tts": ""
+    }
+  }

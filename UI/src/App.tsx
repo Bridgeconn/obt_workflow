@@ -6,12 +6,14 @@ import {
   Route,
   useLocation,
   Navigate,
+  useParams,
 } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import LoginPage from "@/pages/Login";
 import SignupPage from "@/pages/Signup";
 import Navbar from "@/components/Navbar/Navbar";
-import Projects from "@/pages/Projects";
+import ProjectsPage from "./pages/ProjectsPage";
+import ProjectDetailsPage from "./pages/ProjectsDetail";
 import ProfilePage from "./pages/Profile";
 import UsersTable from "./pages/Users";
 
@@ -77,13 +79,29 @@ function AppContent() {
         <Route
           path="/"
           element={
-            isAuthenticated ? <Projects /> : <Navigate to="/login" replace />
+            isAuthenticated ? <ProjectsPage /> : <Navigate to="/login" replace />
           }
         />
+        <Route
+         path = "/projects/:projectId"
+         element={
+           isAuthenticated ? <ProjectRouteWrapper /> : <Navigate to="/login" replace />
+         }
+         />
       </Routes>
     </>
   );
 }
+
+const ProjectRouteWrapper: React.FC = () => {
+  const { projectId  } = useParams<{ projectId: string }>();
+
+  if (!projectId) {
+    return <Navigate to="/projects" replace />;
+  }
+
+  return <ProjectDetailsPage projectId={parseInt(projectId)} />;
+};
 
 function App() {
   return (
