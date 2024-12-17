@@ -6,6 +6,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import useAuthStore from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast"
 import { ToastAction } from "@/components/ui/toast"
+import { Link } from 'react-router-dom';
 
 interface SignupForm {
   username: string;
@@ -48,7 +49,7 @@ const SignupPage = () => {
 };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
+    <div className="flex flex-col justify-center items-center h-screen bg-gray-100">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Signup</CardTitle>
@@ -153,12 +154,17 @@ const SignupPage = () => {
                   </FormItem>
                 )}
               />
-
+              
               <Button type="submit" className="w-full">Signup</Button>
             </form>
           </Form>
         </CardContent>
       </Card>
+      <div className="text-center mt-4">
+          <Link to="/login" className="text-blue-500 hover:underline">
+             Back to login page {` > `}
+          </Link>
+      </div>
     </div>
   );
 };
