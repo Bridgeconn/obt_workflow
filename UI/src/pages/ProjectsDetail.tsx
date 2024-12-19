@@ -23,6 +23,9 @@ import { useNavigate } from "react-router-dom";
 import source_languages from "../data/source_languages.json";
 import major_languages from "../data/major_languages.json";
 import ChapterModal from "@/components/ChapterModal";
+import { toast } from "@/hooks/use-toast";
+
+const BASE_URL = import.meta.env.VITE_BASE_URL;
 
 interface Book {
   book_id: number;
@@ -47,11 +50,13 @@ interface SelectedChapter extends Chapter {
 }
 
 const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
-  const { project, fetchProjectDetails, transcribeBook } =
+  const { project, fetchProjectDetails, transcribeBook, archiveProject } =
     useProjectDetailsStore();
   const [scriptLanguage, setScriptLanguage] = useState("");
   const [audioLanguage, setAudioLanguage] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const archive =
+    project && project?.project_id === projectId && project.archive;
   const [selectedChapter, setSelectedChapter] =
     useState<SelectedChapter | null>(null);
   const queryClient = useQueryClient();
@@ -75,13 +80,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       return;
     }
     setScriptLanguage(String(selectedLanguage.id));
-    // const lang_code =
-    //   lang_codes[selectedLanguage.major_language as keyof typeof lang_codes]
-    //     ?.tts;
     const token = useAuthStore.getState().token;
     try {
       await fetch(
-        `http://localhost:8000/projects/${project?.project_id}/script_language/${selectedLanguage.major_language}`,
+        `${BASE_URL}/projects/${project?.project_id}/script_language/${selectedLanguage.major_language}`,
         {
           method: "PUT",
           headers: {
@@ -106,13 +108,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
 
     setAudioLanguage(String(selectedLanguage.id));
-    // const lang_code =
-    //   lang_codes[selectedLanguage.source_language as keyof typeof lang_codes]
-    //     ?.stt;
     const token = useAuthStore.getState().token;
     try {
       await fetch(
-        `http://localhost:8000/projects/${project?.project_id}/audio_language/${selectedLanguage.source_language}`,
+        `${BASE_URL}/projects/${project?.project_id}/audio_language/${selectedLanguage.source_language}`,
         {
           method: "PUT",
           headers: {
@@ -133,12 +132,107 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   };
 
-  const handleDownloadProject = (bookId: number) => {
-    console.log("Downloading project for book ID:", bookId);
+  const handleDownloadUSFM = async (projectId: number, book: Book) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/generate-usfm?project_id=${projectId}&book=${book.book}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      console.log("response", response);
+      if (!response.ok) {
+        const responseData = await response.json();
+        throw new Error(responseData.detail || "Failed to generate USFM");
+      }
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let fileName = `${book.book}.usfm`; // default in case no filename is provided
+
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        if (match && match[1]) {
+          fileName = match[1];
+        }
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.log("error", error);
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error ? error.message : "Failed to generate USFM.",
+      });
+    }
   };
 
   const handleCloseProject = () => {
     navigate("/");
+  };
+
+  const handleArchiveProject = async () => {
+    if (project?.project_id === undefined) return;
+    await archiveProject(project?.project_id, !archive);
+    queryClient.invalidateQueries({ queryKey: ["projects"] });
+    navigate("/");
+  };
+
+  const handleDownloadProject = async () => {
+    try {
+
+      const projectId = project?.project_id;
+      if (!projectId) return;
+
+      const response = await fetch(
+        `${BASE_URL}/download-processed-project-zip?project_id=${projectId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const responseData = await response.json();
+        throw new Error(responseData.detail || "Failed to download zip file");
+      }
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let fileName = `${project?.name}.zip`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        if (match && match[1]) {
+          fileName = match[1];
+        }
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error downloading project:", error);
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error
+            ? error.message
+            : "Failed to download project.",
+      });
+    }
   };
 
   return (
@@ -165,9 +259,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 <SelectItem
                   key={language.language_name}
                   value={String(language.id)}
-                  disabled={["Kannada", "Marathi"].includes(
-                    language.source_language
-                  )}
                 >
                   {language.language_name}
                 </SelectItem>
@@ -192,9 +283,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 <SelectItem
                   key={language.language_name}
                   value={String(language.id)}
-                  disabled={["Kannada", "Marathi"].includes(
-                    language.major_language
-                  )}
                 >
                   {language.language_name}
                 </SelectItem>
@@ -205,11 +293,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       </div>
 
       {/* Table Section */}
-      <div className="overflow-x-auto shadow-lg rounded-lg">
-        <Table className="w-full min-w-[600px] border">
+      <div className="overflow-x-auto shadow-lg rounded-lg h-[400px] border-2">
+        <Table className="w-full min-w-[600px] border-b">
           <TableHeader>
             <TableRow className="bg-gray-100">
-              <TableHead className="font-semibold text-center px-2 py-3 w-[40px]"></TableHead>
               <TableHead className="font-semibold text-center text-primary px-3 py-3">
                 Books
               </TableHead>
@@ -228,14 +315,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           <TableBody>
             {project?.books.map((book) => (
               <TableRow key={book.book_id} className="hover:bg-gray-50">
-                {/* Checkbox */}
-                <TableCell className="text-center px-2 py-2 w-[40px]">
-                  <input
-                    type="checkbox"
-                    className="w-5 h-5 text-purple-600 border-gray-300 rounded"
-                  />
-                </TableCell>
-
                 {/* Books */}
                 <TableCell className="text-center px-3 py-2 font-medium text-gray-800">
                   {book.book}
@@ -254,6 +333,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
                             : chapter.status === "inProgress"
                             ? "text-orange-700 border border-gray-100 bg-orange-200"
+                            : chapter.status === "error"
+                            ? "text-red-700 border border-red-600 bg-red-200"
                             : "text-gray-700 border border-gray-300"
                         }`}
                         onClick={() => openChapterModal(chapter, book)}
@@ -287,14 +368,52 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       Transcribed
                     </Button>
                   ) : (
+                    // <Button
+                    //   className="text-white font-bold px-4 py-2 min-w-32 rounded-lg"
+                    //   disabled={
+                    //     book.status === "inProgress" ||
+                    //     !scriptLanguage ||
+                    //     !audioLanguage
+                    //   }
+                    //   onClick={() => {
+                    //     if (!scriptLanguage || !audioLanguage) {
+                    //       toast({
+                    //         variant: "destructive",
+                    //         title: "Selection Required",
+                    //         description: "Please select both Script Language and Audio Language.",
+                    //       });
+                    //       return;
+                    //     }
+                    //     handleTranscribe(book.book_id);
+                    //   }}
+                    // >
+                    //   {book.status === "inProgress" ? (
+                    //     <span>{book.progress}</span>
+                    //   ) : (
+                    //     "Transcribe"
+                    //   )}
+                    // </Button>
                     <Button
-                      className="text-white font-bold px-4 py-2 min-w-32 rounded-lg"
-                      disabled={
+                      className={`text-white font-bold px-4 py-2 min-w-32 rounded-lg ${
                         book.status === "inProgress" ||
                         !scriptLanguage ||
                         !audioLanguage
-                      }
-                      onClick={() => handleTranscribe(book.book_id)}
+                          ? "opacity-50 cursor-not-allowed"
+                          : "hover:bg-blue-500"
+                      }`}
+                      onClick={() => {
+                        if (!scriptLanguage || !audioLanguage) {
+                          toast({
+                            variant: "destructive",
+                            title: "Please select both Script Language and Source Audio Language",
+                          });
+                          return;
+                        }
+                        if (book.status === "inProgress") {
+                          return;
+                        }
+                        handleTranscribe(book.book_id);
+                      }}
                     >
                       {book.status === "inProgress" ? (
                         <span>{book.progress}</span>
@@ -311,9 +430,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                     variant="ghost"
                     size="icon"
                     disabled={
-                      !book.chapters.some((chapter) => chapter.approved)
+                      !book.chapters.every((chapter) => chapter.approved)
                     }
-                    onClick={() => handleDownloadProject(book.book_id)}
+                    onClick={() => handleDownloadUSFM(project.project_id, book)}
                   >
                     <Download size={20} />
                   </Button>
@@ -329,14 +448,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             onClose={() => setModalOpen(false)}
             projectId={project.project_id}
             bookName={selectedChapter.bookName}
-            chapter={selectedChapter.chapter}
+            chapter={selectedChapter}
           />
         )}
       </div>
 
-      {/* Close Button */}
-      <div className="flex justify-left mt-6">
-        <Button onClick={handleCloseProject}>Close</Button>
+      <div className="flex justify-between align-center">
+        <div className="flex justify-left mt-6 gap-4">
+          <Button onClick={handleCloseProject}>Close</Button>
+          <Button onClick={handleArchiveProject}>
+            {archive ? "Unarchive" : "Archive"}
+          </Button>
+        </div>
+        <div className="flex justify-left mt-6 gap-4">
+          <Button onClick={handleDownloadProject}>Download Project</Button>
+        </div>
       </div>
     </div>
   );
