@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")

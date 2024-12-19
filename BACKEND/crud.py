@@ -20,7 +20,7 @@ import soundfile as sf
 
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
 if not BASE_DIRECTORY:
