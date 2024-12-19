@@ -326,7 +326,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                 {isConvertingVerse.has(verse.verse_id) ? (
                   <LoadingIcon className="animate-spin" />
                 ) : (
-                  (verse.tts || verse.stt) &&
+                  (verse.modified ? verse.tts : verse.stt) &&
                   !verseModifications[verse.verse_id] &&
                   !focusedVerses.has(verse.verse_id) && (
                     <Button
