@@ -8,4 +8,5 @@
  requests
  pydantic[email]
  python-dotenv
+ librosa
 

@@ -13,6 +13,8 @@ from pathlib import Path
 from database import Project ,Book
 import json
 from dotenv import load_dotenv
+import librosa
+import soundfile as sf
 
 
 
@@ -542,47 +544,38 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     except Exception as e:
         logging.error(f"Error in call_tts_api: {str(e)}")
         return {"error": str(e)}
-    
+
 
 def validate_and_resample_wav(file_path: str) -> str:
     """
-    Validate WAV file sample rate and resample to 48000 Hz if necessary.
+    Validate WAV file sample rate and resample to 48000 Hz if necessary using librosa.
     Args:
         file_path (str): Path to the original WAV file.
     Returns:
         str: Path to the processed WAV file.
     """
-    temp_resampled_path = f"{file_path}.resampled.wav"
     try:
-        # Check the current sample rate using ffprobe
-        probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate",
-             "-of", "default=nw=1:nk=1", file_path],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        current_sample_rate = int(probe.stdout.decode().strip())
-        logging.debug(f"Current sample rate: {current_sample_rate} Hz")
+        # Load the audio file with librosa
+        audio_data, sample_rate = librosa.load(file_path, sr=None, mono=True)
+        logging.debug(f"Current sample rate: {sample_rate} Hz")
 
         # Resample only if not 48000 Hz
-        if current_sample_rate != 48000:
-            subprocess.run(
-                [
-                    "ffmpeg", "-i", file_path,
-                    "-ar", "48000", "-ac", "1", "-sample_fmt", "s16",
-                    temp_resampled_path, "-y"
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            logging.info(f"Resampled WAV file to 48000 Hz: {temp_resampled_path}")
-            os.replace(temp_resampled_path, file_path)  # Replace the original file with the resampled one
+        if sample_rate != 48000:
+            logging.info(f"Resampling audio from {sample_rate} Hz to 48000 Hz")
+            audio_data_resampled = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=48000)
+            
+            # Save the resampled audio
+            temp_resampled_path = f"{file_path}.resampled.wav"
+            sf.write(temp_resampled_path, audio_data_resampled, 48000, format="WAV")
+            logging.info(f"Resampled WAV file saved to: {temp_resampled_path}")
+
+            # Replace the original file with the resampled file
+            os.replace(temp_resampled_path, file_path)
         else:
             logging.info("File already has a sample rate of 48000 Hz. No resampling needed.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to resample WAV file: {e.stderr.decode()}")
-        raise HTTPException(status_code=500, detail="Failed to resample WAV audio file")
+    except Exception as e:
+        logging.error(f"Error during resampling: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to validate or resample WAV audio file")
+
     return file_path
      
