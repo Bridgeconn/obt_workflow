@@ -30,6 +30,8 @@ import { useToast } from "@/hooks/use-toast";
 import { DialogDescription } from "@radix-ui/react-dialog";
 import { useNavigate } from "react-router-dom";
 
+const BASE_URL = import.meta.env.VITE_BASE_URL;
+
 type PasswordFormInputs = {
   currentPassword: string;
   newPassword: string;
@@ -59,7 +61,7 @@ const ProfilePage: React.FC = () => {
   const handleChangePassword = async (formData: PasswordFormInputs) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/user/updatePassword?current_password=${formData.currentPassword}&new_password=${formData.newPassword}`,
+        `${BASE_URL}/user/updatePassword?current_password=${formData.currentPassword}&new_password=${formData.newPassword}`,
         {
           method: "PUT",
           headers: {

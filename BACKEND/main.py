@@ -4,7 +4,7 @@ from database import init_db
 import router
 from fastapi.middleware.cors import CORSMiddleware
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 # Initialize the database
 init_db()
