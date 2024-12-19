@@ -78,8 +78,7 @@ const ProfilePage: React.FC = () => {
       }
       toast({
         variant: "success",
-        title: "Success!",
-        description: "Password changed successfully.",
+        title: "Password changed successfully.",
       });
       form.reset();
       handleCloseModal();
