@@ -128,8 +128,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         // Fetch detailed status for each book and chapter
         const updatedBooks = await Promise.all(
           data.project.books.map(async (book: Book) => {
+            const sortedChapters = book.chapters.sort((a, b) => a.chapter - b.chapter);
+          
             const chapterStatuses = await Promise.all(
-              book.chapters.map(async (chapter) => {
+              sortedChapters.map(async (chapter) => {
                 const chapterStatusResponse = await fetch(
                   `${BASE_URL}/project/${data.project.project_id}/${book.book}/${chapter.chapter}`,
                   {
@@ -347,7 +349,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
       try {
         const book = currentProject.books.find((b) => b.book_id === bookId);
         if (!book) throw new Error("Book not found");
-
+        
         // Sequential chapter transcription
         for (const chapter of book.chapters) {
           try {
@@ -610,7 +612,6 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
           }
         );
         if (response.ok) {
-          // Update local state
           set((state) => ({
             chapterVerses: state.chapterVerses?.map((verse) =>
               verse.verse_id === verseId
@@ -626,7 +627,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                   if (ch.chapter === chapter) {
                     const newStatus =
                       ch.status === "approved" ? "transcribed" : ch.status;
-                    return { ...ch, status: newStatus };
+                    return { ...ch, status: newStatus, approved: false };
                   }
                   return ch;
                 });
@@ -643,6 +644,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                   ...b,
                   chapters: updatedChapters,
                   status: updatedBookStatus,
+                  approved: false,
                 };
               }
               return b;
@@ -668,11 +670,10 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
         );
 
         if (response.ok) {
-          // Update the project state in useProjectDetailsStore
+          
           useProjectDetailsStore.getState().setProject((prevProject) => {
             if (!prevProject) return null;
-
-            // Modify the books and chapters based on approval
+           
             const updatedBooks = prevProject.books.map((b) => {
               if (b.book === book) {
                 const updatedChapters = b.chapters.map((ch) => {
@@ -690,8 +691,6 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                   }
                   return ch;
                 });
-                console.log("current book status", b.status);
-                console.log("updated chapters", updatedChapters);
                 const updatedBookStatus = updatedChapters.every(
                   (ch) => ch.approved
                 )
@@ -706,6 +705,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                   ...b,
                   chapters: updatedChapters,
                   status: updatedBookStatus,
+                  approved: updatedChapters.every((ch) => ch.approved),
                 };
               }
               return b;
@@ -764,7 +764,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                     chapter.chapter
                   );
                   const chapterDetails = get().chapterVerses;
-                  console.log("chapter details", chapterDetails);
+                  
                   if (chapterDetails) {
                     const modifiedVerses = chapterDetails.filter(
                       (verse) => verse.modified

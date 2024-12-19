@@ -1,0 +1,9 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 258 257" width="258" height="257">
+	<title>vite-svg</title>
+	<style>
+		.s0 { fill: none;stroke: #8400ff;stroke-miterlimit:100;stroke-width: 34 } 
+		.s1 { fill: #8400ff } 
+	</style>
+	<path id="Layer 1" class="s0" d="m129 234.5c-58.9 0-106.5-47.6-106.5-106.5 0-58.9 47.6-106.5 106.5-106.5 58.9 0 106.5 47.6 106.5 106.5 0 58.9-47.6 106.5-106.5 106.5z"/>
+	<path id="Layer 1 copy" class="s1" d="m128.9 183c-30.4 0-55-24.6-55-55.1 0-30.4 24.6-55 55-55 30.5 0 55.1 24.6 55.1 55 0 30.5-24.6 55.1-55.1 55.1z"/>
+</svg>
