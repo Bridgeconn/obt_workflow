@@ -1,3 +1,4 @@
+import { QueryClient } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -19,7 +20,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>;
   clearError: () => void;
   signup: (username: string, email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: (queryClient?: QueryClient) => Promise<void>;
   updateRole: (userId: string, role: 'Admin' | 'AI' | 'User') => Promise<void>;
   checkAuthStatus: () => Promise<boolean>;
   fetchUserDetails: () => Promise<void>;
@@ -85,7 +86,7 @@ const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: async () => {
+      logout: async (queryClient?: QueryClient) => {
         try {
           const token = get().token;
           if (!token) {
@@ -105,6 +106,10 @@ const useAuthStore = create<AuthState>()(
           }
 
           set({ user: null, token: null });
+          if (queryClient) {
+            queryClient.clear();
+            queryClient.removeQueries({ queryKey: ['projects'] });
+          }
         } catch (error) {
           set({ error: 'Failed to log out' });
           throw error;

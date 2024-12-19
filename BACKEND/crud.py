@@ -371,7 +371,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                             new_audio_filename = f"{base_name}.wav"  # Add .wav extension
                                             new_audio_path = chapter_folder / new_audio_filename
                                             shutil.move(os.path.join(root, file), new_audio_path)
- 
+                                            new_audio_path = validate_and_resample_wav(str(new_audio_path))
                                             # Update verse information
                                             verse.tts_path = str(new_audio_path)
                                             verse.tts = True

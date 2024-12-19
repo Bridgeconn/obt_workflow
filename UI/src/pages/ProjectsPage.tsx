@@ -68,8 +68,11 @@ export const fuzzyFilter: FilterFn<Project> = (row, columnId, value) => {
 
 // Fetch projects with proper typing
 const fetchProjects = async (): Promise<Project[]> => {
-  const token = useAuthStore.getState().token;
-  if (!token) throw new Error("Missing token");
+  const { token, user } = useAuthStore.getState();
+  // if (!token) throw new Error("Missing token");
+  if (!token || !user) {
+    return [];
+  }
 
   const response = await fetch(`${BASE_URL}/projects/`, {
     method: "GET",
@@ -126,6 +129,40 @@ const uploadProject = async (file: File) => {
   return response.json();
 };
 
+const downloadProject = async (projectId: string, name: string) => {
+  const response = await fetch(
+    `${BASE_URL}/download-processed-project-zip?project_id=${projectId}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${useAuthStore.getState().token}`,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const responseData = await response.json();
+    throw new Error(responseData.detail || "Failed to download zip file");
+  }
+  const contentDisposition = response.headers.get("Content-Disposition");
+  let fileName = `${name}.zip`;
+  if (contentDisposition) {
+    const match = contentDisposition.match(/filename="([^"]+)"/);
+    if (match && match[1]) {
+      fileName = match[1];
+    }
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
 const ProjectsPage: React.FC = () => {
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -141,8 +178,9 @@ const ProjectsPage: React.FC = () => {
   const queryClient = useQueryClient();
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
-    queryKey: ["projects"],
+    queryKey: ["projects", user?.username],
     queryFn: fetchProjects,
+    enabled: !!user,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
@@ -165,21 +203,24 @@ const ProjectsPage: React.FC = () => {
     },
     onError: (error: Error) => {
       toast({
-        title: "Upload Failed",
-        description: error?.message,
+        title: error instanceof Error ? error.message : "Upload failed",
         variant: "destructive",
       });
     },
   });
 
   const downloadMutation = useMutation({
-    mutationFn: async (projectId: string) => {
-      console.log("Downloading project:", projectId);
+    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
+      downloadProject(projectId, name),
+    onSuccess: () => {
+      toast({
+        variant: "success",
+        title: "Project downloaded successfully!",
+      });
     },
     onError: (error: Error) => {
       toast({
-        title: "Download Failed",
-        description: error.message,
+        title: error instanceof Error ? error.message : "Download failed",
         variant: "destructive",
       });
     },
@@ -217,7 +258,7 @@ const ProjectsPage: React.FC = () => {
     }),
     columnHelper.display({
       id: "actions",
-      header: "DA",
+      header: "Download",
       cell: ({ row }) => (
         <Button
           variant="ghost"
@@ -225,7 +266,7 @@ const ProjectsPage: React.FC = () => {
           disabled={row.original.approved === 0}
           onClick={(e) => {
             e.stopPropagation();
-            downloadMutation.mutate(row.original.id);
+            downloadMutation.mutate({ projectId: row.original.id, name: row.original.name });
           }}
         >
           <Download size={20} />
@@ -288,7 +329,7 @@ const ProjectsPage: React.FC = () => {
           <DebouncedInput
             value={globalFilter ?? ""}
             placeholder="Filter projects..."
-            onChange={value => setGlobalFilter(String(value))}
+            onChange={(value) => setGlobalFilter(String(value))}
             className="max-w-sm shadow"
           />
           <input
@@ -332,19 +373,26 @@ const ProjectsPage: React.FC = () => {
           </div>
         ) : (
           <>
+          <div className="relative overflow-auto h-[400px] border-2 rounded-lg">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
                   <TableRow key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id}
-                      className={ `text-primary ${
-                        ["scriptLanguage", "audioLanguage", "books", "approved", "actions"].includes(
-                          header.id
-                        )
-                          ? "text-center"
-                          : ""
-                      }`}>
+                      <TableHead
+                        key={header.id}
+                        className={`text-primary ${
+                          [
+                            "scriptLanguage",
+                            "audioLanguage",
+                            "books",
+                            "approved",
+                            "actions",
+                          ].includes(header.id)
+                            ? "text-center"
+                            : ""
+                        }`}
+                      >
                         {header.isPlaceholder
                           ? null
                           : flexRender(
@@ -384,14 +432,20 @@ const ProjectsPage: React.FC = () => {
                       className="cursor-pointer hover:bg-gray-100"
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}
-                        className={
-                          ["scriptLanguage", "audioLanguage", "books", "approved", "actions"].includes(
-                            cell.column.id
-                          )
-                            ? "text-center"
-                            : "text-left"
-                        }>
+                        <TableCell
+                          key={cell.id}
+                          className={
+                            [
+                              "scriptLanguage",
+                              "audioLanguage",
+                              "books",
+                              "approved",
+                              "actions",
+                            ].includes(cell.column.id)
+                              ? "text-center"
+                              : "text-left"
+                          }
+                        >
                           {flexRender(
                             cell.column.columnDef.cell,
                             cell.getContext()
@@ -403,12 +457,13 @@ const ProjectsPage: React.FC = () => {
                 )}
               </TableBody>
             </Table>
+            </div>
             <div className="flex justify-center items-center gap-4 mt-4">
               <Button
                 disabled={pageIndex === 0}
                 onClick={() => table.previousPage()}
               >
-                Previous
+                {`<`}
               </Button>
               <span>
                 Page {pageIndex + 1} of {table.getPageCount()}
@@ -417,7 +472,7 @@ const ProjectsPage: React.FC = () => {
                 disabled={pageIndex >= table.getPageCount() - 1}
                 onClick={() => table.nextPage()}
               >
-                Next
+                {`>`}
               </Button>
             </div>
           </>

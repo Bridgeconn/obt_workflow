@@ -9,14 +9,16 @@ import {
   import { useNavigate } from "react-router-dom";
   import useAuthStore from "@/store/useAuthStore";
 import { UserIcon } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
   
   const UserMenu = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { user, logout } = useAuthStore();
     console.log("user details", user);
   
     const handleLogout = async () => {
-      await logout();
+      await logout(queryClient);
       navigate("/login");
     };
   
