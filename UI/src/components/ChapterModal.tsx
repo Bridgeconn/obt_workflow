@@ -47,6 +47,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     convertToSpeech,
   } = useChapterDetailsStore();
   const [playingVerse, setPlayingVerse] = useState<number | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [approved, setApproved] = useState<boolean>(chapter.approved);
   const [isConverting, setIsConverting] = useState<boolean>(false);
@@ -75,62 +76,78 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       audio.pause();
       setAudio(null);
       setPlayingVerse(null);
+      setIsPlaying(false);
     }
   }, [isOpen, audio]);
 
   const handlePlayAudio = async (verseId: number) => {
-    if (audio) {
-      // Stop and reset the audio
-      audio.pause();
-      setAudio(null);
-      setPlayingVerse(null);
-    } else {
-      try {
-        const token = useAuthStore.getState().token;
-
-        // Fetch audio from API
-        const response = await fetch(
-          `${BASE_URL}/project/verse/audio?verse_id=${verseId}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        // Check if the response is OK
-        if (!response.ok) {
-          throw new Error("Failed to fetch audio");
+    try {
+      const token = useAuthStore.getState().token;
+  
+      if (playingVerse === verseId && audio) {
+        if (audio.paused) {
+          // Resume playback
+          audio.play();
+          setIsPlaying(true);
+        } else {
+          // Pause playback
+          audio.pause();
+          setIsPlaying(false);
         }
-
-        // Process the audio blob
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-
-        // Play audio
-        const newAudio = new Audio(audioUrl);
-        newAudio.play();
-
-        // Update state
-        setAudio(newAudio);
-        setPlayingVerse(verseId);
-
-        // Reset state when audio ends
-        newAudio.onended = () => {
-          setPlayingVerse(null);
-          setAudio(null);
-        };
-      } catch (error) {
-        console.error("Error fetching audio:", error);
-        toast({
-          variant: "destructive",
-          title:
-            error instanceof Error ? error.message : "Error fetching audio",
-        });
+        return;
       }
+  
+      if (audio) {
+        // Stop the current audio
+        audio.pause();
+        setAudio(null);
+        setPlayingVerse(null);
+        setIsPlaying(false);
+      }
+  
+      // Fetch audio from API if new verse is played
+      const response = await fetch(
+        `${BASE_URL}/project/verse/audio?verse_id=${verseId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+  
+      if (!response.ok) {
+        throw new Error("Failed to fetch audio");
+      }
+  
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+  
+      // Initialize and play audio
+      const newAudio = new Audio(audioUrl);
+      newAudio.play();
+  
+      // Update state
+      setAudio(newAudio);
+      setPlayingVerse(verseId);
+      setIsPlaying(true);
+  
+      // Reset state when audio ends
+      newAudio.onended = () => {
+        setPlayingVerse(null);
+        setAudio(null);
+        setIsPlaying(false);
+      };
+    } catch (error) {
+      console.error("Error fetching audio:", error);
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error ? error.message : "Error fetching audio",
+      });
     }
   };
+  
 
   const handleApproveChapter = () => {
     const approve = approved ? false : true;
@@ -336,7 +353,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                       variant="ghost"
                       onClick={() => handlePlayAudio(verse.verse_id)}
                     >
-                      {playingVerse === verse.verse_id ? (
+                      {playingVerse === verse.verse_id && isPlaying ? (
                         <PauseIcon />
                       ) : (
                         <PlayIcon />

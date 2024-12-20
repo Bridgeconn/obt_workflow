@@ -188,7 +188,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const handleDownloadProject = async () => {
     try {
-
       const projectId = project?.project_id;
       if (!projectId) return;
 
@@ -241,9 +240,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       <h1 className="text-4xl font-bold mb-6 text-purple-700">
         {project?.name}
       </h1>
-      <div className="flex justify-between mb-6 align-center gap-4 flex-wrap">
+      <div className="flex flex-col md:flex-row justify-between mb-6 items-start md:items-center gap-4 flex-wrap">
         {/* Audio Language */}
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
           <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
             Source Audio Uploaded:
           </label>
@@ -251,7 +250,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             onValueChange={handleAudioLanguageChange}
             value={audioLanguage}
           >
-            <SelectTrigger className="w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">
+            <SelectTrigger className="w-full md:w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">
               <SelectValue placeholder="Select Language" />
             </SelectTrigger>
             <SelectContent>
@@ -266,8 +265,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             </SelectContent>
           </Select>
         </div>
+
         {/* Script Language */}
-        <div className="flex items-center space-x-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
           <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
             Script Language:
           </label>
@@ -275,7 +275,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             onValueChange={handleScriptLanguageChange}
             value={scriptLanguage}
           >
-            <SelectTrigger className="w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">
+            <SelectTrigger className="w-full md:w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">
               <SelectValue placeholder="Select Language" />
             </SelectTrigger>
             <SelectContent>
@@ -293,7 +293,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       </div>
 
       {/* Table Section */}
-      <div className="overflow-x-auto shadow-lg rounded-lg h-[400px] border-2">
+      <div className="overflow-x-auto shadow-lg rounded-lg h-[420px] border-2">
         <Table className="w-full min-w-[600px] border-b">
           <TableHeader>
             <TableRow className="bg-gray-100">
@@ -340,7 +340,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                         onClick={() => openChapterModal(chapter, book)}
                       >
                         {chapter.missing_verses?.length > 0 &&
-                          chapter.status === "notTranscribed" && (
+                          book.status === "notTranscribed" && (
                             <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
                               !
                             </span>
@@ -355,57 +355,33 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 <TableCell className="text-center">
                   {book.status === "approved" ? (
                     <Button
-                      className="bg-blue-600 text-white font-bold px-4 py-2 min-w-32 rounded-lg hover:bg-blue-600"
+                      className="bg-blue-600 text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg hover:bg-blue-600"
                       disabled
                     >
                       Approved
                     </Button>
                   ) : book.status === "transcribed" ? (
                     <Button
-                      className="bg-green-600 text-white font-bold px-4 py-2 min-w-32 rounded-lg hover:bg-green-600"
+                      className="bg-green-600 text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg hover:bg-green-600"
                       disabled
                     >
                       Transcribed
                     </Button>
                   ) : (
-                    // <Button
-                    //   className="text-white font-bold px-4 py-2 min-w-32 rounded-lg"
-                    //   disabled={
-                    //     book.status === "inProgress" ||
-                    //     !scriptLanguage ||
-                    //     !audioLanguage
-                    //   }
-                    //   onClick={() => {
-                    //     if (!scriptLanguage || !audioLanguage) {
-                    //       toast({
-                    //         variant: "destructive",
-                    //         title: "Selection Required",
-                    //         description: "Please select both Script Language and Audio Language.",
-                    //       });
-                    //       return;
-                    //     }
-                    //     handleTranscribe(book.book_id);
-                    //   }}
-                    // >
-                    //   {book.status === "inProgress" ? (
-                    //     <span>{book.progress}</span>
-                    //   ) : (
-                    //     "Transcribe"
-                    //   )}
-                    // </Button>
                     <Button
-                      className={`text-white font-bold px-4 py-2 min-w-32 rounded-lg ${
+                      className={`text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg ${
                         book.status === "inProgress" ||
                         !scriptLanguage ||
                         !audioLanguage
                           ? "opacity-50 cursor-not-allowed"
-                          : "hover:bg-blue-500"
+                          : "hover:bg-gray-700"
                       }`}
                       onClick={() => {
                         if (!scriptLanguage || !audioLanguage) {
                           toast({
                             variant: "destructive",
-                            title: "Please select both Script Language and Source Audio Language",
+                            title:
+                              "Please select both Source Audio Language and Script Language",
                           });
                           return;
                         }
@@ -429,6 +405,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                   <Button
                     variant="ghost"
                     size="icon"
+                    className="w-full md:w-auto"
                     disabled={
                       !book.chapters.every((chapter) => chapter.approved)
                     }
@@ -453,15 +430,19 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         )}
       </div>
 
-      <div className="flex justify-between align-center">
-        <div className="flex justify-left mt-6 gap-4">
-          <Button onClick={handleCloseProject}>Close</Button>
-          <Button onClick={handleArchiveProject}>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-6">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
+          <Button className="w-full md:w-auto" onClick={handleCloseProject}>
+            Close
+          </Button>
+          <Button className="w-full md:w-auto" onClick={handleArchiveProject}>
             {archive ? "Unarchive" : "Archive"}
           </Button>
         </div>
-        <div className="flex justify-left mt-6 gap-4">
-          <Button onClick={handleDownloadProject}>Download Project</Button>
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
+          <Button className="w-full md:w-auto" onClick={handleDownloadProject}>
+            Download Project
+          </Button>
         </div>
       </div>
     </div>
