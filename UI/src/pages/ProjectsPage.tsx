@@ -131,7 +131,7 @@ const uploadProject = async (file: File) => {
 
 const downloadProject = async (projectId: string, name: string) => {
   const response = await fetch(
-    `${BASE_URL}/download-processed-project-zip?project_id=${projectId}`,
+    `${BASE_URL}/download-processed-project-zip/?project_id=${projectId}`,
     {
       method: "GET",
       headers: {
@@ -317,9 +317,9 @@ const ProjectsPage: React.FC = () => {
       onDragOver={(e) => e.preventDefault()}
       onDrop={handleDrop}
     >
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
         <h1 className="text-3xl font-bold">Projects</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-4 md:justify-start">
           <Button onClick={() => setActive(true)} disabled={isActive}>
             Active
           </Button>
@@ -344,7 +344,6 @@ const ProjectsPage: React.FC = () => {
           </Button>
         </div>
       </div>
-
       <div
         className="mt-10"
         onDragOver={(e) => {
@@ -373,7 +372,7 @@ const ProjectsPage: React.FC = () => {
           </div>
         ) : (
           <>
-          <div className="relative overflow-auto h-[400px] border-2 rounded-lg">
+          <div className="relative overflow-hidden h-[420px] border-2 rounded-lg">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((headerGroup) => (
