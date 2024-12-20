@@ -16,7 +16,7 @@ interface SignupForm {
 }
 
 const SignupPage = () => {
-  const { signup, clearError } = useAuthStore();
+  const { signup } = useAuthStore();
   const { toast } = useToast()
 
   const form = useForm<SignupForm>({
@@ -30,12 +30,10 @@ const SignupPage = () => {
 
   const onSubmit = async (data: SignupForm) => {
   try {
-    clearError();
     await signup(data.username, data.email, data.password);
     toast({
       variant: "success",
-      title: "Success!",
-      description: "Signup successful.",
+      title: "Signup successful!",
     })
     window.location.href = '/login';
   } catch (error) {
@@ -73,7 +71,6 @@ const SignupPage = () => {
                     <FormControl>
                       <Input 
                         type="text" 
-                        placeholder="Enter your username"
                         {...field} 
                       />
                     </FormControl>
@@ -98,7 +95,6 @@ const SignupPage = () => {
                     <FormControl>
                       <Input 
                         type="email" 
-                        placeholder="Enter your email"
                         {...field} 
                       />
                     </FormControl>
@@ -123,7 +119,6 @@ const SignupPage = () => {
                     <FormControl>
                       <Input 
                         type="password" 
-                        placeholder="Enter your password"
                         {...field} 
                       />
                     </FormControl>
@@ -145,8 +140,7 @@ const SignupPage = () => {
                     <FormLabel>Confirm Password</FormLabel>
                     <FormControl>
                       <Input 
-                        type="password" 
-                        placeholder="Confirm your password"
+                        type="password"
                         {...field} 
                       />
                     </FormControl>
