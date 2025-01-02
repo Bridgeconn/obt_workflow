@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import useAuthStore from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast"
-import { ToastAction } from "@/components/ui/toast"
+import { useNavigate } from "react-router-dom";
 import { Link } from 'react-router-dom';
 
 interface SignupForm {
@@ -18,6 +18,7 @@ interface SignupForm {
 const SignupPage = () => {
   const { signup } = useAuthStore();
   const { toast } = useToast()
+  const navigate = useNavigate();
 
   const form = useForm<SignupForm>({
     defaultValues: {
@@ -35,13 +36,13 @@ const SignupPage = () => {
       variant: "success",
       title: "Signup successful!",
     })
-    window.location.href = '/login';
+
+    navigate('/login');
   } catch (error) {
     console.error('Signup failed', error);
     toast({
       variant: "destructive",
       title: error instanceof Error ? error.message : "Signup failed.",
-      action: <ToastAction altText="Try again">Try again</ToastAction>,
     })
   }
 };
