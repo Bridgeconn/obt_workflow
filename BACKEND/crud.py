@@ -43,7 +43,19 @@ def process_project_files(input_path, output_path, db, project):
     """
     try:
         # Locate the project directory within `input_path`
-        project_input_path = next(input_path.iterdir(), None)
+       # Normalize the project directory structure
+        extracted_items = list(input_path.iterdir())
+        if len(extracted_items) == 1 and extracted_items[0].is_dir():
+            # Case: Single folder encapsulating everything
+            project_input_path = extracted_items[0]
+        elif any((input_path / item).exists() for item in ["audio", "text-1", "metadata.json"]):
+            # Case: Direct structure with `audio`, `text-1`, and `metadata.json`
+            project_input_path = input_path
+        else:
+            logging.error("Unexpected folder structure in the input path.")
+            raise HTTPException(
+                status_code=400, detail="Unexpected folder structure in the input path"
+            )
         if not project_input_path or not project_input_path.is_dir():
             logging.error("Project directory not found under input path.")
             raise HTTPException(status_code=400, detail="Project directory not found under input path")

@@ -354,7 +354,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         for (const chapter of book.chapters) {
           try {
             const transcribeResponse = await fetch(
-              `${BASE_URL}/transcribe?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
+              `${BASE_URL}/project/chapter/stt?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
               {
                 method: "POST",
                 headers: {

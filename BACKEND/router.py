@@ -659,8 +659,8 @@ async def update_project_archive(
     }
 
 
-@router.post("/transcribe", tags=["Project"])
-async def transcribe_book(
+@router.post("/project/chapter/stt", tags=["Project"])
+async def convert_to_text(
     project_id: int,
     book_code: str,
     chapter_number: int,
