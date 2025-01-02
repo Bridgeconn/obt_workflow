@@ -176,6 +176,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const handleCloseProject = () => {
+    queryClient.invalidateQueries({ queryKey: ["projects"] });
     navigate("/");
   };
 
