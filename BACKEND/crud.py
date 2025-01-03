@@ -162,6 +162,12 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             if not verse:
                 logging.error(f"Verse file not found for path: {file_path}")
                 continue
+            
+            # Check if transcription is already successful
+            if verse.stt_msg == "Transcription successful":
+                logging.debug(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
+                continue
+            
             # Create a job entry linked to the verse
             job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
             db_session.add(job)
@@ -496,12 +502,74 @@ def find_audio_file(folder_path: str, verse_name: str) -> str:
 
 
 
+# def call_tts_api(text: str, audio_lang: str) -> dict:
+#     """
+#     Call the AI API for text-to-speech.
+#     """
+#     # File path for the language mapping JSON
+#     LANGUAGE_CODES_FILE = "language_codes.json"
+    
+#     # AI API Base URL
+#     BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/generate"
+ 
+#     # API Token
+#     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
+ 
+#     # Load the language mapping
+#     try:
+#         with open(LANGUAGE_CODES_FILE, "r") as file:
+#             language_mapping = json.load(file)
+#     except Exception as e:
+#         logging.error(f"Error loading language_codes.json: {str(e)}")
+#         return {"error": "Failed to load language mapping file", "details": str(e)}
+ 
+#     # Get the model_name and language_code dynamically
+#     try:
+#         tts_mapping = language_mapping.get(audio_lang, {}).get("tts", {})
+#         if not tts_mapping:
+#             logging.error(f"No TTS model found for audio_lang: {audio_lang}")
+#             return {"error": f"No TTS model found for audio_lang: {audio_lang}"}
+        
+#         # Select the first available model dynamically
+#         model_name, lang_code = next(iter(tts_mapping.items()))
+#         print("MODELNAME,LANGUAGECODE",model_name, lang_code)
+#         if not lang_code:
+#             logging.error(f"No language code found for audio_lang: {audio_lang}")
+#             return {"error": f"No language code found for audio_lang: {audio_lang}"}
+#     except Exception as e:
+#         logging.error(f"Error retrieving model and language code: {str(e)}")
+#         return {"error": "Failed to retrieve model and language code", "details": str(e)}
+ 
+#     # Prepare API parameters and headers
+#     params = {
+#         "model_name": model_name,
+#         "language": lang_code,  # Dynamically mapped language code
+#     }
+#     data_payload = [text]
+#     headers = {"Authorization": f"Bearer {api_token}"}
+ 
+#     try:
+#         # Make the API request
+#         response = requests.post(BASE_API_URL, params=params, json=data_payload, headers=headers)
+#         logging.info(f"AI API Response: {response.status_code} - {response.text}")
+ 
+#         # Handle API response
+#         if response.status_code == 201:
+#             return response.json()
+#         else:
+#             logging.error(f"AI API Error: {response.status_code} - {response.text}")
+#             return {"error": response.text, "status_code": response.status_code}
+#     except Exception as e:
+#         logging.error(f"Error in call_tts_api: {str(e)}")
+#         return {"error": str(e)}
+
 def call_tts_api(text: str, audio_lang: str) -> dict:
     """
     Call the AI API for text-to-speech.
     """
     # File path for the language mapping JSON
     LANGUAGE_CODES_FILE = "language_codes.json"
+    SOURCE_LANGUAGES_FILE = "source_languages.json"
     
     # AI API Base URL
     BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/generate"
@@ -516,20 +584,40 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     except Exception as e:
         logging.error(f"Error loading language_codes.json: {str(e)}")
         return {"error": "Failed to load language mapping file", "details": str(e)}
+    
+ 
+    # Load the source language mapping
+    try:
+        with open(SOURCE_LANGUAGES_FILE, "r") as file:
+            source_language_mapping = json.load(file)
+    except Exception as e:
+        logging.error(f"Error loading source_languages.json: {str(e)}")
+        return {"error": "Failed to load source language mapping file", "details": str(e)}
+ 
+    # Map audio_lang to source_language
+    source_language = None
+    for item in source_language_mapping:
+        if item["language_name"] == audio_lang:
+            source_language = item["source_language"]
+            break
+ 
+    if not source_language:
+        logging.error(f"No source language found for audio_lang: {audio_lang}")
+        return {"error": f"No source language found for audio_lang: {audio_lang}"}
  
     # Get the model_name and language_code dynamically
     try:
-        tts_mapping = language_mapping.get(audio_lang, {}).get("tts", {})
+        tts_mapping = language_mapping.get(source_language, {}).get("tts", {})
         if not tts_mapping:
-            logging.error(f"No TTS model found for audio_lang: {audio_lang}")
-            return {"error": f"No TTS model found for audio_lang: {audio_lang}"}
+            logging.error(f"No TTS model found for source_language: {source_language}")
+            return {"error": f"No TTS model found for audio_lang: {source_language}"}
         
         # Select the first available model dynamically
         model_name, lang_code = next(iter(tts_mapping.items()))
         print("MODELNAME,LANGUAGECODE",model_name, lang_code)
         if not lang_code:
-            logging.error(f"No language code found for audio_lang: {audio_lang}")
-            return {"error": f"No language code found for audio_lang: {audio_lang}"}
+            logging.error(f"No language code found for source_language: {source_language}")
+            return {"error": f"No language code found for source_language: {source_language}"}
     except Exception as e:
         logging.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
