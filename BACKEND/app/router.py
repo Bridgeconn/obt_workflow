@@ -281,6 +281,16 @@ async def upload_zip(
             .get("name", {})
             .get("en", "Unknown Project")
         )
+
+        # Check for duplicate project names and add a number if necessary
+        existing_projects = db.query(Project).filter(Project.name.like(f"{name}%")).all()
+        if existing_projects:
+            similar_names = [proj.name for proj in existing_projects]
+            count = 1
+            while f"{name}({count})" in similar_names:
+                count += 1
+            name = f"{name}({count})"
+
         metadata = json.dumps(metadata_content)
         # Create the project entry in the database
         project = Project(

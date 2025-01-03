@@ -1,0 +1,68 @@
+version: '3.9'
+services:
+  vachan-db:
+    image: postgres:15.2
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-q", "-d", "postgres", "-U", "postgres" ]
+      timeout: 45s
+      interval: 10s
+      retries: 10
+    restart: always
+    environment:
+      - POSTGRES_USER=${AI_OBT_POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${AI_OBT_POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${AI_OBT_POSTGRES_DATABASE:-vachan_dev}
+      - POSTGRES_HOST_AUTH_METHOD=md5
+    logging:
+      options:
+        max-size: 10m
+        max-file: "3"
+    expose:
+      - 5432
+    ports:
+      # HOST:CONTAINER
+      - "5440:5432"
+    networks:
+      - my-network
+    volumes:
+      - vachan-db-vol:/var/lib/postgresql/data
+
+  obt_workflow_app:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+    healthcheck:
+      timeout: 45s
+      interval: 10s
+      retries: 10
+    environment:
+      - AI_OBT_POSTGRES_HOST=vachan-db
+      - AI_OBT_POSTGRES_PORT=5432
+      - AI_OBT_POSTGRES_USER=${AI_OBT_POSTGRES_USER:-postgres}
+      - AI_OBT_POSTGRES_PASSWORD=${AI_OBT_POSTGRES_PASSWORD:-password}
+      - AI_OBT_POSTGRES_DATABASE=${AI_OBT_POSTGRES_DATABASE:-vachan_dev}
+      - AI_OBT_LOGGING_LEVEL=INFO
+      - AI_OBT_DOMAIN=${AI_OBT_DOMAIN:-http://localhost}
+      - BASE_DIRECTORY=/app/data
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - logs-vol:/app/logs
+    restart: always
+    links:
+      - vachan-db
+    depends_on:
+      - vachan-db
+    expose:
+      - 8000
+    ports:
+      - "8000:8000"
+    networks:
+      - my-network
+    container_name: obt_workflow_app
+
+networks:
+  my-network:
+
+volumes:
+  vachan-db-vol:
+  logs-vol:
