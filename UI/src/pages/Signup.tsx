@@ -1,8 +1,8 @@
 import { useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import useAuthStore from "@/store/useAuthStore";
 import { useToast } from "@/hooks/use-toast"
 import { useNavigate } from "react-router-dom";
@@ -51,7 +51,8 @@ const SignupPage = () => {
     <div className="flex flex-col justify-center items-center h-screen bg-gray-100">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Signup</CardTitle>
+          {/* <CardTitle>Signup</CardTitle> */}
+          <img src="/obt.svg" alt="Logo" className="w-12 h-12 mx-auto mb-4" />
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -68,10 +69,11 @@ const SignupPage = () => {
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Username</FormLabel>
+                    {/* <FormLabel>Username</FormLabel> */}
                     <FormControl>
                       <Input 
                         type="text" 
+                        placeholder = "Enter your username"
                         {...field} 
                       />
                     </FormControl>
@@ -92,10 +94,11 @@ const SignupPage = () => {
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    {/* <FormLabel>Email</FormLabel> */}
                     <FormControl>
-                      <Input 
+                      <Input
                         type="email" 
+                        placeholder= "Enter your email"
                         {...field} 
                       />
                     </FormControl>
@@ -116,10 +119,11 @@ const SignupPage = () => {
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    {/* <FormLabel>Password</FormLabel> */}
                     <FormControl>
                       <Input 
                         type="password" 
+                        placeholder='Enter your password' 
                         {...field} 
                       />
                     </FormControl>
@@ -138,10 +142,11 @@ const SignupPage = () => {
                 }}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
+                    {/* <FormLabel>Confirm Password</FormLabel> */}
                     <FormControl>
                       <Input 
                         type="password"
+                        placeholder="Confirm your password"
                         {...field} 
                       />
                     </FormControl>
