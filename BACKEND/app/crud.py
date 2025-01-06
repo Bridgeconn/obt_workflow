@@ -1,9 +1,8 @@
-
 from sqlalchemy.orm import Session
 import zipfile
 import os
 from database import SessionLocal, User,Verse,Chapter,Job
-import logging
+# import logging
 import requests
 import time
 import shutil
@@ -15,12 +14,13 @@ import json
 from dotenv import load_dotenv
 import librosa
 import soundfile as sf
+from dependency import logger, LOG_FOLDER
 
 
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.DEBUG)
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
 if not BASE_DIRECTORY:
@@ -52,17 +52,17 @@ def process_project_files(input_path, output_path, db, project):
             # Case: Direct structure with `audio`, `text-1`, and `metadata.json`
             project_input_path = input_path
         else:
-            logging.error("Unexpected folder structure in the input path.")
+            logger.error("Unexpected folder structure in the input path.")
             raise HTTPException(
                 status_code=400, detail="Unexpected folder structure in the input path"
             )
         if not project_input_path or not project_input_path.is_dir():
-            logging.error("Project directory not found under input path.")
+            logger.error("Project directory not found under input path.")
             raise HTTPException(status_code=400, detail="Project directory not found under input path")
         # Locate versification.json
         versification_path = next(project_input_path.rglob("versification.json"), None)
         if not versification_path:
-            logging.error("versification.json not found in the project folder.")
+            logger.error("versification.json not found in the project folder.")
             raise HTTPException(status_code=400, detail="versification.json not found in the project folder")
         # Read versification.json
         with open(versification_path, "r", encoding="utf-8") as versification_file:
@@ -81,9 +81,9 @@ def process_project_files(input_path, output_path, db, project):
                 ingredients_path = Path(root) / "ingredients"
                 break
         if not ingredients_path:
-            logging.error("Ingredients folder not found. Checked all possible locations.")
+            logger.error("Ingredients folder not found. Checked all possible locations.")
             raise HTTPException(status_code=400, detail="ingredients folder not found in the project folder")
-        logging.info(f"Ingredients folder found at: {ingredients_path}")
+        logger.info(f"Ingredients folder found at: {ingredients_path}")
         # Process books, chapters, and verses in `ingredients`
         for book_dir in ingredients_path.iterdir():
             if book_dir.is_dir():
@@ -144,11 +144,11 @@ def process_project_files(input_path, output_path, db, project):
                                     )
                                     db.add(verse)
                                 except ValueError:
-                                    logging.warning(f"Invalid file name format: {verse_file.name}")
+                                    logger.warning(f"Invalid file name format: {verse_file.name}")
                                     continue
         db.commit()
     except Exception as e:
-        logging.error(f"Error while processing project files: {str(e)}") 
+        logger.error(f"Error while processing project files: {str(e)}") 
         raise HTTPException(status_code=500, detail="Error while processing project files")
 
 def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Session):
@@ -160,14 +160,14 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             # Retrieve the Verse entry based on the file path
             verse = db_session.query(Verse).filter(Verse.path == file_path).first()
             if not verse:
-                logging.error(f"Verse file not found for path: {file_path}")
+                logger.error(f"Verse file not found for path: {file_path}")
                 continue
-            
+
             # Check if transcription is already successful
             if verse.stt_msg == "Transcription successful":
-                logging.debug(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
+                logger.debug(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
                 continue
-            
+
             # Create a job entry linked to the verse
             job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
             db_session.add(job)
@@ -228,10 +228,10 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
                 db_session.add(job)
                 db_session.add(verse)
                 db_session.commit()
-                logging.error(f"Error during transcription for verse {verse.verse_id}: {str(e)}")
+                logger.error(f"Error during transcription for verse {verse.verse_id}: {str(e)}")
 
     except Exception as e:
-        logging.error(f"Error in transcribe_verses: {str(e)}")
+        logger.error(f"Error in transcribe_verses: {str(e)}")
 
     finally:
         db_session.close()
@@ -249,7 +249,7 @@ def check_ai_job_status(ai_jobid: str) -> dict:
     if response.status_code == 200:
         return response.json()
     else:
-        logging.error(f"Failed to fetch AI job status: {response.status_code} - {response.text}")
+        logger.error(f"Failed to fetch AI job status: {response.status_code} - {response.text}")
         return {"error": "Failed to fetch job status"}
 
 
@@ -274,23 +274,23 @@ def call_ai_api(file_path: str, script_lang: str) -> dict:
         with open(LANGUAGE_CODES_FILE, "r") as file:
             language_mapping = json.load(file)
     except Exception as e:
-        logging.error(f"Error loading language_codes.json: {str(e)}")
+        logger.error(f"Error loading language_codes.json: {str(e)}")
         return {"error": "Failed to load language mapping file", "details": str(e)}
  
     # Get the model_name and language_code dynamically
     try:
         stt_mapping = language_mapping.get(script_lang, {}).get("stt", {})
         if not stt_mapping:
-            logging.error(f"No STT model found for script_lang: {script_lang}")
+            logger.error(f"No STT model found for script_lang: {script_lang}")
             return {"error": f"No STT model found for script_lang: {script_lang}"}
         
         # Select the first available model dynamically
         model_name, lang_code = next(iter(stt_mapping.items()))
         if not lang_code:
-            logging.error(f"No language code found for script_lang: {script_lang}")
+            logger.error(f"No language code found for script_lang: {script_lang}")
             return {"error": f"No language code found for script_lang: {script_lang}"}
     except Exception as e:
-        logging.error(f"Error retrieving model and language code: {str(e)}")
+        logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
  
     # Prepare API URL
@@ -307,17 +307,18 @@ def call_ai_api(file_path: str, script_lang: str) -> dict:
             # Make the API request
             response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
  
-        logging.info(f"AI API Response: {response.status_code} - {response.text}")
+        logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
         # Handle API response
         if response.status_code == 201:
             return response.json()
         else:
-            logging.error(f"AI API Error: {response.status_code} - {response.text}")
+            logger.error(f"AI API Error: {response.status_code} - {response.text}")
             return {"error": "Failed to transcribe", "status_code": response.status_code}
     except Exception as e:
-        logging.error(f"Error in call_ai_api: {str(e)}")
+        logger.error(f"Error in call_ai_api: {str(e)}")
         return {"error": "Exception occurred", "details": str(e)}
+
 
 
 
@@ -344,7 +345,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
             try:
                 chapter = db_session.query(Chapter).filter(Chapter.chapter_id == verse.chapter_id).first()
                 if not chapter:
-                    logging.error(f"Chapter not found for verse ID {verse.verse_id}")
+                    logger.error(f"Chapter not found for verse ID {verse.verse_id}")
                     continue
  
                 # Create a job entry linked to the verse
@@ -423,10 +424,10 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.add(job)
                 db_session.add(verse)
                 db_session.commit()
-                logging.error(f"Error during TTS for verse {verse.verse_id}: {str(e)}")
+                logger.error(f"Error during TTS for verse {verse.verse_id}: {str(e)}")
  
     except Exception as e:
-        logging.error(f"Error in generate_speech_for_verses: {str(e)}")
+        logger.error(f"Error in generate_speech_for_verses: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error in generate_speech_for_verses: {str(e)}")
  
     finally:
@@ -438,20 +439,20 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 if os.path.exists(temp_dir):
                     try:
                         shutil.rmtree(temp_dir, ignore_errors=True)
-                        logging.info(f"Deleted temporary folder: {temp_dir}")
+                        logger.info(f"Deleted temporary folder: {temp_dir}")
                     except Exception as e:
-                        logging.warning(f"Failed to delete temporary folder {temp_dir}: {str(e)}")
+                        logger.warning(f"Failed to delete temporary folder {temp_dir}: {str(e)}")
  
         # Ensure extracted_folder is valid before referencing
         if extracted_folder and os.path.exists(extracted_folder):
             input_folder = os.path.dirname(extracted_folder)  # Get parent folder of extracted folder
             try:
                 shutil.rmtree(input_folder, ignore_errors=True)
-                logging.info(f"Deleted Input folder: {input_folder}")
+                logger.info(f"Deleted Input folder: {input_folder}")
             except Exception as e:
-                logging.warning(f"Failed to delete Input folder {input_folder}: {str(e)}")
+                logger.warning(f"Failed to delete Input folder {input_folder}: {str(e)}")
         else:
-            logging.info("No extracted_folder found for cleanup.")
+            logger.info("No extracted_folder found for cleanup.")
 
 
 def download_and_extract_audio_zip(audio_zip_url: str) -> str:
@@ -474,7 +475,7 @@ def download_and_extract_audio_zip(audio_zip_url: str) -> str:
         os.remove(zip_file_path)
         return extract_path
     else:
-        logging.error(f"Failed to download audio ZIP file: {response.status_code} - {response.text}")
+        logger.error(f"Failed to download audio ZIP file: {response.status_code} - {response.text}")
         return None
 
 
@@ -485,7 +486,7 @@ def find_audio_file(folder_path: str, verse_name: str) -> str:
     If files are generic (e.g., 'audio_0.wav'), use order to map.
     """
     for root, dirs, files in os.walk(folder_path):
-        logging.info(f"Searching in folder: {root}, Files: {files}")
+        logger.info(f"Searching in folder: {root}, Files: {files}")
         # If there is a single audio file, assume it's for the current verse
         if len(files) == 1:
             return os.path.join(root, files[0])
@@ -496,7 +497,7 @@ def find_audio_file(folder_path: str, verse_name: str) -> str:
             elif file.startswith("audio_") and file.endswith(".wav"):
                 # Handle generic audio files (map based on verse order)
                 return os.path.join(root, file)
-    logging.error(f"Audio file not found for verse: {verse_name} in folder: {folder_path}")
+    logger.error(f"Audio file not found for verse: {verse_name} in folder: {folder_path}")
     return None
 
 
@@ -582,16 +583,15 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
         with open(LANGUAGE_CODES_FILE, "r") as file:
             language_mapping = json.load(file)
     except Exception as e:
-        logging.error(f"Error loading language_codes.json: {str(e)}")
+        logger.error(f"Error loading language_codes.json: {str(e)}")
         return {"error": "Failed to load language mapping file", "details": str(e)}
     
- 
     # Load the source language mapping
     try:
         with open(SOURCE_LANGUAGES_FILE, "r") as file:
             source_language_mapping = json.load(file)
     except Exception as e:
-        logging.error(f"Error loading source_languages.json: {str(e)}")
+        logger.error(f"Error loading source_languages.json: {str(e)}")
         return {"error": "Failed to load source language mapping file", "details": str(e)}
  
     # Map audio_lang to source_language
@@ -602,24 +602,24 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
             break
  
     if not source_language:
-        logging.error(f"No source language found for audio_lang: {audio_lang}")
+        logger.error(f"No source language found for audio_lang: {audio_lang}")
         return {"error": f"No source language found for audio_lang: {audio_lang}"}
  
     # Get the model_name and language_code dynamically
     try:
         tts_mapping = language_mapping.get(source_language, {}).get("tts", {})
         if not tts_mapping:
-            logging.error(f"No TTS model found for source_language: {source_language}")
+            logger.error(f"No TTS model found for source_language: {source_language}")
             return {"error": f"No TTS model found for audio_lang: {source_language}"}
         
         # Select the first available model dynamically
         model_name, lang_code = next(iter(tts_mapping.items()))
         print("MODELNAME,LANGUAGECODE",model_name, lang_code)
         if not lang_code:
-            logging.error(f"No language code found for source_language: {source_language}")
+            logger.error(f"No language code found for source_language: {source_language}")
             return {"error": f"No language code found for source_language: {source_language}"}
     except Exception as e:
-        logging.error(f"Error retrieving model and language code: {str(e)}")
+        logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
  
     # Prepare API parameters and headers
@@ -633,16 +633,16 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     try:
         # Make the API request
         response = requests.post(BASE_API_URL, params=params, json=data_payload, headers=headers)
-        logging.info(f"AI API Response: {response.status_code} - {response.text}")
+        logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
         # Handle API response
         if response.status_code == 201:
             return response.json()
         else:
-            logging.error(f"AI API Error: {response.status_code} - {response.text}")
+            logger.error(f"AI API Error: {response.status_code} - {response.text}")
             return {"error": response.text, "status_code": response.status_code}
     except Exception as e:
-        logging.error(f"Error in call_tts_api: {str(e)}")
+        logger.error(f"Error in call_tts_api: {str(e)}")
         return {"error": str(e)}
 
 
@@ -657,24 +657,24 @@ def validate_and_resample_wav(file_path: str) -> str:
     try:
         # Load the audio file with librosa
         audio_data, sample_rate = librosa.load(file_path, sr=None, mono=True)
-        logging.debug(f"Current sample rate: {sample_rate} Hz")
+        logger.debug(f"Current sample rate: {sample_rate} Hz")
 
         # Resample only if not 48000 Hz
         if sample_rate != 48000:
-            logging.info(f"Resampling audio from {sample_rate} Hz to 48000 Hz")
+            logger.info(f"Resampling audio from {sample_rate} Hz to 48000 Hz")
             audio_data_resampled = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=48000)
             
             # Save the resampled audio
             temp_resampled_path = f"{file_path}.resampled.wav"
             sf.write(temp_resampled_path, audio_data_resampled, 48000, format="WAV")
-            logging.info(f"Resampled WAV file saved to: {temp_resampled_path}")
+            logger.info(f"Resampled WAV file saved to: {temp_resampled_path}")
 
             # Replace the original file with the resampled file
             os.replace(temp_resampled_path, file_path)
         else:
-            logging.info("File already has a sample rate of 48000 Hz. No resampling needed.")
+            logger.info("File already has a sample rate of 48000 Hz. No resampling needed.")
     except Exception as e:
-        logging.error(f"Error during resampling: {str(e)}")
+        logger.error(f"Error during resampling: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to validate or resample WAV audio file")
 
     return file_path

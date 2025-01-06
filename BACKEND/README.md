@@ -134,6 +134,35 @@ To run the app on another port, use the `--port` option. To enable debug mode, u
 uvicorn main:app --port=7000 --debug
 ```
 
+#### Run the App using Docker
+
+From the `cd docker` folder:
+
+   ```bash
+    docker-compose up --build
+   ```
+
+To run the containers in detached mode
+
+   ```bash
+    docker-compose up --build -d
+   ```
+
+To check logs from your running Docker containers:
+
+   ```bash
+   docker logs <container_name>
+   ```
+
+To stop the App
+
+   ```bash
+   docker-compose down
+
+   ```
+
+
+
 #### Access Documentation
 
 Once the app is running, access the documentation from your browser:
