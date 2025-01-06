@@ -8,7 +8,7 @@ import zipfile
 import os
 import json
 from database import User, Project, Verse, Chapter, Job, Book
-import logging
+# import logging
 from fastapi import BackgroundTasks
 import auth
 import dependency
@@ -20,10 +20,11 @@ import shutil
 import datetime
 from pydantic import EmailStr
 from dotenv import load_dotenv
+from dependency import logger, LOG_FOLDER
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
@@ -40,6 +41,25 @@ router = APIRouter()
 # os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
+@router.get("/admin/logs", tags=["Admin"])
+async def get_logs(current_user: dict = Depends(auth.get_current_user)):
+    """
+    Return the main log file. Restricted to admin users.
+    """
+    logger.info(f"Admin log request initiated by user: {current_user.username}")    
+    if current_user.role != "Admin":
+        logger.warning(f"Unauthorized access attempt by user: {current_user.username}")
+        raise HTTPException(status_code=403, detail="Access denied")
+    log_file_path = LOG_FOLDER / "app.log"
+    if not log_file_path.exists():
+        logger.error("Log file not found")
+        raise HTTPException(status_code=404, detail="Log file not found")
+    logger.info("Returning log file to admin")
+    return FileResponse(log_file_path, media_type="text/plain", filename="app.log")
+
+
+
+
 # Create User API
 @router.post("/user/signup/", tags=["User"])
 def user_signup(
@@ -48,8 +68,10 @@ def user_signup(
     email: EmailStr,
     db: Session = Depends(dependency.get_db),
 ):
+    logger.info(f"Signup request initiated for username: {username}, email: {email}")
     # Validate input fields
     if not username or not email or not password:
+        logger.error("Signup failed: Missing fields")
         raise HTTPException(
             status_code=400,
             detail="All fields (username, email, password) are required.",
@@ -57,6 +79,7 @@ def user_signup(
     # Check if the username already exists
     existing_user = db.query(User).filter(User.username == username).first()
     if existing_user:
+        logger.warning(f"Signup failed: Username '{username}' already exists")
         raise HTTPException(
             status_code=400,
             detail=f"Username '{username}' already exists. Please choose a different username.",
@@ -67,6 +90,7 @@ def user_signup(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    logger.info(f"User created successfully: {username}")
     return {"message": "User created successfully", "user_id": new_user.user_id}
 
 
@@ -100,8 +124,10 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(dependency.get_db),
 ):
+    logger.info(f"Login attempt for username: {form_data.username}")
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not auth.verify_password(form_data.password, user.hashed_password):
+        logger.warning(f"Login failed for username: {form_data.username}")
         raise HTTPException(status_code=401, detail="Invalid username or password")
     # Generate access token
     access_token = auth.create_access_token(data={"sub": str(user.user_id)})
@@ -110,6 +136,7 @@ def login(
     user.last_login = datetime.datetime.utcnow()
     db.commit()
     db.refresh(user)
+    logger.info(f"Login successful for username: {form_data.username}")
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -281,6 +308,16 @@ async def upload_zip(
             .get("name", {})
             .get("en", "Unknown Project")
         )
+
+        # Check for duplicate project names and add a number if necessary
+        existing_projects = db.query(Project).filter(Project.name.like(f"{name}%")).all()
+        if existing_projects:
+            similar_names = [proj.name for proj in existing_projects]
+            count = 1
+            while f"{name}({count})" in similar_names:
+                count += 1
+            name = f"{name}({count})"
+
         metadata = json.dumps(metadata_content)
         # Create the project entry in the database
         project = Project(
@@ -321,7 +358,7 @@ async def upload_zip(
             status_code=400, detail="The file is not a valid ZIP archive"
         )
     except Exception as e:
-        logging.error(f"An error occurred: {str(e)}")
+        logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -908,9 +945,9 @@ async def update_verse_text(
         if verse_record.tts_path and os.path.exists(verse_record.tts_path):
             try:
                 os.remove(verse_record.tts_path)
-                logging.info(f"Deleted TTS file at path: {verse_record.tts_path}")
+                logger.info(f"Deleted TTS file at path: {verse_record.tts_path}")
             except Exception as e:
-                logging.warning(f"Failed to delete TTS file at path {verse_record.tts_path}: {str(e)}")
+                logger.warning(f"Failed to delete TTS file at path {verse_record.tts_path}: {str(e)}")
     
     # Reset TTS-related fields
         verse_record.tts = False
@@ -1066,14 +1103,14 @@ async def generate_usfm(
     # Load `versification.json`
     project_input_path = next(input_path.iterdir(), None)
     if not project_input_path or not project_input_path.is_dir():
-        logging.error("Project directory not found under input path.")
+        logger.error("Project directory not found under input path.")
         raise HTTPException(
             status_code=400, detail="Project directory not found under input path"
         )
     # Locate versification.json
     versification_path = next(project_input_path.rglob("versification.json"), None)
     if not versification_path:
-        logging.error("versification.json not found in the project folder.")
+        logger.error("versification.json not found in the project folder.")
         raise HTTPException(
             status_code=400, detail="versification.json not found in the project folder"
         )
@@ -1196,7 +1233,7 @@ async def download_processed_project_zip(
             )
         except HTTPException as e:
             # Log the error and proceed with the next book
-            logging.error(f"Failed to generate USFM for book '{book.book}': {e.detail}")
+            logger.error(f"Failed to generate USFM for book '{book.book}': {e.detail}")
  
  
     base_dir = Path(BASE_DIRECTORY) / str(project.project_id)
@@ -1209,10 +1246,10 @@ async def download_processed_project_zip(
     # Cleanup logic: Remove existing folders or zip files with the same name
     if final_dir.exists():
         shutil.rmtree(final_dir, ignore_errors=True)
-        logging.info(f"Removed existing directory: {final_dir}")
+        logger.info(f"Removed existing directory: {final_dir}")
     if os.path.exists(zip_path):
         os.remove(zip_path)
-        logging.info(f"Removed existing zip file: {zip_path}")
+        logger.info(f"Removed existing zip file: {zip_path}")
  
     if not input_dir.exists() or not output_dir.exists():
         raise HTTPException(
