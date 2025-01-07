@@ -84,6 +84,14 @@ def user_signup(
             status_code=400,
             detail=f"Username '{username}' already exists. Please choose a different username.",
         )
+    # Check if the email already exists
+    existing_email = db.query(User).filter(User.email == email).first()
+    if existing_email:
+        logger.warning(f"Signup failed: Email '{email}' already exists")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Email '{email}' already exists. Please use a different email.",
+        )
     # Hash the password and create the user
     hashed_password = auth.get_password_hash(password)
     new_user = User(username=username, email=email, hashed_password=hashed_password)
