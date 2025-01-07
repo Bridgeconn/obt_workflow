@@ -342,7 +342,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                 onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
               />
               <div className="w-[50px]">
-                {isConvertingVerse.has(verse.verse_id) ? (
+                {isConvertingVerse.has(verse.verse_id) && !verse.tts ? (
                   <LoadingIcon className="animate-spin" />
                 ) : (
                   (verse.modified ? verse.tts : verse.stt) &&

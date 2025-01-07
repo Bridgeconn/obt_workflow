@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import useAuthStore from "@/store/useAuthStore";
 import { useNavigate, Link } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
 const Login: React.FC = () => {
@@ -41,15 +41,17 @@ const Login: React.FC = () => {
   return (
     <div className="flex justify-center items-center h-screen bg-gray-100">
       <Card className="w-full max-w-sm">
+
         <CardHeader>
-          <CardTitle>Login</CardTitle>
+          <img src="/obt.svg" alt="Logo" className="w-12 h-12 mx-auto mb-4" />
+          {/* <CardTitle>Login</CardTitle> */}
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div>
-              <label htmlFor="username" className="block mb-2">
+              {/* <label htmlFor="username" className="block mb-2">
                 Username
-              </label>
+              </label> */}
               <Input
                 id="username"
                 type="text"
@@ -59,9 +61,9 @@ const Login: React.FC = () => {
               />
             </div>
             <div>
-              <label htmlFor="password" className="block mb-2">
+              {/* <label htmlFor="password" className="block mb-2">
                 Password
-              </label>
+              </label> */}
               <Input
                 id="password"
                 type="password"

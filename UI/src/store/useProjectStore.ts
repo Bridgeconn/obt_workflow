@@ -10,7 +10,14 @@ interface ProjectDetailsState {
   error: string | null;
   setProject: (updater: (project: Project | null) => Project | null) => void;
   fetchProjectDetails: (projectId: number) => void;
+  clearProjectState: () => void;
   transcribeBook: (bookId: number, queryClient?: QueryClient) => Promise<void>;
+  retryChapterTranscription: (
+    projectId: number,
+    bookId: number,
+    chapterId: number,
+    queryClient?: QueryClient
+  ) => Promise<void>;
   archiveProject: (projectId: number, archive: boolean) => Promise<void>;
 }
 
@@ -128,50 +135,71 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         // Fetch detailed status for each book and chapter
         const updatedBooks = await Promise.all(
           data.project.books.map(async (book: Book) => {
-            const sortedChapters = book.chapters.sort((a, b) => a.chapter - b.chapter);
-          
+            const sortedChapters = book.chapters.sort(
+              (a, b) => a.chapter - b.chapter
+            );
+            // let totalChaptersProcessed = 0;
+            // let hasErrors = false;
+
             const chapterStatuses = await Promise.all(
               sortedChapters.map(async (chapter) => {
-                const chapterStatusResponse = await fetch(
-                  `${BASE_URL}/project/${data.project.project_id}/${book.book}/${chapter.chapter}`,
-                  {
-                    method: "GET",
-                    headers: {
-                      Authorization: `Bearer ${token}`,
-                      "Content-Type": "application/json",
-                    },
-                  }
-                );
-                const chapterStatusData: ChapterStatusResponse =
-                  await chapterStatusResponse.json();
+                try {
+                  const chapterStatusResponse = await fetch(
+                    `${BASE_URL}/project/${data.project.project_id}/${book.book}/${chapter.chapter}`,
+                    {
+                      method: "GET",
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                        "Content-Type": "application/json",
+                      },
+                    }
+                  );
+                  const chapterStatusData: ChapterStatusResponse =
+                    await chapterStatusResponse.json();
 
-                // Determine chapter status
-                const verses = chapterStatusData.data;
-                const allTranscribed = verses.every((verse) => verse.stt);
-                const allConverted = verses.every((verse) => verse.tts);
-                const completed = verses.filter((verse) => verse.stt).length;
-                const total = verses.length;
-                const isApproved = chapter.approved;
+                  const verses = chapterStatusData.data;
+                  const allTranscribed = verses.every((verse) => verse.stt);
+                  const allConverted = verses.every((verse) => verse.tts);
+                  const completed = verses.filter((verse) => verse.stt).length;
+                  const total = verses.length;
+                  const isApproved = chapter.approved;
 
-                return {
-                  ...chapter,
-                  status:
-                    isApproved && allTranscribed
-                      ? "approved"
-                      : allConverted
-                      ? "converted"
-                      : allTranscribed
-                      ? "transcribed"
-                      : "notTranscribed",
-                  progress: allTranscribed
-                    ? ""
-                    : `${completed} out of ${total} done`,
-                  verses: verses,
-                };
+                  // Check for transcription errors in verses
+                  // const hasTranscriptionError = verses.some(
+                  //   (verse) =>
+                  //     verse.stt_msg &&
+                  //     verse.stt_msg !== "Transcription successful"
+                  // );
+
+                  return {
+                    ...chapter,
+                    status:
+                      isApproved && allTranscribed
+                        ? "approved"
+                        : allConverted
+                        ? "converted"
+                        : allTranscribed
+                        ? "transcribed"
+                        : "notTranscribed",
+                    progress: allTranscribed
+                      ? ""
+                      : `${completed} out of ${total} done`,
+                    verses: verses,
+                  };
+                
+                } catch (error) {
+                  console.error("Failed to fetch chapter status:", error);
+                  // totalChaptersProcessed++;
+                  // hasErrors = true;
+                  return {
+                    ...chapter,
+                    status: "error",
+                    progress: "Failed to fetch chapter status",
+                  };
+                }
               })
             );
-
-            // Determine book-level status
+            
             const bookStatus = chapterStatuses.every(
               (ch) => ch.status === "approved"
             )
@@ -198,7 +226,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             };
           })
         );
-
         set({
           project: {
             ...data.project,
@@ -212,131 +239,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
       }
     },
 
-    // transcribeBook: async (bookId: number, queryClient?: QueryClient) => {
-    //   const token = useAuthStore.getState().token;
-    //   const currentProject = get().project;
-
-    //   if (!currentProject) return;
-
-    //   set({ isLoading: true, error: null });
-
-    //   try {
-    //     const book = currentProject.books.find((b) => b.book_id === bookId);
-    //     if (!book) throw new Error("Book not found");
-
-    //     // Sequential chapter transcription
-    //     for (const chapter of book.chapters) {
-    //       // Start transcription for each chapter
-    //       await fetch(
-    //         `${BASE_URL}/transcribe?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
-    //         {
-    //           method: "POST",
-    //           headers: {
-    //             Authorization: `Bearer ${token}`,
-    //             "Content-Type": "application/json",
-    //           },
-    //         }
-    //       );
-
-    //       // Wait for chapter to complete transcription
-    //       await new Promise<void>((resolve, reject) => {
-    //         const pollChapterStatus = async () => {
-    //           try {
-    //             const response = await fetch(
-    //               `${BASE_URL}/project/${currentProject.project_id}/${book.book}/${chapter.chapter}`,
-    //               {
-    //                 method: "GET",
-    //                 headers: {
-    //                   Authorization: `Bearer ${token}`,
-    //                   "Content-Type": "application/json",
-    //                 },
-    //               }
-    //             );
-
-    //             const data: ChapterStatusResponse = await response.json();
-    //             const verses = data.data;
-    //             const allTranscribed = verses.every((verse) => verse.stt);
-    //             const completed = verses.filter((verse) => verse.stt).length;
-    //             const total = verses.length;
-
-    //             // Update project state with current transcription status
-    //             set((state) => {
-    //               if (!state.project) return {};
-
-    //               const updatedBooks = state.project.books.map((b) => {
-    //                 if (b.book_id === bookId) {
-    //                   const updatedChapters = b.chapters.map((ch) => {
-    //                     if (ch.chapter === chapter.chapter) {
-    //                       return {
-    //                         ...ch,
-    //                         status: allTranscribed
-    //                           ? "transcribed"
-    //                           : "inProgress",
-    //                         progress: allTranscribed
-    //                           ? ""
-    //                           : `${completed} out of ${total} done`,
-    //                       };
-    //                     }
-    //                     return ch;
-    //                   });
-
-    //                   // Recalculate book status
-    //                   const bookStatus = updatedChapters.every(
-    //                     (ch) => ch.status === "transcribed"
-    //                   )
-    //                     ? "transcribed"
-    //                     : updatedChapters.some(
-    //                         (ch) => ch.status === "inProgress"
-    //                       )
-    //                     ? "inProgress"
-    //                     : "notTranscribed";
-
-    //                   return {
-    //                     ...b,
-    //                     chapters: updatedChapters,
-    //                     status: bookStatus,
-    //                     progress:
-    //                       bookStatus === "inProgress"
-    //                         ? updatedChapters.find(
-    //                             (ch) => ch.status === "inProgress"
-    //                           )?.progress
-    //                         : "",
-    //                   };
-    //                 }
-    //                 return b;
-    //               });
-
-    //               return {
-    //                 project: {
-    //                   ...state.project,
-    //                   books: updatedBooks,
-    //                 },
-    //               };
-    //             });
-
-    //             if (allTranscribed) {
-    //               resolve();
-    //             } else {
-    //               setTimeout(pollChapterStatus, 10000);
-    //             }
-    //           } catch (error) {
-    //             reject(error);
-    //           }
-    //         };
-
-    //         pollChapterStatus();
-    //       });
-    //     }
-
-    //     set({ isLoading: false });
-    //     queryClient?.invalidateQueries({
-    //       queryKey: ["project-details", currentProject.project_id],
-    //     });
-    //   } catch (error) {
-    //     console.error("Error transcribing book:", error);
-    //     set({ error: "Error transcribing book", isLoading: false });
-    //   }
-    // },
+    clearProjectState: () => set({ project: null }),
 
     transcribeBook: async (bookId: number, queryClient?: QueryClient) => {
       const token = useAuthStore.getState().token;
@@ -349,7 +252,9 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
       try {
         const book = currentProject.books.find((b) => b.book_id === bookId);
         if (!book) throw new Error("Book not found");
-        
+        let hasErrors = false;
+        let totalChaptersProcessed = 0;
+
         // Sequential chapter transcription
         for (const chapter of book.chapters) {
           try {
@@ -390,6 +295,12 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const completed = verses.filter((verse) => verse.stt).length;
                   const total = verses.length;
 
+                  const hasTranscriptionError = verses.some(
+                    (verse) =>
+                      verse.stt_msg &&
+                      verse.stt_msg !== "Transcription successful"
+                  );
+
                   set((state) => {
                     if (!state.project) return {};
 
@@ -399,7 +310,9 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                           if (ch.chapter === chapter.chapter) {
                             return {
                               ...ch,
-                              status: allTranscribed
+                              status: hasTranscriptionError
+                                ? "error"
+                                : allTranscribed
                                 ? "transcribed"
                                 : "inProgress",
                               progress: allTranscribed
@@ -414,22 +327,18 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                           (ch) => ch.status === "transcribed"
                         )
                           ? "transcribed"
-                          : updatedChapters.some(
-                              (ch) => ch.status === "inProgress"
-                            )
-                          ? "inProgress"
-                          : "notTranscribed";
+                          : "inProgress";
+
+                        const currentChapterProgress =
+                          updatedChapters.find(
+                            (ch) => ch.chapter_id === chapter.chapter_id
+                          )?.progress || "";
 
                         return {
                           ...b,
                           chapters: updatedChapters,
                           status: bookStatus,
-                          progress:
-                            bookStatus === "inProgress"
-                              ? updatedChapters.find(
-                                  (ch) => ch.status === "inProgress"
-                                )?.progress
-                              : "",
+                          progress: currentChapterProgress,
                         };
                       }
                       return b;
@@ -443,47 +352,16 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     };
                   });
 
-                  if (allTranscribed) {
+                  if (hasTranscriptionError || allTranscribed) {
+                    totalChaptersProcessed++;
+                    if (hasTranscriptionError) hasErrors = true;
+                    console.log(`Chapter processed: ${chapter.chapter}, Total processed: ${totalChaptersProcessed}`);
                     resolve();
                   } else {
                     setTimeout(pollChapterStatus, 10000);
                   }
                 } catch (error) {
-                  // Update state with error status
-                  set((state) => {
-                    if (!state.project) return {};
-
-                    const updatedBooks = state.project.books.map((b) => {
-                      if (b.book_id === bookId) {
-                        const updatedChapters = b.chapters.map((ch) => {
-                          if (ch.chapter === chapter.chapter) {
-                            return {
-                              ...ch,
-                              status: "error",
-                              progress: "Transcription failed",
-                            };
-                          }
-                          return ch;
-                        });
-
-                        return {
-                          ...b,
-                          chapters: updatedChapters,
-                          status: "notTranscribed",
-                          progress: "",
-                        };
-                      }
-                      return b;
-                    });
-
-                    return {
-                      project: {
-                        ...state.project,
-                        books: updatedBooks,
-                      },
-                    };
-                  });
-
+                  totalChaptersProcessed++;
                   reject(error);
                 }
               };
@@ -492,6 +370,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             });
           } catch (error) {
             // Update state with error status
+            hasErrors = true;
             set((state) => {
               if (!state.project) return {};
 
@@ -511,8 +390,8 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   return {
                     ...b,
                     chapters: updatedChapters,
-                    status: "notTranscribed",
-                    progress: "",
+                    status: "error",
+                    progress: "Transcription failed",
                   };
                 }
                 return b;
@@ -529,8 +408,18 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             throw error;
           }
         }
-
-        set({ isLoading: false });
+        set((state) => {
+          if (!state.project) return {};
+    
+          const updatedBooks = state.project.books.map((b) => {
+            if (b.book_id === bookId) {
+              const bookStatus = hasErrors ? "error" : "transcribed";
+              return { ...b, status: bookStatus };
+            }
+            return b;
+          });
+          return { project: { ...state.project, books: updatedBooks }, isLoading: false };
+        });
         queryClient?.invalidateQueries({
           queryKey: ["project-details", currentProject.project_id],
         });
@@ -539,6 +428,226 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         set({ error: "Error transcribing book", isLoading: false });
       }
     },
+
+    retryChapterTranscription: async (
+      projectId: number,
+      bookId: number,
+      chapterId: number,
+      queryClient?: QueryClient
+    ) => {
+      const currentProject = get().project;
+      if (!currentProject) return;
+
+      const token = useAuthStore.getState().token;
+      const book = currentProject.books.find((b) => b.book_id === bookId);
+      const chapter = book?.chapters.find((ch) => ch.chapter_id === chapterId);
+
+      if (!book || !chapter) {
+        throw new Error("Book or chapter not found");
+      }
+
+      try {
+        const transcribeResponse = await fetch(
+          `${BASE_URL}/project/chapter/stt?project_id=${projectId}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!transcribeResponse.ok) {
+          throw new Error(
+            `Failed to start transcription for chapter ${chapter.chapter}`
+          );
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          const pollChapterStatus = async () => {
+            try {
+              const response = await fetch(
+                `${BASE_URL}/project/${projectId}/${book.book}/${chapter.chapter}`,
+                {
+                  method: "GET",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+
+              if (!response.ok) {
+                throw new Error(
+                  `Failed to fetch chapter status: ${response.statusText}`
+                );
+              }
+
+              const data: ChapterStatusResponse = await response.json();
+              const verses = data.data;
+              const allTranscribed = verses.every((verse) => verse.stt);
+              const completed = verses.filter((verse) => verse.stt).length;
+              const total = verses.length;
+
+              const hasTranscriptionError = verses.some(
+                (verse) =>
+                  verse.stt_msg && verse.stt_msg !== "Transcription successful"
+              );
+
+              // Update progress
+              set((state) => {
+                if (!state.project) return {};
+
+                const updatedBooks = state.project.books.map((b) => {
+                  if (b.book_id === bookId) {
+                    const updatedChapters = b.chapters.map((ch) => {
+                      if (ch.chapter_id === chapterId) {
+                        return {
+                          ...ch,
+                          status: hasTranscriptionError
+                            ? "error"
+                            : allTranscribed
+                            ? "transcribed"
+                            : "inProgress",
+                          progress: allTranscribed
+                            ? ""
+                            : `${completed} out of ${total} done`,
+                        };
+                      }
+                      return ch;
+                    });
+                    const bookStatus = updatedChapters.every(
+                      (ch) => ch.status === "transcribed"
+                    )
+                      ? "transcribed"
+                      : "inProgress";
+
+                    const currentChapterProgress =
+                      updatedChapters.find((ch) => ch.chapter_id === chapterId)
+                        ?.progress || "";
+                    
+                    if (hasTranscriptionError) {
+                      return {
+                        ...b,
+                        chapters: updatedChapters,
+                        status: "error",
+                        progress: "Transcription failed",
+                      };
+                      
+                    }
+
+                    return {
+                      ...b,
+                      chapters: updatedChapters,
+                      status: bookStatus,
+                      progress: currentChapterProgress,
+                    };
+                  }
+                  return b;
+                });
+
+                return {
+                  project: {
+                    ...state.project,
+                    books: updatedBooks,
+                  },
+                };
+              });
+              // Check if transcription is complete
+              if (completed === total) {
+                set((state) => {
+                  if (!state.project) return {};
+
+                  const updatedBooks = state.project.books.map((b) => {
+                    if (b.book_id === bookId) {
+                      const updatedChapters = b.chapters.map((ch) => {
+                        if (ch.chapter_id === chapterId) {
+                          return {
+                            ...ch,
+                            status: "transcribed",
+                            progress: "",
+                          };
+                        }
+                        return ch;
+                      });
+
+                      const allTranscribed = updatedChapters.every(
+                        (ch) => ch.status === "transcribed"
+                      );
+
+                      return {
+                        ...b,
+                        chapters: updatedChapters,
+                        status: allTranscribed ? "transcribed" : b.status,
+                        progress: "",
+                      };
+                    }
+                    return b;
+                  });
+
+                  return {
+                    project: {
+                      ...state.project,
+                      books: updatedBooks,
+                    },
+                  };
+                });
+
+                resolve();
+              } else {
+                setTimeout(pollChapterStatus, 10000);
+              }
+            } catch (error) {
+              reject(error);
+            }
+          };
+
+          pollChapterStatus();
+        });
+      } catch (error) {
+        set((state) => {
+          if (!state.project) return {};
+
+          const updatedBooks = state.project.books.map((b) => {
+            if (b.book_id === bookId) {
+              const updatedChapters = b.chapters.map((ch) => {
+                if (ch.chapter_id === chapterId) {
+                  return {
+                    ...ch,
+                    status: "error",
+                    progress: "API Error: Transcription failed",
+                  };
+                }
+                return ch;
+              });
+
+              return {
+                ...b,
+                chapters: updatedChapters,
+                status: "error",
+                progress: "API Error: Transcription failed",
+              };
+            }
+            return b;
+          });
+
+          return {
+            project: {
+              ...state.project,
+              books: updatedBooks,
+            },
+          };
+        });
+
+        throw error;
+      }
+      set({ isLoading: false });
+      queryClient?.invalidateQueries({
+        queryKey: ["project-details", currentProject.project_id],
+      });
+    },
+
     archiveProject: async (projectId, archive) => {
       console.log("archive value", archive);
       set({ isLoading: true, error: null });
@@ -670,10 +779,9 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
         );
 
         if (response.ok) {
-          
           useProjectDetailsStore.getState().setProject((prevProject) => {
             if (!prevProject) return null;
-           
+
             const updatedBooks = prevProject.books.map((b) => {
               if (b.book === book) {
                 const updatedChapters = b.chapters.map((ch) => {
@@ -764,7 +872,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                     chapter.chapter
                   );
                   const chapterDetails = get().chapterVerses;
-                  
+
                   if (chapterDetails) {
                     const modifiedVerses = chapterDetails.filter(
                       (verse) => verse.modified

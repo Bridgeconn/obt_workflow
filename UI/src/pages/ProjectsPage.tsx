@@ -172,6 +172,8 @@ const ProjectsPage: React.FC = () => {
     pageIndex: 0,
     pageSize: 5,
   });
+  // Add state for dynamic height
+  // const [containerHeight, setContainerHeight] = useState<string>("auto");
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -230,48 +232,82 @@ const ProjectsPage: React.FC = () => {
   const columns = [
     columnHelper.accessor("name", {
       header: "Name",
-      cell: (info) => info.getValue(),
+      cell: (info) => (
+        <div className="w-[120px] truncate" title={info.getValue()}>
+          {info.getValue()}
+        </div>
+      ),
+      size: 120,
     }),
     ...(user && ["Admin", "AI"].includes(user.role || "")
       ? [
           columnHelper.accessor("owner", {
             header: "Owner",
-            cell: (info) => info.getValue(),
+            cell: (info) => (
+              <div className="w-[100px] truncate" title={info.getValue()}>
+                {info.getValue()}
+              </div>
+            ),
+            size: 100,
           }),
         ]
       : []),
+    
+      columnHelper.accessor("audioLanguage", {
+        header: "Audio Language",
+        cell: (info) => (
+          <div className="w-[80px] truncate" title={info.getValue() || "N/A"}>
+            {info.getValue() || "N/A"}
+          </div>
+        ),
+        size: 80,
+      }),
+
     columnHelper.accessor("scriptLanguage", {
-      header: "Script Lang",
-      cell: (info) => info.getValue() || "N/A",
-    }),
-    columnHelper.accessor("audioLanguage", {
-      header: "Audio Lang",
-      cell: (info) => info.getValue() || "N/A",
+      header: "Script Language",
+      cell: (info) => (
+        <div className="w-[80px] truncate" title={info.getValue() || "N/A"}>
+          {info.getValue() || "N/A"}
+        </div>
+      ),
+      size: 80,
     }),
     columnHelper.accessor("books", {
       header: "Books",
-      cell: (info) => info.getValue(),
+      cell: (info) => (
+        <div className="w-[50px] truncate text-center">{info.getValue()}</div>
+      ),
+      size: 50,
     }),
     columnHelper.accessor("approved", {
       header: "Approved",
-      cell: (info) => info.getValue(),
+      cell: (info) => (
+        <div className="w-[50px] truncate text-center">{info.getValue()}</div>
+      ),
+      size: 50,
     }),
     columnHelper.display({
       id: "actions",
       header: "Download",
       cell: ({ row }) => (
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled={row.original.approved === 0}
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadMutation.mutate({ projectId: row.original.id, name: row.original.name });
-          }}
-        >
-          <Download size={20} />
-        </Button>
+        <div className="w-[50px] truncate text-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={row.original.approved === 0}
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadMutation.mutate({
+                projectId: row.original.id,
+                name: row.original.name,
+              });
+            }}
+          >
+            <Download size={20} />
+          </Button>
+        </div>
       ),
+      size: 50,
     }),
   ];
 
@@ -311,6 +347,38 @@ const ProjectsPage: React.FC = () => {
     }
   };
 
+  // useEffect(() => {
+  //   const calculateHeight = () => {
+  //     // Get viewport height
+  //     const vh = window.innerHeight;
+
+  //     // Define breakpoints
+  //     const isLaptop = window.matchMedia("(min-width: 1024px)").matches;
+  //     const isTablet = window.matchMedia("(min-width: 768px)").matches;
+
+  //     if (isLaptop) {
+  //       // For laptops/desktops, calculate height to ensure no scrollbar
+  //       const headerHeight = 140; // Height of the Projects title + buttons (approximate)
+  //       const paginationHeight = 60; // Height of pagination controls
+  //       const availableHeight = vh - headerHeight - paginationHeight - 60; // 48px for padding/margins
+  //       setContainerHeight(`${availableHeight}px`);
+  //     } else if (isTablet) {
+  //       // For tablets, allow scrolling if needed
+  //       setContainerHeight("420px"); // Default height
+  //     } else {
+  //       // For mobile, allow scrolling
+  //       setContainerHeight("420px");
+  //     }
+  //   };
+
+  //   // Calculate initial height
+  //   calculateHeight();
+
+  //   // Recalculate on resize
+  //   window.addEventListener("resize", calculateHeight);
+  //   return () => window.removeEventListener("resize", calculateHeight);
+  // }, []);
+
   return (
     <div
       className="w-full mt-8 px-4 md:px-8 lg:px-12"
@@ -328,7 +396,7 @@ const ProjectsPage: React.FC = () => {
           </Button>
           <DebouncedInput
             value={globalFilter ?? ""}
-            placeholder="Filter projects..."
+            placeholder="Search Projects"
             onChange={(value) => setGlobalFilter(String(value))}
             className="max-w-sm shadow"
           />
@@ -372,90 +440,84 @@ const ProjectsPage: React.FC = () => {
           </div>
         ) : (
           <>
-          <div className="relative overflow-hidden h-[420px] border-2 rounded-lg">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead
-                        key={header.id}
-                        className={`text-primary ${
-                          [
-                            "scriptLanguage",
-                            "audioLanguage",
-                            "books",
-                            "approved",
-                            "actions",
-                          ].includes(header.id)
-                            ? "text-center"
-                            : ""
-                        }`}
-                      >
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length}>Loading...</TableCell>
-                  </TableRow>
-                ) : table.getRowModel().rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length}>
-                      No projects found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      onClick={() => {
-                        if (user?.username === row.original.owner) {
-                          navigate(`/projects/${row.original.id}`);
-                        } else {
-                          toast({
-                            title: "You are not the owner of this project",
-                            variant: "destructive",
-                          });
-                        }
-                      }}
-                      className="cursor-pointer hover:bg-gray-100"
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell
-                          key={cell.id}
-                          className={
-                            [
-                              "scriptLanguage",
-                              "audioLanguage",
-                              "books",
-                              "approved",
-                              "actions",
-                            ].includes(cell.column.id)
+            <div className="relative overflow-hidden h-[420px] border-2 rounded-lg">
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id}>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead
+                          key={header.id}
+                          style={{ width: `${header.column.getSize()}px` }}
+                          className={`text-primary bg-gray-100 ${
+                            ["books", "approved", "actions"].includes(header.id)
                               ? "text-center"
-                              : "text-left"
-                          }
+                              : "text-left justify-start"
+                          }`}
                         >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
                       ))}
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={columns.length}>Loading...</TableCell>
+                    </TableRow>
+                  ) : table.getRowModel().rows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={columns.length}>
+                        No projects found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow
+                        key={row.id}
+                        onClick={() => {
+                          if (user?.username === row.original.owner) {
+                            navigate(`/projects/${row.original.id}`);
+                          } else {
+                            toast({
+                              title: "You are not the owner of this project",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                        className="cursor-pointer hover:bg-gray-100"
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell
+                            key={cell.id}
+                            style={{
+                              width: `${cell.column.getSize()}px`,
+                              justifyItems: [
+                                "books",
+                                "approved",
+                                "actions",
+                              ].includes(cell.column.id)
+                                ? "center"
+                                : "start",
+                            }}
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </div>
             <div className="flex justify-center items-center gap-4 mt-4">
               <Button
