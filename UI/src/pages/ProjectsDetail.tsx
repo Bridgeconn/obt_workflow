@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, RotateCcw } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -55,6 +55,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     fetchProjectDetails,
     clearProjectState,
     transcribeBook,
+    // retryChapterTranscription,
     archiveProject,
   } = useProjectDetailsStore();
   const [scriptLanguage, setScriptLanguage] = useState("");
@@ -71,7 +72,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   useEffect(() => {
     clearProjectState();
     setLoading(true);
-    fetchProjectDetails(projectId)
+    fetchProjectDetails(projectId);
   }, [projectId, fetchProjectDetails, clearProjectState]);
 
   useEffect(() => {
@@ -90,13 +91,35 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         setScriptLanguage(String(selectedScriptLanguage?.id));
       }
       console.log("project", project);
-      setLoading(false)
+      setLoading(false);
     }
   }, [project, projectId]);
 
   const handleTranscribe = async (bookId: number) => {
     await transcribeBook(bookId, queryClient);
   };
+
+  // const handleChapterRetry = async (book: Book, chapter: Chapter, e: React.MouseEvent) => {
+  //   e.stopPropagation();
+    
+  //   if (book.status === "inProgress") {
+  //     toast({
+  //       variant: "destructive",
+  //       title: "Book transcription is in progress. Please wait.",
+  //     });
+  //     return;
+  //   }
+
+  //   try {
+  //     await retryChapterTranscription(projectId, book.book_id, chapter.chapter_id, queryClient);
+  //   } catch (error) {
+  //     toast({
+  //       variant: "destructive",
+  //       title: "Failed to retry chapter transcription",
+  //     });
+  //     console.error("Error retrying chapter transcription:", error);
+  //   }
+  // };
 
   const handleScriptLanguageChange = async (selectedId: string) => {
     const id = Number(selectedId);
@@ -383,10 +406,22 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             onClick={() => openChapterModal(chapter, book)}
                           >
                             {chapter.missing_verses?.length > 0 &&
-                              book.status === "notTranscribed" && (
+                              chapter.status === "notTranscribed" && book.status === "notTranscribed" && (
                                 <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
                                   !
                                 </span>
+                              )}
+                            {chapter.status === "error" &&
+                               (
+                                <button
+                                  className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
+                                  // onClick={(e) =>
+                                  //   handleChapterRetry(book, chapter, e)
+                                  // }
+                                  // title="Retry transcription"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
                               )}
                             <span>{chapter.chapter}</span>
                           </div>
@@ -436,6 +471,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                         >
                           {book.status === "inProgress" ? (
                             <span>{book.progress}</span>
+                          ) : book.status === "error" ? (
+                            "Retry"
                           ) : (
                             "Transcribe"
                           )}

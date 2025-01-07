@@ -404,7 +404,12 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                 verse.tts_msg = "Failed to download or extract audio ZIP"
                                 job.status = "failed"
                             break
-                        elif job_status == "job failed":
+                        elif job_status == "job failed": 
+                            job.status = "failed"
+                            verse.tts = False
+                            verse.tts_msg = "AI TTS job failed"
+                            break
+                        elif job_status == "Error": 
                             job.status = "failed"
                             verse.tts = False
                             verse.tts_msg = "AI TTS job failed"
