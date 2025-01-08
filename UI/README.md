@@ -44,9 +44,11 @@
 
 8. **Create an Environment File**  
    - In the root directory of the UI folder, create a `.env` file.
-   - Add the following line:  
+   - add the `VITE_BASE_URL`
+
+   example -
      ```
-     VITE_BASE_URL=https://dev.api.aiobt.vachanengine.org
+     VITE_BASE_URL = "YOUR_BASE_URL"
      ```
 
 9. **Run the Development Server**  

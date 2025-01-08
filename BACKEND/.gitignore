@@ -3,3 +3,5 @@
 /venv
 .env
 /myvenv
+/logs
+/app/__pycache__
