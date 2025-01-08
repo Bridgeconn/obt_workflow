@@ -48,6 +48,20 @@ def process_project_files(input_path, output_path, db, project):
         if len(extracted_items) == 1 and extracted_items[0].is_dir():
             # Case: Single folder encapsulating everything
             project_input_path = extracted_items[0]
+            next_folder = extracted_items[0]
+            if(next_folder.name == input_path.name):
+                logger.info(f"Duplicate folder detected: {next_folder}")
+                for sub_item in next_folder.iterdir():
+                    target_path = input_path / sub_item.name
+                    if target_path.exists():
+                        logger.warning(f"Conflict while moving {sub_item} to {target_path}, skipping.")
+                    else:
+                        shutil.move(str(sub_item), str(target_path))
+                next_folder.rmdir()
+                logger.info(f"Resolved duplicate folder: {next_folder}")
+                project_input_path = input_path
+            else:
+                logger.info("No duplicate folder found.")
         elif any((input_path / item).exists() for item in ["audio", "text-1", "metadata.json"]):
             # Case: Direct structure with `audio`, `text-1`, and `metadata.json`
             project_input_path = input_path
@@ -209,6 +223,11 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
                             job.status = "completed"
                             break
                         elif job_status == "job failed":
+                            job.status = "failed"
+                            verse.stt = False
+                            verse.stt_msg = "AI transcription failed"
+                            break
+                        elif job_status == "Error":
                             job.status = "failed"
                             verse.stt = False
                             verse.stt_msg = "AI transcription failed"

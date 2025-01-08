@@ -284,18 +284,18 @@ async def upload_zip(
             raise HTTPException(
                 status_code=400, detail="Uploaded file is not a ZIP file"
             )
-
+ 
         # Save the uploaded ZIP file temporarily
         temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
         temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
-
+ 
         with open(temp_zip_path, "wb") as buffer:
             buffer.write(await file.read())
-
+ 
         # Extract the ZIP file to a temporary directory
         temp_extract_path = BASE_DIR / "temp" / "extracted"
         temp_extract_path.mkdir(parents=True, exist_ok=True)
-
+ 
         with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
             zip_ref.extractall(temp_extract_path)
         # Remove the ZIP file after extraction
@@ -306,45 +306,42 @@ async def upload_zip(
             raise HTTPException(
                 status_code=400, detail="metadata.json not found in the ZIP file"
             )
-
+ 
         # Read metadata.json
         with open(metadata_path, "r", encoding="utf-8") as metadata_file:
             metadata_content = json.load(metadata_file)
         # Extract project name and metadata info
-        name = (
-            metadata_content.get("identification", {})
-            .get("name", {})
-            .get("en", "Unknown Project")
-        )
-
-        # Check for duplicate project names and add a number if necessary
-        existing_projects = db.query(Project).filter(Project.name.like(f"{name}%")).all()
+        base_name = metadata_content.get("identification", {}).get("name", {}).get("en", "Unknown Project")
+ 
+        # Create unique project name for the database if duplicates exist
+        existing_projects = db.query(Project).filter(Project.name.like(f"{base_name}%")).all()
         if existing_projects:
-            similar_names = [proj.name for proj in existing_projects]
             count = 1
-            while f"{name}({count})" in similar_names:
+            similar_names = [proj.name for proj in existing_projects]
+            while f"{base_name}({count})" in similar_names:
                 count += 1
-            name = f"{name}({count})"
-
-        metadata = json.dumps(metadata_content)
-        # Create the project entry in the database
+            project_name = f"{base_name}({count})"
+        else:
+            project_name = base_name
+ 
+        # Insert the project into the database
         project = Project(
-            name=name,
+            name=project_name,
             owner_id=current_user.user_id,
             script_lang="",
             audio_lang="",
-            meta_data=metadata,
+            meta_data=json.dumps(metadata_content),
         )
         db.add(project)
         db.commit()
         db.refresh(project)
-
+ 
         # Use the project_id for folder creation
         project_id = project.project_id
         project_base_path = BASE_DIR / str(project_id)
-        input_path = project_base_path / "input"
-        output_path = project_base_path / "output"
-
+        input_path = project_base_path / "input" / base_name  # Use base_name here
+        output_path = project_base_path / "output" / base_name
+ 
         # Move extracted files to the input folder
         input_path.mkdir(parents=True, exist_ok=True)
         for item in temp_extract_path.iterdir():
@@ -352,15 +349,15 @@ async def upload_zip(
         shutil.rmtree(temp_extract_path)
         # Ensure the output directory exists
         output_path.mkdir(parents=True, exist_ok=True)
-
+ 
         # Process the project files (e.g., books, chapters, verses)
         crud.process_project_files(input_path, output_path, db, project)
-
+ 
         return {
             "message": "Project uploaded successfully",
             "project_id": project_id,
         }
-
+ 
     except zipfile.BadZipFile:
         raise HTTPException(
             status_code=400, detail="The file is not a valid ZIP archive"
@@ -1188,9 +1185,10 @@ async def generate_usfm(
             for verse_number in range(1, num_verses + 1):
                 usfm_text += f"\\v {verse_number} ...\n"
 
+    base_name = project.name.split("(")[0].strip()
     # Save USFM file
     project_output_path = (
-        BASE_DIR / str(project_id) / "output" / project.name / "text-1" / "ingredients"
+        BASE_DIR / str(project_id) / "output" / base_name / "text-1" / "ingredients"
     )
     os.makedirs(project_output_path, exist_ok=True)
 
@@ -1244,13 +1242,14 @@ async def download_processed_project_zip(
             logger.error(f"Failed to generate USFM for book '{book.book}': {e.detail}")
  
  
+    # Construct directories using the base name
+    base_name = project.name.split("(")[0].strip()
     base_dir = Path(BASE_DIRECTORY) / str(project.project_id)
-    input_dir = base_dir / "input" / project.name
-    output_dir = base_dir / "output" / project.name
+    input_dir = base_dir / "input" / base_name
+    output_dir = base_dir / "output" / base_name
  
     final_dir = base_dir / project.name
     zip_path = f"{final_dir}.zip"
- 
     # Cleanup logic: Remove existing folders or zip files with the same name
     if final_dir.exists():
         shutil.rmtree(final_dir, ignore_errors=True)
@@ -1261,7 +1260,7 @@ async def download_processed_project_zip(
  
     if not input_dir.exists() or not output_dir.exists():
         raise HTTPException(
-            status_code=404, detail="Input or output directory not found."
+            status_code=404, detail=f"Input or output directory not found for project: {project_id}."
         )
  
     # Create a temporary directory
@@ -1361,7 +1360,6 @@ async def download_processed_project_zip(
  
         # Step 6: Remove unnecessary directories
         shutil.rmtree(temp_dir / "output", ignore_errors=True)
- 
         # Step 7: Rename and zip the directory
         final_dir = base_dir / project.name
         shutil.move(temp_dir, final_dir)
