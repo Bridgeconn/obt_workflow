@@ -196,7 +196,7 @@ The frontend is built using modern and efficient technologies:
 7. **Create an Environment File**  
    - In the UI root, create `.env` and add:
      ```bash
-     VITE_BASE_URL=https://dev.api.aiobt.vachanengine.org
+     VITE_BASE_URL="BASE_URL"
      ```
 
 8. **Run the Development Server**  
