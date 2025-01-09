@@ -136,6 +136,16 @@ uvicorn main:app --port=7000 --debug
 
 #### Run the App using Docker
 
+Ensure `.env` file is created in the docker folder with following variables.
+   ```bash
+   AI_OBT_POSTGRES_HOST=localhost
+   AI_OBT_POSTGRES_PORT=5432
+   AI_OBT_POSTGRES_USER=<username>
+   AI_OBT_POSTGRES_PASSWORD=<password>
+   AI_OBT_POSTGRES_DATABASE=<database_name>
+   AI_OBT_DOMAIN=http://localhost
+   ```
+
 From the `cd docker` folder:
 
    ```bash
