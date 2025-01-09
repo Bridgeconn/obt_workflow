@@ -114,7 +114,7 @@ const uploadProject = async (file: File) => {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${BASE_URL}/Projects/`, {
+  const response = await fetch(`${BASE_URL}/projects`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -346,38 +346,6 @@ const ProjectsPage: React.FC = () => {
       uploadMutation.mutate(files[0]);
     }
   };
-
-  // useEffect(() => {
-  //   const calculateHeight = () => {
-  //     // Get viewport height
-  //     const vh = window.innerHeight;
-
-  //     // Define breakpoints
-  //     const isLaptop = window.matchMedia("(min-width: 1024px)").matches;
-  //     const isTablet = window.matchMedia("(min-width: 768px)").matches;
-
-  //     if (isLaptop) {
-  //       // For laptops/desktops, calculate height to ensure no scrollbar
-  //       const headerHeight = 140; // Height of the Projects title + buttons (approximate)
-  //       const paginationHeight = 60; // Height of pagination controls
-  //       const availableHeight = vh - headerHeight - paginationHeight - 60; // 48px for padding/margins
-  //       setContainerHeight(`${availableHeight}px`);
-  //     } else if (isTablet) {
-  //       // For tablets, allow scrolling if needed
-  //       setContainerHeight("420px"); // Default height
-  //     } else {
-  //       // For mobile, allow scrolling
-  //       setContainerHeight("420px");
-  //     }
-  //   };
-
-  //   // Calculate initial height
-  //   calculateHeight();
-
-  //   // Recalculate on resize
-  //   window.addEventListener("resize", calculateHeight);
-  //   return () => window.removeEventListener("resize", calculateHeight);
-  // }, []);
 
   return (
     <div

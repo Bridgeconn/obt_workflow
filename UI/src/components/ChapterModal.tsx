@@ -63,7 +63,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   );
 
   useEffect(() => {
-    
     if (isOpen) fetchChapterDetails(projectId, bookName, chapter.chapter);
     // setVerseModifications({});
     setApproved(chapter.approved);
@@ -83,7 +82,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const handlePlayAudio = async (verseId: number) => {
     try {
       const token = useAuthStore.getState().token;
-  
+
       if (playingVerse === verseId && audio) {
         if (audio.paused) {
           // Resume playback
@@ -96,7 +95,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
         }
         return;
       }
-  
+
       if (audio) {
         // Stop the current audio
         audio.pause();
@@ -104,7 +103,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
         setPlayingVerse(null);
         setIsPlaying(false);
       }
-  
+
       // Fetch audio from API if new verse is played
       const response = await fetch(
         `${BASE_URL}/project/verse/audio?verse_id=${verseId}`,
@@ -115,23 +114,23 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           },
         }
       );
-  
+
       if (!response.ok) {
         throw new Error("Failed to fetch audio");
       }
-  
+
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
-  
+
       // Initialize and play audio
       const newAudio = new Audio(audioUrl);
       newAudio.play();
-  
+
       // Update state
       setAudio(newAudio);
       setPlayingVerse(verseId);
       setIsPlaying(true);
-  
+
       // Reset state when audio ends
       newAudio.onended = () => {
         setPlayingVerse(null);
@@ -142,12 +141,10 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       console.error("Error fetching audio:", error);
       toast({
         variant: "destructive",
-        title:
-          error instanceof Error ? error.message : "Error fetching audio",
+        title: error instanceof Error ? error.message : "Error fetching audio",
       });
     }
   };
-  
 
   const handleApproveChapter = () => {
     const approve = approved ? false : true;
@@ -175,12 +172,12 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       const modifiedVerses = sortedVerses?.filter(
         verse => verse.modified || verseModifications[verse.verse_id]
       ).map(verse => verse.verse_id) || [];
-      
+
       if (modifiedVerses.length === 0) {
         toast({
           variant: "destructive",
           title: "Edit verse text before converting to speech",
-        });        
+        });
         setIsConverting(false);
         return;
       }
@@ -236,7 +233,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
         delete updated[verseId];
         return updated;
       });
-       // Remove from focusedVerses when text matches original
+      // Remove from focusedVerses when text matches original
       setFocusedVerses((prev) => {
         const updated = new Set(prev);
         updated.delete(verseId);
@@ -313,75 +310,75 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       onOpenChange={onClose}
     >
       <DialogContent className="max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>
-            {bookName} - Chapter {chapter.chapter}
-          </DialogTitle>
-        </DialogHeader>
-        <ScrollArea className="h-96 border rounded p-4">
+            <DialogHeader>
+              <DialogTitle>
+                {bookName} - Chapter {chapter.chapter}
+              </DialogTitle>
+            </DialogHeader>
+            <ScrollArea className="h-96 border rounded p-4">
           {sortedVerses?.map((verse) => (
-            <div
-              key={verse.verse_id}
-              className={`flex items-center space-x-4 p-2 ${
+                  <div
+                    key={verse.verse_id}
+                    className={`flex items-center space-x-4 p-2 ${
                 verseModifications[verse.verse_id] ? "bg-gray-100 rounded" : ""
-              }`}
-            >
-              <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
-              <Textarea
-                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
-                  verseModifications[verse.verse_id] || verse.modified
-                    ? "border-r-2 border-r-yellow-500 bg-yellow-50"
-                    : ""
-                }`}
-                defaultValue={verse.text}
+                    }`}
+                  >
+                    <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
+                    <Textarea
+                      className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
+                        verseModifications[verse.verse_id] || verse.modified
+                          ? "border-r-2 border-r-yellow-500 bg-yellow-50"
+                          : ""
+                      }`}
+                      defaultValue={verse.text}
                 onChange={(e) => handleTextChange(verse.verse_id, e.target.value, verse.text)}
-                onFocus={() => handleFocus(verse.verse_id)}
-                onBlur={(e) =>
-                  handleBlur(verse.verse_id, e.target.value, verse.text)
-                }
-                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-              />
-              <div className="w-[50px]">
-                {isConvertingVerse.has(verse.verse_id) && !verse.tts ? (
-                  <LoadingIcon className="animate-spin" />
-                ) : (
-                  (verse.modified ? verse.tts : verse.stt) &&
-                  !verseModifications[verse.verse_id] &&
-                  !focusedVerses.has(verse.verse_id) && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handlePlayAudio(verse.verse_id)}
-                    >
-                      {playingVerse === verse.verse_id && isPlaying ? (
-                        <PauseIcon />
+                      onFocus={() => handleFocus(verse.verse_id)}
+                      onBlur={(e) =>
+                        handleBlur(verse.verse_id, e.target.value, verse.text)
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+                    />
+                    <div className="w-[50px]">
+                      {isConvertingVerse.has(verse.verse_id) && !verse.tts ? (
+                        <LoadingIcon className="animate-spin" />
                       ) : (
-                        <PlayIcon />
+                        (verse.modified ? verse.tts : verse.stt) &&
+                        !verseModifications[verse.verse_id] &&
+                        !focusedVerses.has(verse.verse_id) && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handlePlayAudio(verse.verse_id)}
+                          >
+                            {playingVerse === verse.verse_id && isPlaying ? (
+                              <PauseIcon />
+                            ) : (
+                              <PlayIcon />
+                            )}
+                          </Button>
+                        )
                       )}
-                    </Button>
-                  )
-                )}
-              </div>
+                    </div>
+                  </div>
+                ))}
+            </ScrollArea>
+            <div className="flex justify-end space-x-4 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  handleVerseUpdate();
+                  onClose();
+                }}
+              >
+                Close
+              </Button>
+              <Button onClick={handleApproveChapter}>
+                {approved ? "Unapprove" : "Approve"}
+              </Button>
+              <Button onClick={handleConvertToSpeech} disabled={isConverting}>
+                Convert to Speech
+              </Button>
             </div>
-          ))}
-        </ScrollArea>
-        <div className="flex justify-end space-x-4 mt-4">
-          <Button
-            variant="outline"
-            onClick={() => {
-              handleVerseUpdate();
-              onClose();
-            }}
-          >
-            Close
-          </Button>
-          <Button onClick={handleApproveChapter}>
-            {approved ? "Unapprove" : "Approve"}
-          </Button>
-          <Button onClick={handleConvertToSpeech} disabled={isConverting}>
-            Convert to Speech
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   );

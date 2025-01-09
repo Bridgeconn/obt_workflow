@@ -16,6 +16,7 @@ import ProjectsPage from "./pages/ProjectsPage";
 import ProjectDetailsPage from "./pages/ProjectsDetail";
 import ProfilePage from "./pages/Profile";
 import UsersTable from "./pages/Users";
+import AdminLogs from "./pages/AdminLogs";
 
 function AppContent() {
   const { checkAuthStatus } = useAuthStore();
@@ -68,6 +69,20 @@ function AppContent() {
             isAuthenticated ? (
               user?.role === "Admin" ? (
                 <UsersTable />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/logs"
+          element={
+            isAuthenticated ? (
+              user?.role === "Admin" ? (
+                <AdminLogs />
               ) : (
                 <Navigate to="/" replace />
               )

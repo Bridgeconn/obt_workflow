@@ -74,7 +74,7 @@ const useAuthStore = create<AuthState>()(
       signup: async (username, email, password) => {
         try {
           const response = await fetch(
-            `${BASE_URL}/user/signup?username=${username}&email=${email}&password=${password}`,
+            `${BASE_URL}/user/signup/?username=${username}&email=${email}&password=${password}`,
             {
               method: "POST",
               headers: {

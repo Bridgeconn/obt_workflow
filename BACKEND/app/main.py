@@ -19,7 +19,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["http://localhost:5173","https://obt-workflow.vercel.app"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,5 +29,7 @@ app.add_middleware(
 # Include the router
 app.include_router(router.router)
 
-
+@app.get("/")
+async def root():
+    return {"message": "AI OBT app is running successfully 🚀"}
 

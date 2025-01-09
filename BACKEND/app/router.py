@@ -269,7 +269,7 @@ async def update_user(
     }
 
 
-@router.post("/Projects", tags=["Project"])
+@router.post("/projects", tags=["Project"])
 async def upload_zip(
     file: UploadFile = File(...),
     db: Session = Depends(dependency.get_db),

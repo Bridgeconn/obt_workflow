@@ -353,9 +353,10 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
         project = db_session.query(Project).filter(Project.project_id == project_id).first()
         if not project:
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
- 
+
+        base_name = project.name.split("(")[0].strip()
         # Base directory for output
-        output_base_dir = BASE_DIR / str(project_id) / "output" / project.name
+        output_base_dir = BASE_DIR / str(project_id) / "output" / base_name
         ingredients_audio_dir = output_base_dir / "audio" / "ingredients"
         ingredients_audio_dir.mkdir(parents=True, exist_ok=True)
         temp_audio_dirs = []
