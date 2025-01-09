@@ -654,7 +654,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
       try {
         const response = await fetch(
-          `${BASE_URL}/projects/${projectId}/archive?archive=${archive}`,
+          `${BASE_URL}/projects/${projectId}/archive/?archive=${archive}`,
           {
             method: "PUT",
             headers: {
@@ -705,7 +705,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
         set({ chapterVerses: data.data });
       } catch (error) {
         console.error("Failed to fetch chapter details:", error);
-      }
+      } 
     },
 
     updateVerseText: async (verseId, newText, book, chapter) => {

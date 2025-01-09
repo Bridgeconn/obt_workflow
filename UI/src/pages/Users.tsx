@@ -37,7 +37,7 @@ interface User {
 const fetchUsers = async (token: string | null): Promise<User[]> => {
   if (!token) throw new Error("Missing token");
 
-  const response = await fetch(`${BASE_URL}/users`, {
+  const response = await fetch(`${BASE_URL}/users/`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,

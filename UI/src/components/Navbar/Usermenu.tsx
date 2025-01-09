@@ -44,6 +44,11 @@ import { useQueryClient } from "@tanstack/react-query";
               Users
             </DropdownMenuItem>
           )}
+          {user?.role === "Admin" && (
+            <DropdownMenuItem onClick={() => navigate("/logs")}>
+              Logs
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={handleLogout} className="text-red-500">
             Logout
           </DropdownMenuItem>

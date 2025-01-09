@@ -90,7 +90,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         );
         setScriptLanguage(String(selectedScriptLanguage?.id));
       }
-      console.log("project", project);
       setLoading(false);
     }
   }, [project, projectId]);
@@ -149,7 +148,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const handleAudioLanguageChange = async (selectedId: string) => {
-    console.log("project details", project);
     const id = Number(selectedId);
     const selectedLanguage = source_languages.find(
       (language) => language.id === id
@@ -194,7 +192,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const handleDownloadUSFM = async (projectId: number, book: Book) => {
     try {
       const response = await fetch(
-        `${BASE_URL}/generate-usfm?project_id=${projectId}&book=${book.book}`,
+        `${BASE_URL}/generate-usfm/?project_id=${projectId}&book=${book.book}`,
         {
           method: "GET",
           headers: {
@@ -203,7 +201,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           },
         }
       );
-      console.log("response", response);
       if (!response.ok) {
         const responseData = await response.json();
         throw new Error(responseData.detail || "Failed to generate USFM");
@@ -252,7 +249,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       if (!projectId) return;
 
       const response = await fetch(
-        `${BASE_URL}/download-processed-project-zip?project_id=${projectId}`,
+        `${BASE_URL}/download-processed-project-zip/?project_id=${projectId}`,
         {
           method: "GET",
           headers: {
@@ -528,6 +525,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               <Button
                 className="w-full md:w-auto"
                 onClick={handleDownloadProject}
+                disabled={!project.books.some((book) => book.approved)}
               >
                 Download Project
               </Button>

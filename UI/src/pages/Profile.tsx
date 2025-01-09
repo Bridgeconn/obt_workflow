@@ -61,7 +61,7 @@ const ProfilePage: React.FC = () => {
   const handleChangePassword = async (formData: PasswordFormInputs) => {
     try {
       const response = await fetch(
-        `${BASE_URL}/user/updatePassword?current_password=${formData.currentPassword}&new_password=${formData.newPassword}`,
+        `${BASE_URL}/user/updatePassword/?current_password=${formData.currentPassword}&new_password=${formData.newPassword}`,
         {
           method: "PUT",
           headers: {
