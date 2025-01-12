@@ -40,12 +40,16 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   chapter,
 }) => {
   const {
-    chapterVerses,
     fetchChapterDetails,
     updateVerseText,
     approveChapter,
     convertToSpeech,
+    clearChapterVerses,
   } = useChapterDetailsStore();
+  const chapterKey = `${projectId}-${bookName}-${chapter.chapter}`;
+  const chapterVerses = useChapterDetailsStore(
+    (state) => state.chapterVerses[chapterKey]
+  );
   const [playingVerse, setPlayingVerse] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
@@ -63,7 +67,11 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   );
 
   useEffect(() => {
-    if (isOpen) fetchChapterDetails(projectId, bookName, chapter.chapter);
+    if (isOpen) {
+      fetchChapterDetails(projectId, bookName, chapter.chapter);
+    } else {
+      clearChapterVerses(chapterKey);
+    }
     // setVerseModifications({});
     setApproved(chapter.approved);
     setCurrentlyEditingVerseId(null);
@@ -158,7 +166,13 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
     for (const verseId of verseIds) {
       const newText = verseModifications[verseId];
-      await updateVerseText(verseId, newText, bookName, chapter.chapter);
+      await updateVerseText(
+        verseId,
+        newText,
+        bookName,
+        chapter.chapter,
+        projectId
+      );
     }
     // // Clear local modifications after update
     // setVerseModifications({});
@@ -169,9 +183,12 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const handleConvertToSpeech = async () => {
     try {
       setIsConverting(true);
-      const modifiedVerses = sortedVerses?.filter(
-        verse => verse.modified || verseModifications[verse.verse_id]
-      ).map(verse => verse.verse_id) || [];
+      const modifiedVerses =
+        sortedVerses
+          ?.filter(
+            (verse) => verse.modified || verseModifications[verse.verse_id]
+          )
+          .map((verse) => verse.verse_id) || [];
 
       if (modifiedVerses.length === 0) {
         toast({
@@ -305,80 +322,79 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   );
 
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={onClose}
-    >
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>
-                {bookName} - Chapter {chapter.chapter}
-              </DialogTitle>
-            </DialogHeader>
-            <ScrollArea className="h-96 border rounded p-4">
+        <DialogHeader>
+          <DialogTitle>
+            {bookName} - Chapter {chapter.chapter}
+          </DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="h-96 border rounded p-4">
           {sortedVerses?.map((verse) => (
-                  <div
-                    key={verse.verse_id}
-                    className={`flex items-center space-x-4 p-2 ${
+            <div
+              key={verse.verse_id}
+              className={`flex items-center space-x-4 p-2 ${
                 verseModifications[verse.verse_id] ? "bg-gray-100 rounded" : ""
-                    }`}
-                  >
-                    <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
-                    <Textarea
-                      className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
-                        verseModifications[verse.verse_id] || verse.modified
-                          ? "border-r-2 border-r-yellow-500 bg-yellow-50"
-                          : ""
-                      }`}
-                      defaultValue={verse.text}
-                onChange={(e) => handleTextChange(verse.verse_id, e.target.value, verse.text)}
-                      onFocus={() => handleFocus(verse.verse_id)}
-                      onBlur={(e) =>
-                        handleBlur(verse.verse_id, e.target.value, verse.text)
-                      }
-                      onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                    />
-                    <div className="w-[50px]">
-                      {isConvertingVerse.has(verse.verse_id) && !verse.tts ? (
-                        <LoadingIcon className="animate-spin" />
+              }`}
+            >
+              <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
+              <Textarea
+                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
+                  verseModifications[verse.verse_id] || verse.modified
+                    ? "border-r-2 border-r-yellow-500 bg-yellow-50"
+                    : ""
+                }`}
+                defaultValue={verse.text}
+                onChange={(e) =>
+                  handleTextChange(verse.verse_id, e.target.value, verse.text)
+                }
+                onFocus={() => handleFocus(verse.verse_id)}
+                onBlur={(e) =>
+                  handleBlur(verse.verse_id, e.target.value, verse.text)
+                }
+                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+              />
+              <div className="w-[50px]">
+                {isConvertingVerse.has(verse.verse_id) && !verse.tts ? (
+                  <LoadingIcon className="animate-spin" />
+                ) : (
+                  (verse.modified ? verse.tts : verse.stt) &&
+                  !verseModifications[verse.verse_id] &&
+                  !focusedVerses.has(verse.verse_id) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handlePlayAudio(verse.verse_id)}
+                    >
+                      {playingVerse === verse.verse_id && isPlaying ? (
+                        <PauseIcon />
                       ) : (
-                        (verse.modified ? verse.tts : verse.stt) &&
-                        !verseModifications[verse.verse_id] &&
-                        !focusedVerses.has(verse.verse_id) && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handlePlayAudio(verse.verse_id)}
-                          >
-                            {playingVerse === verse.verse_id && isPlaying ? (
-                              <PauseIcon />
-                            ) : (
-                              <PlayIcon />
-                            )}
-                          </Button>
-                        )
+                        <PlayIcon />
                       )}
-                    </div>
-                  </div>
-                ))}
-            </ScrollArea>
-            <div className="flex justify-end space-x-4 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  handleVerseUpdate();
-                  onClose();
-                }}
-              >
-                Close
-              </Button>
-              <Button onClick={handleApproveChapter}>
-                {approved ? "Unapprove" : "Approve"}
-              </Button>
-              <Button onClick={handleConvertToSpeech} disabled={isConverting}>
-                Convert to Speech
-              </Button>
+                    </Button>
+                  )
+                )}
+              </div>
             </div>
+          ))}
+        </ScrollArea>
+        <div className="flex justify-end space-x-4 mt-4">
+          <Button
+            variant="outline"
+            onClick={() => {
+              handleVerseUpdate();
+              onClose();
+            }}
+          >
+            Close
+          </Button>
+          <Button onClick={handleApproveChapter}>
+            {approved ? "Unapprove" : "Approve"}
+          </Button>
+          <Button onClick={handleConvertToSpeech} disabled={isConverting}>
+            Convert to Speech
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

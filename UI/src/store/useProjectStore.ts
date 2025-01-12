@@ -78,7 +78,8 @@ interface ChapterStatusResponse {
 }
 
 interface ChapterDetailsState {
-  chapterVerses: Verse[] | null;
+  chapterVerses: { [key: string]: Verse[] | null };
+  clearChapterVerses: (key: string) => void;
   fetchChapterDetails: (
     projectId: number,
     book: string,
@@ -88,7 +89,8 @@ interface ChapterDetailsState {
     verseId: number,
     newText: string,
     book: string,
-    chapter: number
+    chapter: number,
+    projectId?: number
   ) => void;
   approveChapter: (
     projectId: number,
@@ -686,10 +688,20 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 );
 
 export const useChapterDetailsStore = create<ChapterDetailsState>(
-  (set, get) => ({
-    chapterVerses: null,
+  (set) => ({
+    chapterVerses: {},
+
+    clearChapterVerses: (key: string) => {
+      set((state) => ({
+        chapterVerses: {
+          ...state.chapterVerses,
+          [key]: null,
+        },
+      }));
+    },
 
     fetchChapterDetails: async (projectId, book, chapter) => {
+      const key = `${projectId}-${book}-${chapter}`;
       try {
         const response = await fetch(
           `${BASE_URL}/project/${projectId}/${book}/${chapter}`,
@@ -702,13 +714,18 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
           }
         );
         const data = await response.json();
-        set({ chapterVerses: data.data });
+        set((state) => ({
+          chapterVerses: {
+            ...state.chapterVerses,
+            [key]: data.data,
+          },
+        }));
       } catch (error) {
         console.error("Failed to fetch chapter details:", error);
       } 
     },
 
-    updateVerseText: async (verseId, newText, book, chapter) => {
+    updateVerseText: async (verseId, newText, book, chapter, projectId) => {
       try {
         const response = await fetch(
           `${BASE_URL}/project/verse/${verseId}?verse_text=${newText}`,
@@ -721,13 +738,21 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
           }
         );
         if (response.ok) {
-          set((state) => ({
-            chapterVerses: state.chapterVerses?.map((verse) =>
-              verse.verse_id === verseId
-                ? { ...verse, text: newText, tts: false }
-                : verse
-            ),
-          }));
+          set((state) => {
+            const verses = state.chapterVerses[`${projectId}-${book}-${chapter}`];
+            if (!verses) return state;
+            
+            return {
+              chapterVerses: {
+                ...state.chapterVerses,
+                [`${projectId}-${book}-${chapter}`]: verses.map((verse) =>
+                  verse.verse_id === verseId
+                    ? { ...verse, text: newText, tts: false }
+                    : verse
+                ),
+              },
+            };
+          });
           useProjectDetailsStore.getState().setProject((prevProject) => {
             if (!prevProject) return prevProject;
             const updatedBooks = prevProject.books.map((b) => {
@@ -831,6 +856,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
     },
 
     convertToSpeech: async (project_id, bookName, chapter): Promise<string> => {
+      const key = `${project_id}-${bookName}-${chapter.chapter}`;
       try {
         const response = await fetch(
           `${BASE_URL}/project/chapter/${chapter.chapter_id}/tts`,
@@ -845,15 +871,31 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
         const responseData = await response.json();
 
         if (response.ok) {
-          await get().fetchChapterDetails(
-            project_id,
-            bookName,
-            chapter.chapter
-          );
-          const chapterDetails = get().chapterVerses;
+          const fetchAndUpdateChapter = async (): Promise<Verse[]> => {
+            const response = await fetch(
+              `${BASE_URL}/project/${project_id}/${bookName}/${chapter.chapter}`,
+              {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${useAuthStore.getState().token}`,
+                },
+              }
+            );
+            const data = await response.json();
+            set((state) => ({
+              chapterVerses: {
+                ...state.chapterVerses,
+                [key]: data.data,
+              },
+            }));
+            return data.data;
+          };
+  
+          const chapterDetails = await fetchAndUpdateChapter();
 
           const hasModifiedVerses = chapterDetails?.some(
-            (verse) => verse.modified
+            (verse) => verse.modified && !verse.tts
           );
           if (!hasModifiedVerses) {
             console.log("No modified verses found.");
@@ -866,28 +908,22 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
             return new Promise((resolve, reject) => {
               const checkStatus = async () => {
                 try {
-                  await get().fetchChapterDetails(
-                    project_id,
-                    bookName,
-                    chapter.chapter
-                  );
-                  const chapterDetails = get().chapterVerses;
-
-                  if (chapterDetails) {
-                    const modifiedVerses = chapterDetails.filter(
-                      (verse) => verse.modified
+                  const verses = await fetchAndUpdateChapter();
+                  if (verses && verses.length > 0) {
+                    const modifiedVerses = verses.filter(
+                      (verse: Verse) => verse.modified && !verse.tts
                     );
-
+    
                     const allModifiedConverted = modifiedVerses.every(
-                      (verse) => verse.tts
+                      (verse: Verse) => verse.tts
                     );
-
+    
                     if (allModifiedConverted) {
                       const verseWithTTSMsg = modifiedVerses.find(
-                        (verse) => verse.tts_msg
+                        (verse: Verse) => verse.tts_msg
                       );
-
-                      if (verseWithTTSMsg && verseWithTTSMsg.tts_msg) {
+    
+                      if (verseWithTTSMsg) {
                         resolve(verseWithTTSMsg.tts_msg);
                         return;
                       } else {
@@ -895,6 +931,19 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
                           "Text-to-speech conversion completed successfully."
                         );
                         return;
+                      }
+                    } else {
+                      const checkConversionError = modifiedVerses.some(
+                        (verse: Verse) => verse.tts_msg !== "Text-to-speech completed"
+                      );
+                      if (checkConversionError) {
+                        const errorVerse = modifiedVerses.find(
+                          (verse: Verse) => verse.tts_msg
+                        );
+                        if (errorVerse && errorVerse.tts_msg) {
+                          reject(errorVerse.tts_msg);
+                          return;
+                        }
                       }
                     }
                   }
