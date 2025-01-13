@@ -22,8 +22,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import source_languages from "../data/source_languages.json";
 import major_languages from "../data/major_languages.json";
+import model_languages from "../data/model_languages.json";
 import ChapterModal from "@/components/ChapterModal";
 import { toast } from "@/hooks/use-toast";
+import { useServedModels } from "@/hooks/use-served-models";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -49,6 +51,17 @@ interface SelectedChapter extends Chapter {
   bookName: string;
 }
 
+interface ModelConfig {
+  tts: string;
+  stt: string;
+}
+
+interface ModelLanguages {
+  [language: string]: ModelConfig;
+}
+
+const typedModelLanguages = model_languages as ModelLanguages;
+
 const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const {
     project,
@@ -58,6 +71,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     // retryChapterTranscription,
     archiveProject,
   } = useProjectDetailsStore();
+  const { servedModels, refetch } = useServedModels();
   const [scriptLanguage, setScriptLanguage] = useState("");
   const [audioLanguage, setAudioLanguage] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -77,19 +91,22 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   useEffect(() => {
     console.log("project", project);
+    let selectedAudioLanguage = null;
+    let selectedScriptLanguage = null;
     if (project && project.project_id === projectId) {
       if (project.audio_lang) {
-        const selectedAudioLanguage = source_languages.find(
+        selectedAudioLanguage = source_languages.find(
           (language) => language.language_name === project.audio_lang
         );
         setAudioLanguage(String(selectedAudioLanguage?.id));
       }
       if (project.script_lang) {
-        const selectedScriptLanguage = major_languages.find(
+        selectedScriptLanguage = major_languages.find(
           (language) => language.language_name === project.script_lang
         );
         setScriptLanguage(String(selectedScriptLanguage?.id));
       }
+      checkServedModels(selectedAudioLanguage?.source_language, selectedScriptLanguage?.major_language);
       setLoading(false);
     }
   }, [project, projectId]);
@@ -120,28 +137,65 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   //   }
   // };
 
-  const handleAudioLanguageChange = async (selectedId: string) => {
-    const id = Number(selectedId);
-    const selectedLanguage = source_languages.find(
-      (language) => language.id === id
-    );
-    if (!selectedLanguage) {
-      console.error("Selected language not found.");
+  const checkServedModels = (audioLanguage: string  | undefined, scriptLanguage: string | undefined) => {
+    refetch();
+    if (!servedModels || !audioLanguage || !scriptLanguage) return;
+  
+    const requiredModels = typedModelLanguages[audioLanguage] || typedModelLanguages[scriptLanguage];
+    
+    if (!requiredModels) {
+      console.error(`No model configuration found for language: ${audioLanguage}`);
       return;
     }
-    setAudioLanguage(String(selectedLanguage.id));
+  
+    const ttsServed = servedModels.some(model => model.modelName === requiredModels.tts);
+    const sttServed = servedModels.some(model => model.modelName === requiredModels.stt);
+  
+    if (!ttsServed && !sttServed) {
+      toast({
+        title: "The required language processing models are currently offline. Please contact the ML team for assistance.",
+        variant: "destructive",
+      });
+      return;
+    }
+  
+    if (!ttsServed) {
+      toast({
+        title: "Model for text-to-speech not active currently, please contact ML team for assistance",
+        variant: "destructive",
+      });
+    }
+  
+    if (!sttServed) {
+      toast({
+        title: "Model for speech-to-text not active currently, please contact ML team for assistance",
+        variant: "destructive",
+      });
+    }
+  };
+  const handleLanguageChange = async (selectedId: string) => {
+    const id = Number(selectedId);
+    const selectedAudioLanguage = source_languages.find(
+      (language) => language.id === id
+    );
+    if (!selectedAudioLanguage) {
+      console.error("Audio language not found.");
+      return;
+    }
+    setAudioLanguage(String(selectedAudioLanguage.id));
     const selectedScriptLanguage = major_languages.find(
-      (language) => language.language_name === selectedLanguage.source_language
+      (language) => language.language_name === selectedAudioLanguage.source_language
     );
     if (!selectedScriptLanguage) {
       console.error("Script language not found.");
       return;
     }
     setScriptLanguage(String(selectedScriptLanguage?.id));
+    checkServedModels(selectedAudioLanguage.source_language, selectedScriptLanguage.major_language);
     const token = useAuthStore.getState().token;
     try {
       await fetch(
-        `${BASE_URL}/projects/${project?.project_id}/audio_language/${selectedLanguage.language_name}`,
+        `${BASE_URL}/projects/${project?.project_id}/audio_language/${selectedAudioLanguage.language_name}`,
         {
           method: "PUT",
           headers: {
@@ -297,7 +351,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 Audio Language
               </label>
               <Select
-                onValueChange={handleAudioLanguageChange}
+                onValueChange={handleLanguageChange}
                 value={audioLanguage}
               >
                 <SelectTrigger className="w-full md:w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">

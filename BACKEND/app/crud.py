@@ -284,6 +284,8 @@ def call_ai_api(file_path: str, script_lang: str) -> dict:
     
     # AI API Base URL (model_name will be dynamic)
     BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/transcribe"
+    SERVED_MODELS_URL = "https://api.vachanengine.org/v2/ai/model/served-models"
+ 
  
     # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
@@ -311,6 +313,23 @@ def call_ai_api(file_path: str, script_lang: str) -> dict:
     except Exception as e:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
+    
+    # Check if the model is served
+    try:
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = requests.get(SERVED_MODELS_URL, headers=headers)
+        if response.status_code == 200:
+            served_models = response.json()
+            served_model_names = {model["modelName"] for model in served_models}
+            if model_name not in served_model_names:
+                logger.error(f"Model '{model_name}' is not served.")
+                return {"error": f"Model '{model_name}' is not served."}
+        else:
+            logger.error(f"Error fetching served models: {response.status_code} - {response.text}")
+            return {"error": "Failed to fetch served models", "status_code": response.status_code}
+    except Exception as e:
+        logger.error(f"Error checking served models: {str(e)}")
+        return {"error": "Exception occurred while checking served models", "details": str(e)}
  
     # Prepare API URL
     ai_api_url = f"{BASE_API_URL}?model_name={model_name}"
@@ -599,7 +618,7 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     
     # AI API Base URL
     BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/generate"
- 
+    SERVED_MODELS_URL = "https://api.vachanengine.org/v2/ai/model/served-models"
     # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
  
@@ -646,6 +665,23 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     except Exception as e:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
+    
+    # Check if the model is served
+    try:
+        headers = {"Authorization": f"Bearer {api_token}"}
+        response = requests.get(SERVED_MODELS_URL, headers=headers)
+        if response.status_code == 200:
+            served_models = response.json()
+            served_model_names = {model["modelName"] for model in served_models}
+            if model_name not in served_model_names:
+                logger.error(f"Model '{model_name}' is not served.")
+                return {"error": f"Model '{model_name}' is not served."}
+        else:
+            logger.error(f"Error fetching served models: {response.status_code} - {response.text}")
+            return {"error": "Failed to fetch served models", "status_code": response.status_code}
+    except Exception as e:
+        logger.error(f"Error checking served models: {str(e)}")
+        return {"error": "Exception occurred while checking served models", "details": str(e)}
  
     # Prepare API parameters and headers
     params = {

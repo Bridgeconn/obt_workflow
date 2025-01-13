@@ -1,6 +1,4 @@
-import { useState, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useToast } from "@/hooks/use-toast";
 import {
   Table,
   TableBody,
@@ -9,70 +7,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useServedModels } from "@/hooks/use-served-models";
 
-const BASE_URL = import.meta.env.VITE_AI_BASE_URL;
-
-// Define the type for the served models
-interface ServedModel {
-  modelName: string;
-  modelVersion: string;
-}
+const AVAILABLE_MODELS = [
+  "mms-1b-all",
+  "seamless-m4t-large",
+  "mms-tts-kannada",
+  "mms-tts-marathi",
+];
 
 export default function ServedModel() {
-  const [servedModels, setServedModels] = useState<ServedModel[] | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const { toast } = useToast();
-  const models = [
-    "mms-1b-all",
-    "seamless-m4t-large",
-    "mms-tts-kannada",
-    "mms-tts-marathi",
-  ];
 
-  useEffect(() => {
-    handleFetchModels();
-  }, []);
-
-  const handleFetchModels = async () => {
-    try {
-      setIsLoading(true);
-      const models = await fetchServedModels();
-      if (models) {
-        setServedModels(models);
-      }
-    } catch (error) {
-      toast({
-        title: "Failed to fetch models",
-        variant: "destructive",
-      });
-      console.error("Error fetching models:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchServedModels = async () => {
-    const api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3";
-    const response = await fetch(`${BASE_URL}/model/served-models`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${api_token}`,
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch served models");
-    }
-
-    return response.json();
-  };
+  const { servedModels, isLoading, refetch } = useServedModels();
 
   return (
     <div className="p-8 max-w-4xl space-y-6 rounded-lg max-h-[420px] h-[420px]">
-      <h1 className="text-3xl font-bold">Served Models</h1>
+      <div className="flex flex-col justify-between gap-4">
+        <h1 className="text-3xl font-bold">Served Models</h1>
+        <button 
+          onClick={refetch}
+          className="px-4 py-2 w-fit rounded-md bg-gray-200 hover:bg-gray-300 transition-colors"
+        >
+          Refresh
+        </button>
+      </div>
 
-      <div className="mt-6 rounded-lg border border-gray-400 ">
+      <div className="mt-6 rounded-lg border border-gray-400">
         {!isLoading ? (
           <ScrollArea className="p-4 overflow-y-auto h-full">
             {servedModels ? (
@@ -84,10 +44,9 @@ export default function ServedModel() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {models.map((modelName) => {
+                  {AVAILABLE_MODELS.map((modelName) => {
                     const isModelServed = servedModels.some(
-                      (servedModel: ServedModel) =>
-                        servedModel.modelName === modelName
+                      (servedModel) => servedModel.modelName === modelName
                     );
                     return (
                       <TableRow key={modelName}>
@@ -105,7 +64,7 @@ export default function ServedModel() {
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-gray-500">No Model found.</p>
+              <p className="text-gray-500">No Models found.</p>
             )}
           </ScrollArea>
         ) : (
