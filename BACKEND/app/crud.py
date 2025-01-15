@@ -176,6 +176,14 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             if not verse:
                 logger.error(f"Verse file not found for path: {file_path}")
                 continue
+            
+            # Clear any non-successful stt_msg before processing
+            if verse.stt_msg != "Transcription successful":
+                logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
+                verse.stt_msg = ""
+                verse.stt = False# Resetting stt flag as well
+                db_session.add(verse)
+                db_session.commit()
 
             # Check if transcription is already successful
             if verse.stt_msg == "Transcription successful":
@@ -386,6 +394,14 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 if not chapter:
                     logger.error(f"Chapter not found for verse ID {verse.verse_id}")
                     continue
+                
+                # Clear any non-successful tts_msg before processing
+                if verse.tts_msg != "Text-to-speech completed":
+                    logger.debug(f"Resetting tts_msg for verse {verse.verse_id}.")
+                    verse.tts_msg = ""
+                    verse.tts = False # Resetting tts flag as well
+                    db_session.add(verse)
+                    db_session.commit()
  
                 # Create a job entry linked to the verse
                 job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
@@ -543,70 +559,6 @@ def find_audio_file(folder_path: str, verse_name: str) -> str:
                 return os.path.join(root, file)
     logger.error(f"Audio file not found for verse: {verse_name} in folder: {folder_path}")
     return None
-
-
-
-
-# def call_tts_api(text: str, audio_lang: str) -> dict:
-#     """
-#     Call the AI API for text-to-speech.
-#     """
-#     # File path for the language mapping JSON
-#     LANGUAGE_CODES_FILE = "language_codes.json"
-    
-#     # AI API Base URL
-#     BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/generate"
- 
-#     # API Token
-#     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
- 
-#     # Load the language mapping
-#     try:
-#         with open(LANGUAGE_CODES_FILE, "r") as file:
-#             language_mapping = json.load(file)
-#     except Exception as e:
-#         logging.error(f"Error loading language_codes.json: {str(e)}")
-#         return {"error": "Failed to load language mapping file", "details": str(e)}
- 
-#     # Get the model_name and language_code dynamically
-#     try:
-#         tts_mapping = language_mapping.get(audio_lang, {}).get("tts", {})
-#         if not tts_mapping:
-#             logging.error(f"No TTS model found for audio_lang: {audio_lang}")
-#             return {"error": f"No TTS model found for audio_lang: {audio_lang}"}
-        
-#         # Select the first available model dynamically
-#         model_name, lang_code = next(iter(tts_mapping.items()))
-#         print("MODELNAME,LANGUAGECODE",model_name, lang_code)
-#         if not lang_code:
-#             logging.error(f"No language code found for audio_lang: {audio_lang}")
-#             return {"error": f"No language code found for audio_lang: {audio_lang}"}
-#     except Exception as e:
-#         logging.error(f"Error retrieving model and language code: {str(e)}")
-#         return {"error": "Failed to retrieve model and language code", "details": str(e)}
- 
-#     # Prepare API parameters and headers
-#     params = {
-#         "model_name": model_name,
-#         "language": lang_code,  # Dynamically mapped language code
-#     }
-#     data_payload = [text]
-#     headers = {"Authorization": f"Bearer {api_token}"}
- 
-#     try:
-#         # Make the API request
-#         response = requests.post(BASE_API_URL, params=params, json=data_payload, headers=headers)
-#         logging.info(f"AI API Response: {response.status_code} - {response.text}")
- 
-#         # Handle API response
-#         if response.status_code == 201:
-#             return response.json()
-#         else:
-#             logging.error(f"AI API Error: {response.status_code} - {response.text}")
-#             return {"error": response.text, "status_code": response.status_code}
-#     except Exception as e:
-#         logging.error(f"Error in call_tts_api: {str(e)}")
-#         return {"error": str(e)}
 
 def call_tts_api(text: str, audio_lang: str) -> dict:
     """

@@ -191,7 +191,7 @@ const UsersTable = () => {
   return (
     <div className="w-full mt-12 px-4 md:px-8 lg:px-12">
       <h1 className="text-3xl font-bold mb-4">Application Users</h1>
-      <div className="w-full overflow-x-auto">
+      <div className="w-full overflow-x-auto max-h-[420px] overflow-y-auto">
         <Table className="w-full min-w-[800px] border">
           <TableHeader>
             <TableRow>

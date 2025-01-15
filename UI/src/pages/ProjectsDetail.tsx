@@ -106,13 +106,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         );
         setScriptLanguage(String(selectedScriptLanguage?.id));
       }
-      checkServedModels(selectedAudioLanguage?.source_language, selectedScriptLanguage?.major_language);
       setLoading(false);
     }
   }, [project, projectId]);
 
   const handleTranscribe = async (bookId: number) => {
-    await transcribeBook(bookId, queryClient);
+    try{
+      await transcribeBook(bookId, queryClient);
+    }
+    catch (error) {
+      toast({
+        variant: "destructive",
+        title: error instanceof Error ? error.message : "Failed to transcribe book",
+      });
+      console.error("Error transcribing book:", error);
+    }
   };
 
   // const handleChapterRetry = async (book: Book, chapter: Chapter, e: React.MouseEvent) => {
@@ -220,7 +228,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
-    if (["transcribed", "approved", "converted"].includes(chapter.status || "")) {
+    if (
+      ["transcribed", "approved", "converted", "converting"].includes(
+        chapter.status || ""
+      )
+    ) {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
     }
@@ -420,7 +432,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
                                 : chapter.status === "transcribed" || chapter.status === "converted"
                                 ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
-                                : chapter.status === "inProgress"
+                                : chapter.status === "inProgress" ||
+                                  chapter.status === "converting"
                                 ? "text-orange-700 border border-gray-100 bg-orange-200"
                                 : chapter.status === "error"
                                 ? "text-red-700 border border-red-600 bg-red-200"
@@ -478,10 +491,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                         >
                           Transcribed
                         </Button>
+                      ) : book.status === "converted" ? (
+                        <Button
+                          className="bg-green-600 text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg hover:bg-green-600"
+                          disabled
+                        >
+                          Done
+                        </Button>
                       ) : (
                         <Button
                           className={`text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg ${
-                            book.status === "inProgress" ||
+                            book.status === "inProgress" || book.status === "converting" ||
                             !scriptLanguage ||
                             !audioLanguage
                               ? "opacity-50 cursor-not-allowed"
@@ -496,13 +516,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               });
                               return;
                             }
-                            if (book.status === "inProgress") {
+                            if (book.status === "inProgress" || book.status === "converting") {
                               return;
                             }
                             handleTranscribe(book.book_id);
                           }}
                         >
-                          {book.status === "inProgress" ? (
+                          {book.status === "inProgress" || book.status === "converting" ? (
                             <span>{book.progress}</span>
                           ) : book.status === "error" ? (
                             "Retry"
