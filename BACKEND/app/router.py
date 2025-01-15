@@ -753,6 +753,15 @@ async def convert_to_text(
     verses = db.query(Verse).filter(Verse.chapter_id == chapter.chapter_id).all()
     if not verses:
         raise HTTPException(status_code=404, detail="No verses found for the chapter")
+    
+    for verse in verses:
+        if verse.stt_msg != "Transcription successful":
+                logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
+                verse.stt_msg = ""
+                verse.stt = False# Resetting stt flag as well
+                db.add(verse)
+                db.commit()
+        
     file_paths = [verse.path for verse in verses]
     test_result = call_ai_api(file_paths[0], script_lang)
     if "error" in test_result:
@@ -1019,6 +1028,7 @@ async def convert_to_speech(
     )
     if not verses:
         return {"message": "No verses with modified text found in the chapter"}
+        
     
     # Check if the TTS model is served before starting the task
     test_text = "Test text"

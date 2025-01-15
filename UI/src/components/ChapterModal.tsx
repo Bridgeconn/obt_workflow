@@ -62,12 +62,12 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const [isConvertingChapters, setIsConvertingChapters] = useState<{
     [chapterId: number]: boolean;
   }>({});
-  const [chapterProgress, setChapterProgress] = useState<{
-    [chapterId: number]: {
-      total: number;
-      completed: number;
-    };
-  }>({});
+  // const [chapterProgress, setChapterProgress] = useState<{
+  //   [chapterId: number]: {
+  //     total: number;
+  //     completed: number;
+  //   };
+  // }>({});
 
   const sortedVerses = useMemo(
     () => chapterVerses?.sort((a, b) => a.verse_number - b.verse_number),
@@ -101,21 +101,21 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     }
   }, [isOpen, audio]);
 
-  useEffect(() => {
-    if (
-      isConvertingChapters[chapter.chapter_id] &&
-      chapterProgress[chapter.chapter_id]
-    ) {
-      setChapterProgress((prev) => ({
-        ...prev,
-        [chapter.chapter_id]: {
-          ...prev[chapter.chapter_id],
-          completed: completedVersesCount,
-          total: sortedVerses?.filter((verse) => verse.modified).length || 0,
-        },
-      }));
-    }
-  }, [chapter.chapter_id, completedVersesCount, isConvertingChapters]);
+  // useEffect(() => {
+  //   if (
+  //     isConvertingChapters[chapter.chapter_id] &&
+  //     chapterProgress[chapter.chapter_id]
+  //   ) {
+  //     setChapterProgress((prev) => ({
+  //       ...prev,
+  //       [chapter.chapter_id]: {
+  //         ...prev[chapter.chapter_id],
+  //         completed: completedVersesCount,
+  //         total: sortedVerses?.filter((verse) => verse.modified).length || 0,
+  //       },
+  //     }));
+  //   }
+  // }, [chapter.chapter_id, completedVersesCount, isConvertingChapters]);
 
   const handlePlayAudio = async (verseId: number) => {
     try {
@@ -248,18 +248,18 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       }));
       return;
     }
-    setChapterProgress((prev) => ({
-      ...prev,
-      [chapter.chapter_id]: {
-        total: modifiedVerses.length,
-        completed: 0,
-      },
-    }));
+    // setChapterProgress((prev) => ({
+    //   ...prev,
+    //   [chapter.chapter_id]: {
+    //     total: modifiedVerses.length,
+    //     completed: 0,
+    //   },
+    // }));
 
     const resultMsg = await convertToSpeech(projectId, bookName, chapter);
 
     if (
-      resultMsg.includes("Text-to-speech conversion completed successfully.")
+      resultMsg.includes("Text-to-speech conversion completed successfully")
     ) {
       toast({
         variant: "success",
@@ -280,12 +280,12 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     setVerseModifications({});
     setEditedVerses(new Set());
 
-    // Clear progress at the end
-    setChapterProgress((prev) => {
-      const updated = { ...prev };
-      delete updated[chapter.chapter_id];
-      return updated;
-    });
+    // // Clear progress at the end
+    // setChapterProgress((prev) => {
+    //   const updated = { ...prev };
+    //   delete updated[chapter.chapter_id];
+    //   return updated;
+    // });
 
     await fetchChapterDetails(projectId, bookName, chapter.chapter);
   };
@@ -330,8 +330,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const checkProgress = () => {
     if (!isConvertingChapters[chapter.chapter_id]) return null;
 
-    const progress = chapterProgress[chapter.chapter_id];
-    if (!progress) return null;
+    // const progress = chapterProgress[chapter.chapter_id];
+    // if (!progress) return "Calculating";
 
     const totalModified =
       sortedVerses?.filter(
@@ -341,7 +341,9 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           editedVerses.has(verse.verse_id)
       ).length || 0;
 
-    return `${completedVersesCount} / ${totalModified} verse(s) done`;
+    const remaining = totalModified - completedVersesCount;
+
+    return `${remaining} verse(s) left`;
   };
 
   return (
@@ -353,7 +355,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           !isConvertingChapters[chapter.chapter_id] &&
           Object.keys(verseModifications).length > 0
         ) {
-          //check
           handleVerseUpdate();
         }
         onClose();

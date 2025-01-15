@@ -48,8 +48,7 @@ export const useServedModels = (): UseServedModelsReturn => {
       const error = err instanceof Error ? err : new Error("An error occurred");
       setError(error);
       toast({
-        title: "Failed to fetch models",
-        description: error.message,
+        title: error.message,
         variant: "destructive",
       });
     } finally {

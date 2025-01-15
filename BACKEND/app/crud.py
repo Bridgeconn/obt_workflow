@@ -387,6 +387,14 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
         ingredients_audio_dir = output_base_dir / "audio" / "ingredients"
         ingredients_audio_dir.mkdir(parents=True, exist_ok=True)
         temp_audio_dirs = []
+        
+        for verse in verses:
+            if verse.tts_msg != "Text-to-speech completed":
+                logger.debug(f"Resetting tts_msg for verse {verse.verse_id}.")
+                verse.tts_msg = ""
+                verse.tts = False # Resetting tts flag as well
+                db_session.add(verse)
+                db_session.commit()
  
         for verse in verses:
             try:
@@ -394,14 +402,6 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 if not chapter:
                     logger.error(f"Chapter not found for verse ID {verse.verse_id}")
                     continue
-                
-                # Clear any non-successful tts_msg before processing
-                if verse.tts_msg != "Text-to-speech completed":
-                    logger.debug(f"Resetting tts_msg for verse {verse.verse_id}.")
-                    verse.tts_msg = ""
-                    verse.tts = False # Resetting tts flag as well
-                    db_session.add(verse)
-                    db_session.commit()
  
                 # Create a job entry linked to the verse
                 job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")

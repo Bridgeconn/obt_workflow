@@ -1127,7 +1127,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
 
                 return { ...prevProject, books: updatedBooks };
               });
-              resolve("Text-to-speech conversion completed successfully.");
+              resolve("Text-to-speech conversion completed successfully");
             } else {
               setTimeout(pollTTSStatus, 10000);
             }
