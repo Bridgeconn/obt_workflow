@@ -159,25 +159,25 @@ const UsersTable = () => {
       toast({
         variant: "success",
         title: "User Updated",
-        description: "Role and active status updated successfully.",
+        description: "Role and active status updated successfully",
       });
     } else if (roleUpdated?.updated) {
       toast({
         variant: "success",
         title: "Role Updated",
-        description: "User role updated successfully.",
+        description: "User role updated successfully",
       });
     } else if (activeUpdated?.updated) {
       toast({
         variant: "success",
         title: "Status Updated",
-        description: "User active status updated successfully.",
+        description: "User active status updated successfully",
       });
     } else {
       toast({
         variant: "destructive",
         title: "No Changes",
-        description: "No updates were made to the user.",
+        description: "No updates were made to the user",
       });
     }
   
@@ -191,7 +191,7 @@ const UsersTable = () => {
   return (
     <div className="w-full mt-12 px-4 md:px-8 lg:px-12">
       <h1 className="text-3xl font-bold mb-4">Application Users</h1>
-      <div className="w-full overflow-x-auto">
+      <div className="w-full overflow-x-auto max-h-[420px] overflow-y-auto">
         <Table className="w-full min-w-[800px] border">
           <TableHeader>
             <TableRow>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useChapterDetailsStore } from "@/store/useProjectStore";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -40,34 +40,56 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   chapter,
 }) => {
   const {
-    chapterVerses,
     fetchChapterDetails,
     updateVerseText,
     approveChapter,
     convertToSpeech,
+    clearChapterVerses,
   } = useChapterDetailsStore();
+  const chapterKey = `${projectId}-${bookName}-${chapter.chapter}`;
+  const chapterVerses = useChapterDetailsStore(
+    (state) => state.chapterVerses[chapterKey]
+  );
   const [playingVerse, setPlayingVerse] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
   const [approved, setApproved] = useState<boolean>(chapter.approved);
-  const [isConverting, setIsConverting] = useState<boolean>(false);
   const [verseModifications, setVerseModifications] = useState<{
     [key: number]: string;
   }>({});
-  const [currentlyEditingVerseId, setCurrentlyEditingVerseId] = useState<
-    number | null
-  >(null);
-  const [focusedVerses, setFocusedVerses] = useState<Set<number>>(new Set());
-  const [isConvertingVerse, setIsConvertingVerse] = useState<Set<number>>(
-    new Set()
+  const [editedVerses, setEditedVerses] = useState<Set<number>>(new Set());
+
+  const [isConvertingChapters, setIsConvertingChapters] = useState<{
+    [chapterId: number]: boolean;
+  }>({});
+  // const [chapterProgress, setChapterProgress] = useState<{
+  //   [chapterId: number]: {
+  //     total: number;
+  //     completed: number;
+  //   };
+  // }>({});
+
+  const sortedVerses = useMemo(
+    () => chapterVerses?.sort((a, b) => a.verse_number - b.verse_number),
+    [chapterVerses]
+  );
+
+  const completedVersesCount = useMemo(
+    () =>
+      sortedVerses?.filter((verse) => verse.modified && verse.tts).length || 0,
+    [sortedVerses]
   );
 
   useEffect(() => {
-    if (isOpen) fetchChapterDetails(projectId, bookName, chapter.chapter);
-    // setVerseModifications({});
+    if (isOpen) {
+      fetchChapterDetails(projectId, bookName, chapter.chapter);
+    } else {
+      // clearChapterVerses(chapterKey);
+      if (!isConvertingChapters[chapter.chapter_id]) {
+        clearChapterVerses(chapterKey);
+      }
+    }
     setApproved(chapter.approved);
-    setCurrentlyEditingVerseId(null);
-    setFocusedVerses(new Set());
   }, [isOpen]);
 
   useEffect(() => {
@@ -154,11 +176,19 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   };
 
   const handleVerseUpdate = async () => {
+    if (isConvertingChapters[chapter.chapter_id]) {
+      return;
+    }
     const verseIds = Object.keys(verseModifications).map(Number);
-
     for (const verseId of verseIds) {
       const newText = verseModifications[verseId];
-      await updateVerseText(verseId, newText, bookName, chapter.chapter);
+      await updateVerseText(
+        verseId,
+        newText,
+        bookName,
+        chapter.chapter,
+        projectId
+      );
     }
     // // Clear local modifications after update
     // setVerseModifications({});
@@ -167,43 +197,66 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   };
 
   const handleConvertToSpeech = async () => {
-    try {
-      setIsConverting(true);
-      const modifiedVerses = sortedVerses?.filter(
-        verse => verse.modified || verseModifications[verse.verse_id]
-      ).map(verse => verse.verse_id) || [];
+    if (isConvertingChapters[chapter.chapter_id]) {
+      return;
+    }
 
-      if (modifiedVerses.length === 0) {
-        toast({
-          variant: "destructive",
-          title: "Edit verse text before converting to speech",
-        });
-        setIsConverting(false);
-        return;
-      }
-      setIsConvertingVerse((prev) => new Set([...prev, ...modifiedVerses]));
-      await handleVerseUpdate();
-      const resultMsg = await convertToSpeech(projectId, bookName, chapter);
-      console.log("resultMsg", resultMsg);
+    setIsConvertingChapters((prev) => ({
+      ...prev,
+      [chapter.chapter_id]: true,
+    }));
+
+    await handleVerseUpdate();
+
+    // Fetch latest chapter details to ensure we have the most recent state
+    await fetchChapterDetails(projectId, bookName, chapter.chapter);
+
+    const modifiedVerses =
+      sortedVerses
+        ?.filter(
+          (verse) =>
+            verse.modified ||
+            verseModifications[verse.verse_id] ||
+            editedVerses.has(verse.verse_id)
+        )
+        .map((verse) => verse.verse_id) || [];
+
+    if (modifiedVerses.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Edit verse text before converting to speech",
+      });
+      setIsConvertingChapters((prev) => ({
+        ...prev,
+        [chapter.chapter_id]: false,
+      }));
+      return;
+    }
+    const resultMsg = await convertToSpeech(projectId, bookName, chapter);
+
+    if (
+      resultMsg.includes("Text-to-speech conversion completed successfully")
+    ) {
       toast({
         variant: "success",
         title: resultMsg,
       });
-      setIsConverting(false);
-      setIsConvertingVerse(new Set());
-      setVerseModifications({});
-      setFocusedVerses(new Set());
-      await fetchChapterDetails(projectId, bookName, chapter.chapter);
-    } catch (error) {
-      console.error("Error converting to speech:", error);
-      setIsConverting(false);
-      setIsConvertingVerse(new Set());
+    } else {
       toast({
         variant: "destructive",
-        title:
-          error instanceof Error ? error.message : "Error converting to speech",
+        title: resultMsg,
       });
     }
+
+    setIsConvertingChapters((prev) => ({
+      ...prev,
+      [chapter.chapter_id]: false,
+    }));
+    // setIsConvertingVerse(new Set());
+    setVerseModifications({});
+    setEditedVerses(new Set());
+
+    await fetchChapterDetails(projectId, bookName, chapter.chapter);
   };
 
   const handleTextChange = (
@@ -211,30 +264,31 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     newText: string,
     originalText: string
   ) => {
-    if (newText.trim() !== originalText.trim()) {
+    const hasChanged = newText.trim() !== originalText.trim();
+
+    if (hasChanged) {
+      // Store modification and mark verse as edited
       setVerseModifications((prev) => ({
         ...prev,
         [verseId]: newText,
       }));
+      setEditedVerses((prev) => new Set(prev).add(verseId));
       setApproved(false);
-      // Add to focusedVerses only when text changes
-      setFocusedVerses((prev) => new Set(prev).add(verseId));
-      if (playingVerse === verseId) {
-        if (audio) {
-          audio.pause();
-        }
+
+      // Stop audio if playing for this verse
+      if (playingVerse === verseId && audio) {
+        audio.pause();
         setAudio(null);
         setPlayingVerse(null);
       }
     } else {
-      // Remove from local modifications if text is reverted to original
+      // Remove modification if text matches original
       setVerseModifications((prev) => {
         const updated = { ...prev };
         delete updated[verseId];
         return updated;
       });
-      // Remove from focusedVerses when text matches original
-      setFocusedVerses((prev) => {
+      setEditedVerses((prev) => {
         const updated = new Set(prev);
         updated.delete(verseId);
         return updated;
@@ -242,143 +296,110 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     }
   };
 
-  const handleFocus = (verseId: number) => {
-    // If there's a previously edited verse, update it before switching
-    if (
-      currentlyEditingVerseId !== null &&
-      currentlyEditingVerseId !== verseId &&
-      verseModifications[currentlyEditingVerseId]
-    ) {
-      const previousVerse = sortedVerses?.find(
-        (v) => v.verse_id === currentlyEditingVerseId
-      );
-      if (previousVerse) {
-        updateVerseText(
-          currentlyEditingVerseId,
-          verseModifications[currentlyEditingVerseId],
-          bookName,
-          chapter.chapter
-        );
+  const checkProgress = () => {
+    if (!isConvertingChapters[chapter.chapter_id]) return null;
+    const totalModified =
+      sortedVerses?.filter(
+        (verse) =>
+          verse.modified ||
+          verseModifications[verse.verse_id] ||
+          editedVerses.has(verse.verse_id)
+      ).length || 0;
 
-        // Remove the verse from local modifications after update
-        setVerseModifications((prev) => {
-          const updated = { ...prev };
-          delete updated[currentlyEditingVerseId];
-          return updated;
-        });
-      }
-    }
+    const remaining = totalModified - completedVersesCount;
 
-    // Set the new currently editing verse
-    if (currentlyEditingVerseId !== verseId) {
-      setCurrentlyEditingVerseId(verseId);
-    }
+    return `${remaining} verse(s) left`;
   };
-
-  const handleBlur = async (
-    verseId: number,
-    newText: string,
-    originalText: string
-  ) => {
-    if (newText.trim() !== originalText.trim()) {
-      handleTextChange(verseId, newText, originalText);
-      handleVerseUpdate();
-    }
-
-    setFocusedVerses((prev) => {
-      const updated = new Set(prev);
-      updated.delete(verseId);
-      return updated;
-    });
-
-    if (currentlyEditingVerseId === verseId) {
-      setCurrentlyEditingVerseId(null);
-    }
-
-    if (!isOpen) {
-      setCurrentlyEditingVerseId(null);
-    }
-  };
-
-  const sortedVerses = chapterVerses?.sort(
-    (a, b) => a.verse_number - b.verse_number
-  );
 
   return (
     <Dialog
       open={isOpen}
-      onOpenChange={onClose}
+      onOpenChange={() => {
+        // Save changes before closing if there are modifications
+        if (
+          !isConvertingChapters[chapter.chapter_id] &&
+          Object.keys(verseModifications).length > 0
+        ) {
+          handleVerseUpdate();
+        }
+        onClose();
+      }}
     >
       <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>
-                {bookName} - Chapter {chapter.chapter}
-              </DialogTitle>
-            </DialogHeader>
-            <ScrollArea className="h-96 border rounded p-4">
+        <DialogHeader>
+          <DialogTitle>
+            {bookName} - Chapter {chapter.chapter}
+          </DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="h-96 border rounded p-4">
           {sortedVerses?.map((verse) => (
-                  <div
-                    key={verse.verse_id}
-                    className={`flex items-center space-x-4 p-2 ${
+            <div
+              key={verse.verse_id}
+              className={`flex items-center space-x-4 p-2 ${
                 verseModifications[verse.verse_id] ? "bg-gray-100 rounded" : ""
-                    }`}
-                  >
-                    <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
-                    <Textarea
-                      className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
-                        verseModifications[verse.verse_id] || verse.modified
-                          ? "border-r-2 border-r-yellow-500 bg-yellow-50"
-                          : ""
-                      }`}
-                      defaultValue={verse.text}
-                onChange={(e) => handleTextChange(verse.verse_id, e.target.value, verse.text)}
-                      onFocus={() => handleFocus(verse.verse_id)}
-                      onBlur={(e) =>
-                        handleBlur(verse.verse_id, e.target.value, verse.text)
-                      }
-                      onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                    />
-                    <div className="w-[50px]">
-                      {isConvertingVerse.has(verse.verse_id) && !verse.tts ? (
-                        <LoadingIcon className="animate-spin" />
+              }`}
+            >
+              <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
+              <Textarea
+                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
+                  verseModifications[verse.verse_id] || verse.modified
+                    ? "border-r-2 border-r-yellow-500 bg-yellow-50"
+                    : ""
+                }`}
+                defaultValue={verse.text}
+                onChange={(e) =>
+                  handleTextChange(verse.verse_id, e.target.value, verse.text)
+                }
+                onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+              />
+              <div className="w-[50px]">
+                {verse.modified &&
+                isConvertingChapters[chapter.chapter_id] &&
+                !verse.tts ? (
+                  <LoadingIcon className="animate-spin" />
+                ) : (
+                  (verse.modified ? verse.tts : verse.stt) &&
+                  !verseModifications[verse.verse_id] &&
+                  !editedVerses.has(verse.verse_id) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handlePlayAudio(verse.verse_id)}
+                    >
+                      {playingVerse === verse.verse_id && isPlaying ? (
+                        <PauseIcon />
                       ) : (
-                        (verse.modified ? verse.tts : verse.stt) &&
-                        !verseModifications[verse.verse_id] &&
-                        !focusedVerses.has(verse.verse_id) && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => handlePlayAudio(verse.verse_id)}
-                          >
-                            {playingVerse === verse.verse_id && isPlaying ? (
-                              <PauseIcon />
-                            ) : (
-                              <PlayIcon />
-                            )}
-                          </Button>
-                        )
+                        <PlayIcon />
                       )}
-                    </div>
-                  </div>
-                ))}
-            </ScrollArea>
-            <div className="flex justify-end space-x-4 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  handleVerseUpdate();
-                  onClose();
-                }}
-              >
-                Close
-              </Button>
-              <Button onClick={handleApproveChapter}>
-                {approved ? "Unapprove" : "Approve"}
-              </Button>
-              <Button onClick={handleConvertToSpeech} disabled={isConverting}>
-                Convert to Speech
-              </Button>
+                    </Button>
+                  )
+                )}
+              </div>
             </div>
+          ))}
+        </ScrollArea>
+        <div className="flex justify-end space-x-4 mt-4">
+          <Button
+            variant="outline"
+            onClick={() => {
+              handleVerseUpdate();
+              onClose();
+            }}
+          >
+            Close
+          </Button>
+          <Button onClick={handleApproveChapter}>
+            {approved ? "Unapprove" : "Approve"}
+          </Button>
+          <Button
+            onClick={handleConvertToSpeech}
+            disabled={isConvertingChapters[chapter.chapter_id]}
+          >
+            {isConvertingChapters[chapter.chapter_id]
+              ? checkProgress()
+              : "Convert to Speech"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

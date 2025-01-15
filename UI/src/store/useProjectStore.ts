@@ -78,7 +78,8 @@ interface ChapterStatusResponse {
 }
 
 interface ChapterDetailsState {
-  chapterVerses: Verse[] | null;
+  chapterVerses: { [key: string]: Verse[] | null };
+  clearChapterVerses: (key: string) => void;
   fetchChapterDetails: (
     projectId: number,
     book: string,
@@ -88,7 +89,8 @@ interface ChapterDetailsState {
     verseId: number,
     newText: string,
     book: string,
-    chapter: number
+    chapter: number,
+    projectId?: number
   ) => void;
   approveChapter: (
     projectId: number,
@@ -158,8 +160,17 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     await chapterStatusResponse.json();
 
                   const verses = chapterStatusData.data;
-                  const allTranscribed = verses.every((verse) => verse.stt);
-                  const allConverted = verses.every((verse) => verse.tts);
+                  const allTranscribed =
+                    verses.length > 0 && verses.every((verse) => verse.stt);
+                  const modifiedVerses = verses.filter(
+                    (verse) => verse.modified
+                  );
+
+                  const allModifiedConverted =
+                    modifiedVerses.length > 0 &&
+                    modifiedVerses.every((verse) => verse.tts);
+
+                  // const allConverted = verses.every((verse) => verse.tts);
                   const completed = verses.filter((verse) => verse.stt).length;
                   const total = verses.length;
                   const isApproved = chapter.approved;
@@ -176,7 +187,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     status:
                       isApproved && allTranscribed
                         ? "approved"
-                        : allConverted
+                        : allModifiedConverted
                         ? "converted"
                         : allTranscribed
                         ? "transcribed"
@@ -186,7 +197,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                       : `${completed} out of ${total} done`,
                     verses: verses,
                   };
-                
                 } catch (error) {
                   console.error("Failed to fetch chapter status:", error);
                   // totalChaptersProcessed++;
@@ -199,13 +209,17 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                 }
               })
             );
-            
+
             const bookStatus = chapterStatuses.every(
               (ch) => ch.status === "approved"
             )
               ? "approved"
-              : chapterStatuses.every((ch) => ch.status === "converted")
+              : chapterStatuses.every((ch) =>
+                  ["approved", "converted"].includes(ch.status)
+                )
               ? "converted"
+              : chapterStatuses.some((ch) => ch.status === "converting")
+              ? "converting"
               : chapterStatuses.every((ch) =>
                   ["transcribed", "approved", "converted"].includes(ch.status)
                 )
@@ -268,11 +282,9 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                 },
               }
             );
-
             if (!transcribeResponse.ok) {
-              throw new Error(
-                `Failed to start transcription for chapter ${chapter.chapter}`
-              );
+              const errorResp = await transcribeResponse.json();
+              throw new Error(`${errorResp.detail}`);
             }
 
             await new Promise<void>((resolve, reject) => {
@@ -291,7 +303,8 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
                   const data: ChapterStatusResponse = await response.json();
                   const verses = data.data;
-                  const allTranscribed = verses.every((verse) => verse.stt);
+                  const allTranscribed =
+                    verses.length > 0 && verses.every((verse) => verse.stt);
                   const completed = verses.filter((verse) => verse.stt).length;
                   const total = verses.length;
 
@@ -355,7 +368,9 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   if (hasTranscriptionError || allTranscribed) {
                     totalChaptersProcessed++;
                     if (hasTranscriptionError) hasErrors = true;
-                    console.log(`Chapter processed: ${chapter.chapter}, Total processed: ${totalChaptersProcessed}`);
+                    console.log(
+                      `Chapter processed: ${chapter.chapter}, Total processed: ${totalChaptersProcessed}`
+                    );
                     resolve();
                   } else {
                     setTimeout(pollChapterStatus, 10000);
@@ -410,7 +425,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         }
         set((state) => {
           if (!state.project) return {};
-    
+
           const updatedBooks = state.project.books.map((b) => {
             if (b.book_id === bookId) {
               const bookStatus = hasErrors ? "error" : "transcribed";
@@ -418,7 +433,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             }
             return b;
           });
-          return { project: { ...state.project, books: updatedBooks }, isLoading: false };
+          return {
+            project: { ...state.project, books: updatedBooks },
+            isLoading: false,
+          };
         });
         queryClient?.invalidateQueries({
           queryKey: ["project-details", currentProject.project_id],
@@ -426,6 +444,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
       } catch (error) {
         console.error("Error transcribing book:", error);
         set({ error: "Error transcribing book", isLoading: false });
+        throw error;
       }
     },
 
@@ -459,8 +478,9 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         );
 
         if (!transcribeResponse.ok) {
+          const errRep = await transcribeResponse.json();
           throw new Error(
-            `Failed to start transcription for chapter ${chapter.chapter}`
+            errRep.detail || `Failed to transcribe chapter ${chapter.chapter}`
           );
         }
 
@@ -526,7 +546,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     const currentChapterProgress =
                       updatedChapters.find((ch) => ch.chapter_id === chapterId)
                         ?.progress || "";
-                    
+
                     if (hasTranscriptionError) {
                       return {
                         ...b,
@@ -534,7 +554,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         status: "error",
                         progress: "Transcription failed",
                       };
-                      
                     }
 
                     return {
@@ -685,14 +704,206 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
   })
 );
 
-export const useChapterDetailsStore = create<ChapterDetailsState>(
-  (set, get) => ({
-    chapterVerses: null,
+export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
+  chapterVerses: {},
 
-    fetchChapterDetails: async (projectId, book, chapter) => {
-      try {
+  clearChapterVerses: (key: string) => {
+    set((state) => ({
+      chapterVerses: {
+        ...state.chapterVerses,
+        [key]: null,
+      },
+    }));
+  },
+
+  fetchChapterDetails: async (projectId, book, chapter) => {
+    const key = `${projectId}-${book}-${chapter}`;
+    try {
+      const response = await fetch(
+        `${BASE_URL}/project/${projectId}/${book}/${chapter}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+      const data = await response.json();
+      set((state) => ({
+        chapterVerses: {
+          ...state.chapterVerses,
+          [key]: data.data,
+        },
+      }));
+    } catch (error) {
+      console.error("Failed to fetch chapter details:", error);
+    }
+  },
+
+  updateVerseText: async (verseId, newText, book, chapter, projectId) => {
+    if (!projectId || !book || !chapter) return;
+    try {
+      const response = await fetch(
+        `${BASE_URL}/project/verse/${verseId}?verse_text=${newText}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+      if (response.ok) {
+        await useChapterDetailsStore
+          .getState()
+          .fetchChapterDetails(projectId, book, chapter);
+        set((state) => {
+          const verses = state.chapterVerses[`${projectId}-${book}-${chapter}`];
+          if (!verses) return state;
+
+          return {
+            chapterVerses: {
+              ...state.chapterVerses,
+              [`${projectId}-${book}-${chapter}`]: verses
+            },
+          };
+        });
+        useProjectDetailsStore.getState().setProject((prevProject) => {
+          if (!prevProject) return prevProject;
+          const updatedBooks = prevProject.books.map((b) => {
+            if (b.book === book) {
+              const updatedChapters = b.chapters.map((ch) => {
+                if (ch.chapter === chapter) {
+                  const newStatus =
+                    ch.status === "approved" ? "transcribed" : ch.status;
+                  return { ...ch, status: newStatus, approved: false };
+                }
+                return ch;
+              });
+              const updatedBookStatus = updatedChapters.every(
+                (ch) => ch.status === "approved"
+              )
+                ? "approved"
+                : updatedChapters.every((ch) =>
+                    ["transcribed", "approved"].includes(ch.status ?? "")
+                  )
+                ? "transcribed"
+                : b.status || "notTranscribed";
+              return {
+                ...b,
+                chapters: updatedChapters,
+                status: updatedBookStatus,
+                approved: false,
+              };
+            }
+            return b;
+          });
+          return { ...prevProject, books: updatedBooks };
+        });
+      }
+    } catch (error) {
+      console.error("Failed to update verse:", error);
+    }
+  },
+  approveChapter: async (projectId, book, chapter, approve) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/chapter/approve?project_id=${projectId}&book=${book}&chapter=${chapter}&approve=${approve}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+      await useChapterDetailsStore
+        .getState()
+        .fetchChapterDetails(projectId, book, chapter);
+      const chapterDetails =
+        useChapterDetailsStore.getState().chapterVerses[
+          `${projectId}-${book}-${chapter}`
+        ];
+
+      const checkTranscribed =
+        chapterDetails && chapterDetails.every((verse) => verse.stt);
+
+      const modifiedVerses =
+        chapterDetails && chapterDetails.filter((verse) => verse.modified);
+
+      const checkModifiedConverted =
+        modifiedVerses &&
+        modifiedVerses.length > 0 &&
+        modifiedVerses.every((verse) => verse.tts);
+
+      if (response.ok) {
+        useProjectDetailsStore.getState().setProject((prevProject) => {
+          if (!prevProject) return null;
+
+          const updatedBooks = prevProject.books.map((b) => {
+            if (b.book === book) {
+              const updatedChapters = b.chapters.map((ch) => {
+                if (ch.chapter === chapter) {
+                  const newStatus = approve
+                    ? "approved"
+                    : checkModifiedConverted
+                    ? "converted"
+                    : checkTranscribed
+                    ? "transcribed"
+                    : ch.status;
+                  return {
+                    ...ch,
+                    approved: approve,
+                    status: newStatus,
+                  };
+                }
+                return ch;
+              });
+              const updatedBookStatus = updatedChapters.every(
+                (ch) => ch.approved
+              )
+                ? "approved"
+                : updatedChapters.every((ch) =>
+                    ["converted", "approved"].includes(ch.status ?? "")
+                  )
+                ? "converted"
+                : updatedChapters.every((ch) =>
+                    ["transcribed", "converted", "approved"].includes(
+                      ch.status ?? ""
+                    )
+                  )
+                ? "transcribed"
+                : b.status || "notTranscribed";
+
+              return {
+                ...b,
+                chapters: updatedChapters,
+                status: updatedBookStatus,
+                approved: updatedChapters.every((ch) => ch.approved),
+              };
+            }
+            return b;
+          });
+
+          return {
+            ...prevProject,
+            books: updatedBooks,
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Failed to approve chapter:", error);
+    }
+  },
+  convertToSpeech: async (project_id, bookName, chapter): Promise<string> => {
+    const token = useAuthStore.getState().token;
+    const key = `${project_id}-${bookName}-${chapter.chapter}`;
+    try {
+      // check for chapter details
+      const fetchAndUpdateChapter = async (): Promise<Verse[]> => {
         const response = await fetch(
-          `${BASE_URL}/project/${projectId}/${book}/${chapter}`,
+          `${BASE_URL}/project/${project_id}/${bookName}/${chapter.chapter}`,
           {
             method: "GET",
             headers: {
@@ -702,225 +913,241 @@ export const useChapterDetailsStore = create<ChapterDetailsState>(
           }
         );
         const data = await response.json();
-        set({ chapterVerses: data.data });
-      } catch (error) {
-        console.error("Failed to fetch chapter details:", error);
-      } 
-    },
+        set((state) => ({
+          chapterVerses: {
+            ...state.chapterVerses,
+            [key]: data.data,
+          },
+        }));
+        return data.data;
+      };
 
-    updateVerseText: async (verseId, newText, book, chapter) => {
-      try {
-        const response = await fetch(
-          `${BASE_URL}/project/verse/${verseId}?verse_text=${newText}`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${useAuthStore.getState().token}`,
-            },
-          }
-        );
-        if (response.ok) {
-          set((state) => ({
-            chapterVerses: state.chapterVerses?.map((verse) =>
-              verse.verse_id === verseId
-                ? { ...verse, text: newText, tts: false }
-                : verse
-            ),
-          }));
-          useProjectDetailsStore.getState().setProject((prevProject) => {
-            if (!prevProject) return prevProject;
-            const updatedBooks = prevProject.books.map((b) => {
-              if (b.book === book) {
-                const updatedChapters = b.chapters.map((ch) => {
-                  if (ch.chapter === chapter) {
-                    const newStatus =
-                      ch.status === "approved" ? "transcribed" : ch.status;
-                    return { ...ch, status: newStatus, approved: false };
-                  }
-                  return ch;
-                });
-                const updatedBookStatus = updatedChapters.every(
-                  (ch) => ch.status === "approved"
-                )
-                  ? "approved"
-                  : updatedChapters.every((ch) =>
-                      ["transcribed", "approved"].includes(ch.status ?? "")
-                    )
-                  ? "transcribed"
-                  : b.status || "notTranscribed";
-                return {
-                  ...b,
-                  chapters: updatedChapters,
-                  status: updatedBookStatus,
-                  approved: false,
-                };
-              }
-              return b;
-            });
-            return { ...prevProject, books: updatedBooks };
-          });
-        }
-      } catch (error) {
-        console.error("Failed to update verse:", error);
+      const chapterDetails = await fetchAndUpdateChapter();
+
+      const hasModifiedVerses = chapterDetails?.some(
+        (verse) => verse.modified && !verse.tts
+      );
+
+      if (!hasModifiedVerses) {
+        return "No modified verses found for conversion.";
       }
-    },
-    approveChapter: async (projectId, book, chapter, approve) => {
-      try {
-        const response = await fetch(
-          `${BASE_URL}/chapter/approve?project_id=${projectId}&book=${book}&chapter=${chapter}&approve=${approve}`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${useAuthStore.getState().token}`,
-            },
-          }
-        );
 
-        if (response.ok) {
-          useProjectDetailsStore.getState().setProject((prevProject) => {
-            if (!prevProject) return null;
-
-            const updatedBooks = prevProject.books.map((b) => {
-              if (b.book === book) {
-                const updatedChapters = b.chapters.map((ch) => {
-                  if (ch.chapter === chapter) {
-                    const newStatus = approve
-                      ? "approved"
-                      : ch.status === "approved"
-                      ? "transcribed"
-                      : ch.status;
-                    return {
-                      ...ch,
-                      approved: approve,
-                      status: newStatus,
-                    };
-                  }
-                  return ch;
-                });
-                const updatedBookStatus = updatedChapters.every(
-                  (ch) => ch.approved
-                )
-                  ? "approved"
-                  : updatedChapters.every((ch) =>
-                      ["transcribed", "approved"].includes(ch.status ?? "")
-                    )
-                  ? "transcribed"
-                  : b.status || "notTranscribed";
-
-                return {
-                  ...b,
-                  chapters: updatedChapters,
-                  status: updatedBookStatus,
-                  approved: updatedChapters.every((ch) => ch.approved),
-                };
-              }
-              return b;
-            });
-
-            return {
-              ...prevProject,
-              books: updatedBooks,
-            };
-          });
+      // Initiate TTS conversion
+      const response = await fetch(
+        `${BASE_URL}/project/chapter/${chapter.chapter_id}/tts`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
         }
-      } catch (error) {
-        console.error("Failed to approve chapter:", error);
+      );
+
+      if (!response.ok) {
+        const errResp = await response.json();
+        if (errResp.detail) {
+          return errResp.detail;
+        }
       }
-    },
 
-    convertToSpeech: async (project_id, bookName, chapter): Promise<string> => {
-      try {
-        const response = await fetch(
-          `${BASE_URL}/project/chapter/${chapter.chapter_id}/tts`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${useAuthStore.getState().token}`,
-            },
-          }
-        );
-        const responseData = await response.json();
+      // Poll for TTS status and update states
+      const resultMessage = await new Promise<string>((resolve, reject) => {
+        const pollTTSStatus = async () => {
+          try {
+            const details = await fetchAndUpdateChapter();
 
-        if (response.ok) {
-          await get().fetchChapterDetails(
-            project_id,
-            bookName,
-            chapter.chapter
-          );
-          const chapterDetails = get().chapterVerses;
+            if (!details) {
+              resolve("Failed to fetch chapter details");
+              return;
+            }
 
-          const hasModifiedVerses = chapterDetails?.some(
-            (verse) => verse.modified
-          );
-          if (!hasModifiedVerses) {
-            console.log("No modified verses found.");
-            throw new Error(
-              responseData.message || "No modified verses found."
+            const modifiedVerses = details.filter((verse) => verse.modified);
+            const completedModifiedVerses = modifiedVerses.filter(
+              (verse) => verse.tts
             );
-          }
 
-          const pollForTTSStatus = async (): Promise<string> => {
-            return new Promise((resolve, reject) => {
-              const checkStatus = async () => {
-                try {
-                  await get().fetchChapterDetails(
-                    project_id,
-                    bookName,
-                    chapter.chapter
-                  );
-                  const chapterDetails = get().chapterVerses;
+            // Update progress in project state
+            useProjectDetailsStore.getState().setProject((prevProject) => {
+              if (!prevProject) return prevProject;
 
-                  if (chapterDetails) {
-                    const modifiedVerses = chapterDetails.filter(
-                      (verse) => verse.modified
-                    );
-
-                    const allModifiedConverted = modifiedVerses.every(
-                      (verse) => verse.tts
-                    );
-
-                    if (allModifiedConverted) {
-                      const verseWithTTSMsg = modifiedVerses.find(
-                        (verse) => verse.tts_msg
+              const updatedBooks = prevProject.books.map((b) => {
+                if (b.book === bookName) {
+                  const updatedChapters = b.chapters.map((ch) => {
+                    if (ch.chapter_id === chapter.chapter_id) {
+                      // Check for any TTS errors
+                      const hasConversionError = modifiedVerses.some(
+                        (verse) =>
+                          verse.tts_msg &&
+                          verse.tts_msg !== "Text-to-speech completed"
                       );
 
-                      if (verseWithTTSMsg && verseWithTTSMsg.tts_msg) {
-                        resolve(verseWithTTSMsg.tts_msg);
-                        return;
-                      } else {
-                        resolve(
-                          "Text-to-speech conversion completed successfully."
-                        );
-                        return;
-                      }
+                      return {
+                        ...ch,
+                        status: hasConversionError
+                          ? "error"
+                          : completedModifiedVerses.length ===
+                            modifiedVerses.length
+                          ? "converted"
+                          : "converting",
+                        progress:
+                          completedModifiedVerses.length ===
+                          modifiedVerses.length
+                            ? ""
+                            : `Converting`,
+                      };
                     }
-                  }
-                  setTimeout(checkStatus, 10000);
-                } catch (error) {
-                  reject(
-                    error instanceof Error
-                      ? error.message
-                      : "Unknown error occurred."
+                    return ch;
+                  });
+
+                  // Update book status based on chapters
+                  const allConverted = updatedChapters.every(
+                    (ch) => ch.status === "converted"
                   );
+                  // const hasError = updatedChapters.some(
+                  //   ch => ch.status === "error"
+                  // );
+
+                  return {
+                    ...b,
+                    chapters: updatedChapters,
+                    status: allConverted ? "converted" : "converting",
+                    progress: updatedChapters.find(
+                      (ch) => ch.chapter_id === chapter.chapter_id
+                    )?.progress,
+                  };
                 }
-              };
+                return b;
+              });
 
-              checkStatus();
+              return { ...prevProject, books: updatedBooks };
             });
-          };
 
-          const resultMsg = await pollForTTSStatus();
-          return resultMsg;
-        } else {
-          throw new Error("Failed to initiate text-to-speech conversion.");
-        }
-      } catch (error) {
-        console.error("Failed to convert chapter:", error);
-        throw error;
-      }
-    },
-  })
-);
+            // Check for errors in modified verses
+            const FailedVerse = modifiedVerses.find(
+              (verse) =>
+                verse.tts_msg && verse.tts_msg !== "Text-to-speech completed"
+            );
+            if (FailedVerse) {
+              set((state) => {
+                const verses = state.chapterVerses[key];
+                if (!verses) return state;
+
+                return {
+                  chapterVerses: {
+                    ...state.chapterVerses,
+                    [key]: verses.map((verse) =>
+                      verse.verse_id === FailedVerse.verse_id
+                        ? { ...verse, tts: false, tts_msg: FailedVerse.tts_msg }
+                        : verse
+                    ),
+                  },
+                };
+              });
+              useProjectDetailsStore.getState().setProject((prevProject) => {
+                if (!prevProject) return prevProject;
+
+                const updatedBooks = prevProject.books.map((b) => {
+                  if (b.book === bookName) {
+                    const updatedChapters = b.chapters.map((ch) => {
+                      if (ch.chapter_id === chapter.chapter_id) {
+                        return {
+                          ...ch,
+                          status: "error",
+                          progress: "Conversion failed",
+                        };
+                      }
+                      return ch;
+                    });
+                    const checkTranscribed = updatedChapters.every((ch) =>
+                      ["transcribed", "converted", "approved"].includes(
+                        ch.status ?? ""
+                      )
+                    );
+
+                    return {
+                      ...b,
+                      chapters: updatedChapters,
+                      status: checkTranscribed
+                        ? "transcribed"
+                        : "notTranscribed",
+                      progress: "",
+                    };
+                  }
+                  return b;
+                });
+
+                return { ...prevProject, books: updatedBooks };
+              });
+              reject(FailedVerse.tts_msg || "Conversion failed");
+              return;
+            }
+
+            // Check if all modified verses are converted
+            if (completedModifiedVerses.length === modifiedVerses.length) {
+              await useChapterDetailsStore
+                .getState()
+                .fetchChapterDetails(project_id, bookName, chapter.chapter);
+              set((state) => {
+                const verses = state.chapterVerses[key];
+                if (!verses) return state;
+
+                return {
+                  chapterVerses: {
+                    ...state.chapterVerses,
+                    [key]: verses,
+                  },
+                };
+              });
+              useProjectDetailsStore.getState().setProject((prevProject) => {
+                if (!prevProject) return prevProject;
+
+                const updatedBooks = prevProject.books.map((b) => {
+                  if (b.book === bookName) {
+                    const updatedChapters = b.chapters.map((ch) => {
+                      if (ch.chapter_id === chapter.chapter_id) {
+                        return {
+                          ...ch,
+                          status: "converted",
+                          progress: "",
+                        };
+                      }
+                      return ch;
+                    });
+
+                    return {
+                      ...b,
+                      status: "converted",
+                      progress: "",
+                      chapters: updatedChapters,
+                    };
+                  }
+                  return b;
+                });
+
+                return { ...prevProject, books: updatedBooks };
+              });
+              resolve("Text-to-speech conversion completed successfully");
+            } else {
+              setTimeout(pollTTSStatus, 10000);
+            }
+          } catch (error) {
+            resolve(
+              error instanceof Error
+                ? error.message
+                : "Unknown error occurred during conversion"
+            );
+          }
+        };
+
+        pollTTSStatus();
+      });
+
+      return resultMessage;
+    } catch (error) {
+      return error instanceof Error
+        ? error.message
+        : "Error during conversion process";
+    }
+  },
+}));

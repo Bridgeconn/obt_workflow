@@ -123,7 +123,9 @@ const uploadProject = async (file: File) => {
   });
 
   if (!response.ok) {
-    throw new Error("Upload failed");
+    const errRep = await response.json();
+    console.log("errRep", errRep);
+    throw new Error(errRep.detail || "Failed to upload project");
   }
 
   return response.json();

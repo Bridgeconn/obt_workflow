@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
 import { useProjectDetailsStore } from "@/store/useProjectStore";
 import {
-  Select,
-  SelectTrigger,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -22,8 +15,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import source_languages from "../data/source_languages.json";
 import major_languages from "../data/major_languages.json";
+import model_languages from "../data/model_languages.json";
 import ChapterModal from "@/components/ChapterModal";
 import { toast } from "@/hooks/use-toast";
+import { useServedModels } from "@/hooks/use-served-models";
+import LanguageSelect from "@/components/LanguageSelect";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -49,6 +45,17 @@ interface SelectedChapter extends Chapter {
   bookName: string;
 }
 
+interface ModelConfig {
+  tts: string;
+  stt: string;
+}
+
+interface ModelLanguages {
+  [language: string]: ModelConfig;
+}
+
+const typedModelLanguages = model_languages as ModelLanguages;
+
 const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const {
     project,
@@ -58,6 +65,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     // retryChapterTranscription,
     archiveProject,
   } = useProjectDetailsStore();
+  const { servedModels, refetch } = useServedModels();
   const [scriptLanguage, setScriptLanguage] = useState("");
   const [audioLanguage, setAudioLanguage] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -68,24 +76,38 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     useState<SelectedChapter | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
-    clearProjectState();
-    setLoading(true);
-    fetchProjectDetails(projectId);
+    const loadData = async () => {
+      clearProjectState();
+      // setInitialLoading(true);
+      setLoading(true);
+      
+      // Add artificial delay for better UX
+      // await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      await fetchProjectDetails(projectId);
+      // setInitialLoading(false);
+    };
+
+    loadData();
   }, [projectId, fetchProjectDetails, clearProjectState]);
 
   useEffect(() => {
     console.log("project", project);
+    let selectedAudioLanguage = null;
+    let selectedScriptLanguage = null;
     if (project && project.project_id === projectId) {
+      
       if (project.audio_lang) {
-        const selectedAudioLanguage = source_languages.find(
+        selectedAudioLanguage = source_languages.find(
           (language) => language.language_name === project.audio_lang
         );
         setAudioLanguage(String(selectedAudioLanguage?.id));
       }
       if (project.script_lang) {
-        const selectedScriptLanguage = major_languages.find(
+        selectedScriptLanguage = major_languages.find(
           (language) => language.language_name === project.script_lang
         );
         setScriptLanguage(String(selectedScriptLanguage?.id));
@@ -95,12 +117,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   }, [project, projectId]);
 
   const handleTranscribe = async (bookId: number) => {
-    await transcribeBook(bookId, queryClient);
+    try {
+      await transcribeBook(bookId, queryClient);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error ? error.message : "Failed to transcribe book",
+      });
+      console.error("Error transcribing book:", error);
+    }
   };
 
   // const handleChapterRetry = async (book: Book, chapter: Chapter, e: React.MouseEvent) => {
   //   e.stopPropagation();
-    
+
   //   if (book.status === "inProgress") {
   //     toast({
   //       variant: "destructive",
@@ -120,54 +151,82 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   //   }
   // };
 
-  const handleScriptLanguageChange = async (selectedId: string) => {
-    const id = Number(selectedId);
-    const selectedLanguage = major_languages.find(
-      (language) => language.id === id
-    );
-    if (!selectedLanguage) {
-      console.error("Selected language not found.");
+  const checkServedModels = (
+    audioLanguage: string | undefined,
+    scriptLanguage: string | undefined
+  ) => {
+    refetch();
+    if (!servedModels || !audioLanguage || !scriptLanguage) return;
+
+    const requiredModels =
+      typedModelLanguages[audioLanguage] || typedModelLanguages[scriptLanguage];
+
+    if (!requiredModels) {
+      console.error(
+        `No model configuration found for language: ${audioLanguage}`
+      );
       return;
     }
-    setScriptLanguage(String(selectedLanguage.id));
-    const token = useAuthStore.getState().token;
-    try {
-      await fetch(
-        `${BASE_URL}/projects/${project?.project_id}/script_language/${selectedLanguage.major_language}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    } catch (error) {
-      console.log("error", error);
+
+    const ttsServed = servedModels.some(
+      (model) => model.modelName === requiredModels.tts
+    );
+    const sttServed = servedModels.some(
+      (model) => model.modelName === requiredModels.stt
+    );
+
+    if (!ttsServed && !sttServed) {
+      toast({
+        title:
+          "The required language processing models are currently offline. Please contact the ML team for assistance",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!ttsServed) {
+      toast({
+        title:
+          "Model for text-to-speech not active currently, please contact ML team for assistance",
+        variant: "destructive",
+      });
+    }
+
+    if (!sttServed) {
+      toast({
+        title:
+          "Model for speech-to-text not active currently, please contact ML team for assistance",
+        variant: "destructive",
+      });
     }
   };
-
-  const handleAudioLanguageChange = async (selectedId: string) => {
+  const handleLanguageChange = async (selectedId: string) => {
     const id = Number(selectedId);
-    const selectedLanguage = source_languages.find(
+    const selectedAudioLanguage = source_languages.find(
       (language) => language.id === id
     );
-    if (!selectedLanguage) {
-      console.error("Selected language not found.");
+    if (!selectedAudioLanguage) {
+      console.error("Audio language not found.");
       return;
     }
-    setAudioLanguage(String(selectedLanguage.id));
+    setAudioLanguage(String(selectedAudioLanguage.id));
     const selectedScriptLanguage = major_languages.find(
-      (language) => language.language_name === selectedLanguage.source_language
+      (language) =>
+        language.language_name === selectedAudioLanguage.source_language
     );
     if (!selectedScriptLanguage) {
       console.error("Script language not found.");
       return;
     }
+    setScriptLanguage(String(selectedScriptLanguage?.id));
+    checkServedModels(
+      selectedAudioLanguage.source_language,
+      selectedScriptLanguage.major_language
+    );
     const token = useAuthStore.getState().token;
     try {
       await fetch(
-        `${BASE_URL}/projects/${project?.project_id}/audio_language/${selectedLanguage.language_name}`,
+        `${BASE_URL}/projects/${project?.project_id}/audio_language/${selectedAudioLanguage.language_name}`,
         {
           method: "PUT",
           headers: {
@@ -176,14 +235,27 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           },
         }
       );
-      await handleScriptLanguageChange(String(selectedScriptLanguage.id));
+      await fetch(
+        `${BASE_URL}/projects/${project?.project_id}/script_language/${selectedScriptLanguage.major_language}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
     } catch (error) {
       console.log("error", error);
     }
   };
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
-    if (["transcribed", "approved"].includes(chapter.status || "")) {
+    if (
+      ["transcribed", "approved", "converted", "converting"].includes(
+        chapter.status || ""
+      )
+    ) {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
     }
@@ -226,7 +298,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       toast({
         variant: "destructive",
         title:
-          error instanceof Error ? error.message : "Failed to generate USFM.",
+          error instanceof Error ? error.message : "Failed to generate USFM",
       });
     }
   };
@@ -284,12 +356,23 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       toast({
         variant: "destructive",
         title:
-          error instanceof Error
-            ? error.message
-            : "Failed to download project.",
+          error instanceof Error ? error.message : "Failed to download project",
       });
     }
   };
+
+  const matchedLanguage = major_languages.find(
+    (lang) => String(lang.id) === scriptLanguage
+  );
+
+  // if (initialLoading) {
+  //   return (
+  //     <div className="min-h-screen flex flex-col items-center justify-center">
+  //       <div className="w-16 h-16 border-4 border-t-purple-600 border-purple-200 rounded-full animate-spin mb-4"></div>
+  //       <div className="text-lg font-medium text-gray-600">Loading project details...</div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="px-4 md:px-8 lg:px-12 mt-10 font-sans">
@@ -305,53 +388,20 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           </h1>
           <div className="flex flex-col md:flex-row justify-between mb-6 items-start md:items-center gap-4 flex-wrap">
             {/* Audio Language */}
-            <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-                Audio Language
-              </label>
-              <Select
-                onValueChange={handleAudioLanguageChange}
-                value={audioLanguage}
-              >
-                <SelectTrigger className="w-full md:w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">
-                  <SelectValue placeholder="Select Language" />
-                </SelectTrigger>
-                <SelectContent>
-                  {source_languages.map((language) => (
-                    <SelectItem
-                      key={language.language_name}
-                      value={String(language.id)}
-                    >
-                      {language.language_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <LanguageSelect onLanguageChange={handleLanguageChange} selectedLanguageId={audioLanguage} />
 
             {/* Script Language */}
             <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
               <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
                 Script Language
               </label>
-              <Select
-                onValueChange={handleScriptLanguageChange}
-                value={scriptLanguage}
-              >
-                <SelectTrigger className="w-full md:w-[250px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500">
-                  <SelectValue placeholder="Select Language" />
-                </SelectTrigger>
-                <SelectContent>
-                  {major_languages.map((language) => (
-                    <SelectItem
-                      key={language.language_name}
-                      value={String(language.id)}
-                    >
-                      {language.language_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="w-full md:w-[250px] min-h-[36px] border rounded-lg px-3 py-2">
+                {matchedLanguage && (
+                  <div className="text-gray-800 font-medium bold hover:border-gray-400">
+                    {matchedLanguage.language_name}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -392,9 +442,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
                               chapter.status === "approved"
                                 ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
-                                : chapter.status === "transcribed"
+                                : chapter.status === "transcribed" ||
+                                  chapter.status === "converted"
                                 ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
-                                : chapter.status === "inProgress"
+                                : chapter.status === "inProgress" ||
+                                  chapter.status === "converting"
                                 ? "text-orange-700 border border-gray-100 bg-orange-200"
                                 : chapter.status === "error"
                                 ? "text-red-700 border border-red-600 bg-red-200"
@@ -403,23 +455,23 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             onClick={() => openChapterModal(chapter, book)}
                           >
                             {chapter.missing_verses?.length > 0 &&
-                              chapter.status === "notTranscribed" && book.status === "notTranscribed" && (
+                              chapter.status === "notTranscribed" &&
+                              book.status === "notTranscribed" && (
                                 <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
                                   !
                                 </span>
                               )}
-                            {chapter.status === "error" &&
-                               (
-                                <button
-                                  className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
-                                  // onClick={(e) =>
-                                  //   handleChapterRetry(book, chapter, e)
-                                  // }
-                                  // title="Retry transcription"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                </button>
-                              )}
+                            {chapter.status === "error" && (
+                              <button
+                                className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
+                                // onClick={(e) =>
+                                //   handleChapterRetry(book, chapter, e)
+                                // }
+                                // title="Retry transcription"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            )}
                             <span>{chapter.chapter}</span>
                           </div>
                         ))}
@@ -430,22 +482,37 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                     <TableCell className="text-center">
                       {book.status === "approved" ? (
                         <Button
-                          className="bg-blue-600 text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg hover:bg-blue-600"
+                          className="bg-blue-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-blue-600"
                           disabled
                         >
                           Approved
                         </Button>
+                      ) : book.status === "converted" ? (
+                        <Button
+                          className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
+                          disabled
+                        >
+                          Done
+                        </Button>
                       ) : book.status === "transcribed" ? (
                         <Button
-                          className="bg-green-600 text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg hover:bg-green-600"
+                          className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
                           disabled
                         >
                           Transcribed
                         </Button>
+                      ) : book.status === "converted" ? (
+                        <Button
+                          className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
+                          disabled
+                        >
+                          Done
+                        </Button>
                       ) : (
                         <Button
-                          className={`text-white font-bold px-4 py-2 md:w-full md:w-36 rounded-lg ${
+                          className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                             book.status === "inProgress" ||
+                            book.status === "converting" ||
                             !scriptLanguage ||
                             !audioLanguage
                               ? "opacity-50 cursor-not-allowed"
@@ -456,22 +523,26 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               toast({
                                 variant: "destructive",
                                 title:
-                                  "Please select both Source Audio Language and Script Language",
+                                  "Please select both Audio Language and Script Language",
                               });
                               return;
                             }
-                            if (book.status === "inProgress") {
+                            if (
+                              book.status === "inProgress" ||
+                              book.status === "converting"
+                            ) {
                               return;
                             }
                             handleTranscribe(book.book_id);
                           }}
                         >
-                          {book.status === "inProgress" ? (
+                          {book.status === "inProgress" ||
+                          book.status === "converting" ? (
                             <span>{book.progress}</span>
                           ) : book.status === "error" ? (
                             "Retry"
                           ) : (
-                            "Transcribe"
+                            "Convert to Text"
                           )}
                         </Button>
                       )}
