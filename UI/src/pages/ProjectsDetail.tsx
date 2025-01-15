@@ -523,7 +523,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               toast({
                                 variant: "destructive",
                                 title:
-                                  "Please select both Source Audio Language and Script Language",
+                                  "Please select both Audio Language and Script Language",
                               });
                               return;
                             }

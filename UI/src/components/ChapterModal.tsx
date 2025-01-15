@@ -101,22 +101,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     }
   }, [isOpen, audio]);
 
-  // useEffect(() => {
-  //   if (
-  //     isConvertingChapters[chapter.chapter_id] &&
-  //     chapterProgress[chapter.chapter_id]
-  //   ) {
-  //     setChapterProgress((prev) => ({
-  //       ...prev,
-  //       [chapter.chapter_id]: {
-  //         ...prev[chapter.chapter_id],
-  //         completed: completedVersesCount,
-  //         total: sortedVerses?.filter((verse) => verse.modified).length || 0,
-  //       },
-  //     }));
-  //   }
-  // }, [chapter.chapter_id, completedVersesCount, isConvertingChapters]);
-
   const handlePlayAudio = async (verseId: number) => {
     try {
       const token = useAuthStore.getState().token;
@@ -248,14 +232,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       }));
       return;
     }
-    // setChapterProgress((prev) => ({
-    //   ...prev,
-    //   [chapter.chapter_id]: {
-    //     total: modifiedVerses.length,
-    //     completed: 0,
-    //   },
-    // }));
-
     const resultMsg = await convertToSpeech(projectId, bookName, chapter);
 
     if (
@@ -279,13 +255,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     // setIsConvertingVerse(new Set());
     setVerseModifications({});
     setEditedVerses(new Set());
-
-    // // Clear progress at the end
-    // setChapterProgress((prev) => {
-    //   const updated = { ...prev };
-    //   delete updated[chapter.chapter_id];
-    //   return updated;
-    // });
 
     await fetchChapterDetails(projectId, bookName, chapter.chapter);
   };
@@ -329,10 +298,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
   const checkProgress = () => {
     if (!isConvertingChapters[chapter.chapter_id]) return null;
-
-    // const progress = chapterProgress[chapter.chapter_id];
-    // if (!progress) return "Calculating";
-
     const totalModified =
       sortedVerses?.filter(
         (verse) =>
