@@ -33,7 +33,7 @@ const Login: React.FC = () => {
     } catch (error) {
       toast({
         variant: "destructive",
-        title: error instanceof Error ? error.message : "Login failed",
+        title: error instanceof Error ? error?.message : "Login failed",
       });
     }
   };

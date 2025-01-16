@@ -227,7 +227,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
               : chapterStatuses.some((ch) => ch.status === "inProgress")
               ? "inProgress"
               : "notTranscribed";
-
             return {
               ...book,
               chapters: chapterStatuses,
@@ -765,7 +764,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
           return {
             chapterVerses: {
               ...state.chapterVerses,
-              [`${projectId}-${book}-${chapter}`]: verses
+              [`${projectId}-${book}-${chapter}`]: verses,
             },
           };
         });
@@ -1115,9 +1114,15 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       return ch;
                     });
 
+                    const bookStatus = updatedChapters.every(
+                      (ch) => ch.status === "converted"
+                    )
+                      ? "converted"
+                      : b.status;
+
                     return {
                       ...b,
-                      status: "converted",
+                      status: bookStatus,
                       progress: "",
                       chapters: updatedChapters,
                     };

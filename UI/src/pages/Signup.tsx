@@ -42,7 +42,7 @@ const SignupPage = () => {
     console.error('Signup failed', error);
     toast({
       variant: "destructive",
-      title: error instanceof Error ? error.message : "Signup failed",
+      title: error instanceof Error ? error?.message : "Signup failed",
     })
   }
 };

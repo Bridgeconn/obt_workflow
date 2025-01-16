@@ -163,7 +163,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       console.error("Error fetching audio:", error);
       toast({
         variant: "destructive",
-        title: error instanceof Error ? error.message : "Error fetching audio",
+        title: error instanceof Error ? error?.message : "Error fetching audio",
       });
     }
   };

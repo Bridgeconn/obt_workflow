@@ -123,7 +123,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       toast({
         variant: "destructive",
         title:
-          error instanceof Error ? error.message : "Failed to transcribe book",
+          error instanceof Error ? error?.message : "Failed to transcribe book",
       });
       console.error("Error transcribing book:", error);
     }
@@ -298,7 +298,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       toast({
         variant: "destructive",
         title:
-          error instanceof Error ? error.message : "Failed to generate USFM",
+          error instanceof Error ? error?.message : "Failed to generate USFM",
       });
     }
   };
@@ -356,7 +356,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       toast({
         variant: "destructive",
         title:
-          error instanceof Error ? error.message : "Failed to download project",
+          error instanceof Error ? error?.message : "Failed to download project",
       });
     }
   };

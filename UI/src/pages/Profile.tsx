@@ -86,7 +86,7 @@ const ProfilePage: React.FC = () => {
       console.error("Password change failed", error);
       toast({
         variant: "destructive",
-        title: error instanceof Error ? error.message : "Failed to change password",
+        title: error instanceof Error ? error?.message : "Failed to change password",
         // description: error instanceof Error ? error.message : "Failed to change password.",
       });
     }

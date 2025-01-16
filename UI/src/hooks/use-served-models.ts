@@ -48,9 +48,10 @@ export const useServedModels = (): UseServedModelsReturn => {
       const error = err instanceof Error ? err : new Error("An error occurred");
       setError(error);
       toast({
-        title: error.message,
+        title: error?.message,
         variant: "destructive",
       });
+      console.error("Error fetching served models:", error);
     } finally {
       setIsLoading(false);
     }

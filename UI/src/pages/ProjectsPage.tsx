@@ -207,7 +207,7 @@ const ProjectsPage: React.FC = () => {
     },
     onError: (error: Error) => {
       toast({
-        title: error instanceof Error ? error.message : "Upload failed",
+        title: error instanceof Error ? error?.message : "Upload failed",
         variant: "destructive",
       });
     },
@@ -224,7 +224,7 @@ const ProjectsPage: React.FC = () => {
     },
     onError: (error: Error) => {
       toast({
-        title: error instanceof Error ? error.message : "Download failed",
+        title: error instanceof Error ? error?.message : "Download failed",
         variant: "destructive",
       });
     },
