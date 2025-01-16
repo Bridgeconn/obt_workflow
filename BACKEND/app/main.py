@@ -12,7 +12,7 @@ init_db()
 
 
 # FastAPI app initialization
-app = FastAPI()
+app = FastAPI(version="1.0.1")
 
 
 # ToDo: Add CORS when deploying to server to allow only UI origin
