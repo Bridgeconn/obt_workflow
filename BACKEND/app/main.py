@@ -12,14 +12,14 @@ init_db()
 
 
 # FastAPI app initialization
-app = FastAPI()
+app = FastAPI(version="1.1")
 
 
 # ToDo: Add CORS when deploying to server to allow only UI origin
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://obt-workflow.vercel.app"], 
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,7 +29,5 @@ app.add_middleware(
 # Include the router
 app.include_router(router.router)
 
-@app.get("/")
-async def root():
-    return {"message": "AI OBT app is running successfully 🚀"}
+
 
