@@ -226,7 +226,7 @@ def process_project_files(input_path, output_path, db, project):
                         db.refresh(chapter_entry)
                         # Add verse records
                         for verse_number, verse_file in selected_files.items():
-                            # Create a verse entry in the database  
+
                             verse = Verse(
                                 chapter_id=chapter_entry.chapter_id,
                                 verse=verse_number,
