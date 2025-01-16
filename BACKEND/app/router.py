@@ -307,11 +307,6 @@ async def upload_zip(
             raise HTTPException(
                 status_code=400, detail="metadata.json not found in the ZIP file"
             )
-            
-        versification_path = next(temp_extract_path.rglob("versification.json"), None)
-        if not versification_path:
-            logger.error("versification.json not found in the project folder.")
-            raise HTTPException(status_code=400, detail="versification.json not found in the project folder")
  
         # Read metadata.json
         with open(metadata_path, "r", encoding="utf-8") as metadata_file:

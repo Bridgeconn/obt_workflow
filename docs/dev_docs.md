@@ -106,6 +106,7 @@ Ensure `.env` file is created in the docker folder with following variables.
    AI_OBT_POSTGRES_PASSWORD=<password>
    AI_OBT_POSTGRES_DATABASE=<database_name>
    AI_OBT_DOMAIN=http://localhost
+   AI_OBT_DATA_PATH=<base_directory_path>
    ```
 
 From the `docker` folder, execute:
