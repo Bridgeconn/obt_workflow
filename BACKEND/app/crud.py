@@ -74,10 +74,10 @@ def process_project_files(input_path, output_path, db, project):
             logger.error("Project directory not found under input path.")
             raise HTTPException(status_code=400, detail="Project directory not found under input path")
         # Locate versification.json
-        versification_path = next(project_input_path.rglob("versification.json"), None)
+        versification_path= "versification.json"
         if not versification_path:
-            logger.error("versification.json not found in the project folder.")
-            raise HTTPException(status_code=400, detail="versification.json not found in the project folder")
+            logger.error("versification.json not found .")
+            raise HTTPException(status_code=400, detail="versification.json not found ")
         # Read versification.json
         with open(versification_path, "r", encoding="utf-8") as versification_file:
             versification_data = json.load(versification_file)
@@ -123,6 +123,11 @@ def process_project_files(input_path, output_path, db, project):
                             for verse_file in chapter_dir.iterdir()
                             if verse_file.is_file() and "_" in verse_file.stem
                         )
+                        if not available_verses:
+                            # If no verses are found, delete the empty chapter folder
+                            logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
+                            shutil.rmtree(chapter_dir)
+                            continue  
                         # Determine missing verses
                         expected_verses = set(range(1, chapter_max_verses + 1))
                         missing_verses = list(expected_verses - available_verses)
