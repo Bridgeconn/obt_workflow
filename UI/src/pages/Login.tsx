@@ -39,9 +39,8 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="flex justify-center items-center h-screen bg-gray-100">
+    <div className="flex flex-col justify-center items-center h-screen bg-gray-100">
       <Card className="w-full max-w-sm">
-
         <CardHeader>
           <img src="/obt.svg" alt="Logo" className="w-12 h-12 mx-auto mb-4" />
           {/* <CardTitle>Login</CardTitle> */}
@@ -84,6 +83,11 @@ const Login: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+      <div className="text-center mt-4">
+        <Link to="/forgot-password" className="text-blue-500 hover:underline">
+          Forgot password?{" "}
+        </Link>
+      </div>
     </div>
   );
 };

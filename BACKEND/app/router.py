@@ -22,6 +22,7 @@ from pydantic import EmailStr
 from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
 from crud import call_ai_api, call_tts_api
+from utils import send_email
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ load_dotenv()
 
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 # Raise an error if the environment variable is not set
 if not BASE_DIRECTORY:
@@ -151,6 +153,83 @@ def login(
         "token_type": "bearer",
         "message": "Login successful",
     }
+    
+    
+@router.post("/user/forgot_password/", tags=["User"])
+async def forgot_password(email: EmailStr, db: Session = Depends(dependency.get_db)):
+    """
+    Generate a password reset link and send it to the user's email using SendGrid.
+    """
+    logger.info(f"Forgot password request initiated for email: {email}")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        logger.warning(f"Forgot password failed: Email '{email}' not found")
+        raise HTTPException(status_code=404, detail="Email not registered")
+
+    # Generate reset token
+    reset_token = auth.create_reset_token(email)
+    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+
+    # Email body
+    email_body = f"""
+        <html>
+        <body>
+            <h4>Hello {user.username},</h4>
+            <p>We received a request to reset your password. You can reset your password by clicking the link below:</p>
+            
+            <p><strong><a href="{reset_link}">Reset Password</a></strong></p>
+            
+            <p>Alternatively, you can copy and paste this link into your browser:</p>
+            
+            <blockquote>{reset_link}</blockquote>
+
+            <p>If you didn’t request a password reset, please ignore this email.</p>
+            
+            <footer>
+                <small>If you need help, please reach out to our support team.</small>
+            </footer>
+        </body>
+        </html>
+    """
+
+    # Send the email
+    send_email(
+        subject="Password Reset Request",
+        recipient=email,
+        body=email_body,
+    )
+
+    logger.info(f"Password reset email sent to {email}")
+    return {"message": "Password reset email sent successfully"}
+
+@router.post("/user/reset_password/", tags=["User"])
+async def reset_password(
+    token: str,
+    new_password: str,
+    db: Session = Depends(dependency.get_db),
+):
+    """
+    Reset the user's password using the reset token.
+    """
+    logger.info("Password reset request initiated")
+    email = auth.verify_reset_token(token)
+    if not email:
+        logger.error("Password reset failed: Invalid or expired token")
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        logger.error(f"Password reset failed: User not found for email {email}")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update the password
+    user.hashed_password = auth.get_password_hash(new_password)
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"Password successfully reset for user: {email}")
+    return {"message": "Password reset successfully"}
+
 
 
 @router.post("/user/logout/", tags=["User"])

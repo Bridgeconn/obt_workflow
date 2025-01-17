@@ -8,6 +8,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Download, RotateCcw } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
@@ -83,10 +89,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       clearProjectState();
       // setInitialLoading(true);
       setLoading(true);
-      
+
       // Add artificial delay for better UX
       // await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       await fetchProjectDetails(projectId);
       // setInitialLoading(false);
     };
@@ -99,7 +105,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     let selectedAudioLanguage = null;
     let selectedScriptLanguage = null;
     if (project && project.project_id === projectId) {
-      
       if (project.audio_lang) {
         selectedAudioLanguage = source_languages.find(
           (language) => language.language_name === project.audio_lang
@@ -356,7 +361,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       toast({
         variant: "destructive",
         title:
-          error instanceof Error ? error?.message : "Failed to download project",
+          error instanceof Error
+            ? error?.message
+            : "Failed to download project",
       });
     }
   };
@@ -388,7 +395,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           </h1>
           <div className="flex flex-col md:flex-row justify-between mb-6 items-start md:items-center gap-4 flex-wrap">
             {/* Audio Language */}
-            <LanguageSelect onLanguageChange={handleLanguageChange} selectedLanguageId={audioLanguage} />
+            <LanguageSelect
+              onLanguageChange={handleLanguageChange}
+              selectedLanguageId={audioLanguage}
+            />
 
             {/* Script Language */}
             <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
@@ -436,45 +446,93 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                     {/* Chapters */}
                     <TableCell className="text-center relative">
                       <div className="flex justify-center items-center gap-2 flex-wrap">
-                        {book.chapters.map((chapter) => (
-                          <div
-                            key={chapter.chapter_id}
-                            className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
-                              chapter.status === "approved"
-                                ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
-                                : chapter.status === "transcribed" ||
-                                  chapter.status === "converted"
-                                ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
-                                : chapter.status === "inProgress" ||
-                                  chapter.status === "converting"
-                                ? "text-orange-700 border border-gray-100 bg-orange-200"
-                                : chapter.status === "error"
-                                ? "text-red-700 border border-red-600 bg-red-200"
-                                : "text-gray-700 border border-gray-300"
-                            }`}
-                            onClick={() => openChapterModal(chapter, book)}
-                          >
-                            {chapter.missing_verses?.length > 0 &&
-                              chapter.status === "notTranscribed" &&
-                              book.status === "notTranscribed" && (
-                                <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
-                                  !
-                                </span>
+                        {book.chapters.map((chapter) => {
+                          const chapterContent = (
+                            <div
+                              key={chapter.chapter_id}
+                              className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
+                                chapter.status === "approved"
+                                  ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
+                                  : chapter.status === "transcribed" ||
+                                    chapter.status === "converted"
+                                  ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
+                                  : chapter.status === "inProgress" ||
+                                    chapter.status === "converting"
+                                  ? "text-orange-700 border border-gray-100 bg-orange-200"
+                                  : chapter.status === "error"
+                                  ? "text-red-700 border border-red-600 bg-red-200"
+                                  : "text-gray-700 border border-gray-300"
+                              }`}
+                              onClick={() => openChapterModal(chapter, book)}
+                            >
+                              {chapter.missing_verses?.length > 0 &&
+                                chapter.status === "notTranscribed" &&
+                                book.status === "notTranscribed" && (
+                                  <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
+                                    !
+                                  </span>
+                                )}
+                              {chapter.status === "error" && (
+                                <button
+                                  className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
+                                  // onClick={(e) =>
+                                  //   handleChapterRetry(book, chapter, e)
+                                  // }
+                                  // title="Retry transcription"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
                               )}
-                            {chapter.status === "error" && (
-                              <button
-                                className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
-                                // onClick={(e) =>
-                                //   handleChapterRetry(book, chapter, e)
-                                // }
-                                // title="Retry transcription"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                              </button>
-                            )}
-                            <span>{chapter.chapter}</span>
-                          </div>
-                        ))}
+                              <span>{chapter.chapter}</span>
+                            </div>
+                          );
+
+                          return chapter.missing_verses?.length > 0 &&
+                            chapter.status === "notTranscribed" &&
+                            book.status === "notTranscribed" ? (
+                              <TooltipProvider key={chapter.chapter_id}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  {chapterContent}
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  className="bg-white rounded-lg shadow-lg border border-gray-200 w-72"
+                                  side="top"
+                                  sideOffset={5}
+                                >
+                                  <div className="p-3">
+                                    <div className="flex items-center gap-2 border-b pb-2 mb-3">
+                                      <div>
+                                        <h4 className="font-semibold text-left text-sm text-gray-900">
+                                          Missing Verse{chapter.missing_verses.length > 1 ? 's' : ''}
+                                        </h4>
+                                        <p className="text-xs text-gray-500">
+                                          {chapter.missing_verses.length} verse{chapter.missing_verses.length > 1 ? 's' : ''} missing from Chapter {chapter.chapter}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="text-sm text-gray-600 max-h-28 overflow-y-auto pr-1">
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {chapter.missing_verses
+                                          .sort((a, b) => a - b)
+                                          .map((verse) => (
+                                            <span
+                                              key={verse}
+                                              className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-medium"
+                                            >
+                                              {verse}
+                                            </span>
+                                          ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            chapterContent
+                          );
+                        })}
                       </div>
                     </TableCell>
 
@@ -522,8 +580,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             if (!scriptLanguage || !audioLanguage) {
                               toast({
                                 variant: "destructive",
-                                title:
-                                  "Please select both Audio Language and Script Language",
+                                title: "Please select the Audio Language",
                               });
                               return;
                             }

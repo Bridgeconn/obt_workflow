@@ -158,6 +158,10 @@ const ProfilePage: React.FC = () => {
                 name="newPassword"
                 rules={{
                   required: "Please enter a new password",
+                  minLength: {
+                    value: 6,
+                    message: "Password must be at least 6 characters",
+                  }
                 }}
                 render={({ field }) => (
                   <FormItem>

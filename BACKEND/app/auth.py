@@ -36,7 +36,32 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    
+
+def create_reset_token(email: str, expires_delta: timedelta = None) -> str:
+    """
+    Generate a password reset token with the user's email encoded.
+    """
+    to_encode = {"sub": email}
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))  # Token valid for 15 minutes
+    to_encode.update({"exp": expire})
+    reset_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return reset_token
+
+def verify_reset_token(token: str) -> str:
+    """
+    Decode and validate the password reset token.
+    Returns the email if the token is valid.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise HTTPException(status_code=400, detail="Invalid token")
+        return email
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Token expired")
+    except jwt.JWTError:
+        raise HTTPException(status_code=400, detail="Invalid token")
 
 
 def get_current_user(

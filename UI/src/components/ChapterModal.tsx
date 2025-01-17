@@ -351,6 +351,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                   handleTextChange(verse.verse_id, e.target.value, verse.text)
                 }
                 onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
+                // disabled={isConvertingChapters[chapter.chapter_id]} //disable the text area during conversion
               />
               <div className="w-[50px]">
                 {verse.modified &&
