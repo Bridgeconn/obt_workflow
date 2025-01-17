@@ -15,7 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { Download, RotateCcw } from "lucide-react";
+import { Download, RotateCcw, CornerDownLeft } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -390,9 +390,18 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       ) : (
         <>
           {/* Project Title */}
-          <h1 className="text-4xl font-bold mb-6 text-purple-700">
-            {project?.name}
-          </h1>
+          <div className="flex items-center gap-2 mb-6">
+            <button
+              onClick={() => navigate("/")}
+              className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
+              title="Back to Projects"
+            >
+              <CornerDownLeft className="w-6 h-6" />
+            </button>
+            <h1 className="text-4xl font-bold text-purple-700">
+              {project?.name}
+            </h1>
+          </div>
           <div className="flex flex-col md:flex-row justify-between mb-6 items-start md:items-center gap-4 flex-wrap">
             {/* Audio Language */}
             <LanguageSelect
@@ -490,7 +499,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           return chapter.missing_verses?.length > 0 &&
                             chapter.status === "notTranscribed" &&
                             book.status === "notTranscribed" ? (
-                              <TooltipProvider key={chapter.chapter_id}>
+                            <TooltipProvider key={chapter.chapter_id}>
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   {chapterContent}
@@ -504,10 +513,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                     <div className="flex items-center gap-2 border-b pb-2 mb-3">
                                       <div>
                                         <h4 className="font-semibold text-left text-sm text-gray-900">
-                                          Missing Verse{chapter.missing_verses.length > 1 ? 's' : ''}
+                                          Missing Verse
+                                          {chapter.missing_verses.length > 1
+                                            ? "s"
+                                            : ""}
                                         </h4>
                                         <p className="text-xs text-gray-500">
-                                          {chapter.missing_verses.length} verse{chapter.missing_verses.length > 1 ? 's' : ''} missing from Chapter {chapter.chapter}
+                                          {chapter.missing_verses.length} verse
+                                          {chapter.missing_verses.length > 1
+                                            ? "s"
+                                            : ""}{" "}
+                                          missing from Chapter {chapter.chapter}
                                         </p>
                                       </div>
                                     </div>
