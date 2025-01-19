@@ -66,6 +66,43 @@ interface Verse {
   tts_msg: string;
 }
 
+interface TranscriptionProgress {
+  projectId: number;
+  bookId: number;
+  chapterId: number;
+  startTime: number;
+  lastUpdated: number;
+}
+
+interface TranscriptionTrackingState {
+  activeTranscriptions: { [key: string]: TranscriptionProgress };
+  setTranscriptionInProgress: (
+    projectId: number,
+    bookId: number,
+    chapterId: number
+  ) => void;
+  removeTranscriptionProgress: (
+    projectId: number,
+    bookId: number,
+    chapterId: number
+  ) => void;
+  isTranscriptionInProgress: (
+    projectId: number,
+    bookId: number,
+    chapterId: number
+  ) => boolean;
+  clearStaleTranscriptions: () => void;
+  updateTranscriptionTimestamp: (
+    projectId: number,
+    bookId: number,
+    chapterId: number
+  ) => void;
+}
+
+const TRANSCRIPTION_STORAGE_KEY = "active_transcriptions";
+const TRANSCRIPTION_TIMEOUT = 24 * 60 * 60 * 1000;
+const ACTIVITY_TIMEOUT = 10 * 1000;
+
 interface ChapterStatusResponse {
   message: string;
   chapter_info: {
@@ -105,6 +142,161 @@ interface ChapterDetailsState {
   ) => Promise<string>;
 }
 
+export const useTranscriptionTrackingStore = create<TranscriptionTrackingState>(
+  (set, get) => ({
+    activeTranscriptions: (() => {
+      try {
+        const stored = localStorage.getItem(TRANSCRIPTION_STORAGE_KEY);
+        if (!stored) return {};
+
+        // Clean up stale transcriptions on initial load
+        const storedTranscriptions = JSON.parse(stored);
+        const currentTime = Date.now();
+        const cleanTranscriptions: { [key: string]: TranscriptionProgress } =
+          {};
+
+        Object.entries(storedTranscriptions).forEach(([key, value]) => {
+          const transcription = value as TranscriptionProgress;
+          // Check both overall timeout and activity timeout
+          if (
+            currentTime - transcription.startTime < TRANSCRIPTION_TIMEOUT &&
+            currentTime - transcription.lastUpdated <= ACTIVITY_TIMEOUT
+          ) {
+            cleanTranscriptions[key] = transcription;
+          }
+        });
+
+        localStorage.setItem(
+          TRANSCRIPTION_STORAGE_KEY,
+          JSON.stringify(cleanTranscriptions)
+        );
+
+        return cleanTranscriptions;
+      } catch {
+        return {};
+      }
+    })(),
+
+    setTranscriptionInProgress: (projectId, bookId, chapterId) => {
+      set((state) => {
+        const key = `${projectId}-${bookId}-${chapterId}`;
+        const currentTime = Date.now();
+        const newTranscriptions = {
+          ...state.activeTranscriptions,
+          [key]: {
+            projectId,
+            bookId,
+            chapterId,
+            startTime: currentTime,
+            lastUpdated: currentTime,
+          },
+        };
+
+        localStorage.setItem(
+          TRANSCRIPTION_STORAGE_KEY,
+          JSON.stringify(newTranscriptions)
+        );
+        return { activeTranscriptions: newTranscriptions };
+      });
+    },
+
+    updateTranscriptionTimestamp: (projectId, bookId, chapterId) => {
+      set((state) => {
+        const key = `${projectId}-${bookId}-${chapterId}`;
+        const transcription = state.activeTranscriptions[key];
+
+        if (!transcription) return state;
+
+        const updatedTranscriptions = {
+          ...state.activeTranscriptions,
+          [key]: {
+            ...transcription,
+            lastUpdated: Date.now(),
+          },
+        };
+
+        localStorage.setItem(
+          TRANSCRIPTION_STORAGE_KEY,
+          JSON.stringify(updatedTranscriptions)
+        );
+
+        return { activeTranscriptions: updatedTranscriptions };
+      });
+    },
+
+    removeTranscriptionProgress: (projectId, bookId, chapterId) => {
+      if (!chapterId) return;
+      set((state) => {
+        const key = `${projectId}-${bookId}-${chapterId}`;
+        const currentTranscription = state.activeTranscriptions[key];
+
+        if (!currentTranscription) {
+          return state;
+        }
+
+        const remainingTranscriptions = { ...state.activeTranscriptions };
+        delete remainingTranscriptions[key];
+
+        // Update localStorage
+        localStorage.setItem(
+          TRANSCRIPTION_STORAGE_KEY,
+          JSON.stringify(remainingTranscriptions)
+        );
+
+        return { activeTranscriptions: remainingTranscriptions };
+      });
+    },
+
+    isTranscriptionInProgress: (projectId, bookId, chapterId?) => {
+      if (!chapterId) return false;
+      const key = `${projectId}-${bookId}-${chapterId}`;
+      const transcription = get().activeTranscriptions[key];
+      const currentTime = Date.now();
+
+      if (!transcription) return false;
+
+      // Check both the overall timeout and the activity timeout
+      if (
+        currentTime - transcription.startTime > TRANSCRIPTION_TIMEOUT ||
+        currentTime - transcription.lastUpdated > ACTIVITY_TIMEOUT
+      ) {
+        get().removeTranscriptionProgress(projectId, bookId, chapterId);
+        return false;
+      }
+
+      return true;
+    },
+
+    clearStaleTranscriptions: () => {
+      set((state) => {
+        const currentTime = Date.now();
+        const activeTranscriptions = { ...state.activeTranscriptions };
+        let hasChanges = false;
+
+        Object.entries(activeTranscriptions).forEach(([key, value]) => {
+          if (
+            currentTime - value.startTime > TRANSCRIPTION_TIMEOUT ||
+            currentTime - value.lastUpdated > ACTIVITY_TIMEOUT
+          ) {
+            delete activeTranscriptions[key];
+            hasChanges = true;
+          }
+        });
+
+        if (hasChanges) {
+          localStorage.setItem(
+            TRANSCRIPTION_STORAGE_KEY,
+            JSON.stringify(activeTranscriptions)
+          );
+          return { activeTranscriptions };
+        }
+
+        return state;
+      });
+    },
+  })
+);
+
 export const useProjectDetailsStore = create<ProjectDetailsState>(
   (set, get) => ({
     project: null,
@@ -134,14 +326,14 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         );
         const data = await response.json();
 
+        useTranscriptionTrackingStore.getState().clearStaleTranscriptions();
+
         // Fetch detailed status for each book and chapter
         const updatedBooks = await Promise.all(
           data.project.books.map(async (book: Book) => {
             const sortedChapters = book.chapters.sort(
               (a, b) => a.chapter - b.chapter
             );
-            // let totalChaptersProcessed = 0;
-            // let hasErrors = false;
 
             const chapterStatuses = await Promise.all(
               sortedChapters.map(async (chapter) => {
@@ -175,12 +367,13 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const total = verses.length;
                   const isApproved = chapter.approved;
 
-                  // Check for transcription errors in verses
-                  // const hasTranscriptionError = verses.some(
-                  //   (verse) =>
-                  //     verse.stt_msg &&
-                  //     verse.stt_msg !== "Transcription successful"
-                  // );
+                  const isInProgress = useTranscriptionTrackingStore
+                    .getState()
+                    .isTranscriptionInProgress(
+                      projectId,
+                      book.book_id,
+                      chapter.chapter_id
+                    );
 
                   return {
                     ...chapter,
@@ -191,16 +384,16 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         ? "converted"
                         : allTranscribed
                         ? "transcribed"
+                        : isInProgress
+                        ? "inProgress"
                         : "notTranscribed",
                     progress: allTranscribed
                       ? ""
-                      : `${completed} out of ${total} done`,
+                      : isInProgress && `${completed} out of ${total} done`,
                     verses: verses,
                   };
                 } catch (error) {
                   console.error("Failed to fetch chapter status:", error);
-                  // totalChaptersProcessed++;
-                  // hasErrors = true;
                   return {
                     ...chapter,
                     status: "error",
@@ -270,6 +463,15 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
         // Sequential chapter transcription
         for (const chapter of book.chapters) {
+          // Set progress for current chapter
+          useTranscriptionTrackingStore
+            .getState()
+            .setTranscriptionInProgress(
+              currentProject.project_id,
+              bookId,
+              chapter.chapter_id
+            );
+
           try {
             const transcribeResponse = await fetch(
               `${BASE_URL}/project/chapter/stt?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
@@ -289,6 +491,15 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             await new Promise<void>((resolve, reject) => {
               const pollChapterStatus = async () => {
                 try {
+                  // Update timestamp for current chapter
+                  useTranscriptionTrackingStore
+                    .getState()
+                    .updateTranscriptionTimestamp(
+                      currentProject.project_id,
+                      bookId,
+                      chapter.chapter_id
+                    );
+
                   const response = await fetch(
                     `${BASE_URL}/project/${currentProject.project_id}/${book.book}/${chapter.chapter}`,
                     {
@@ -344,7 +555,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         const currentChapterProgress =
                           updatedChapters.find(
                             (ch) => ch.chapter_id === chapter.chapter_id
-                          )?.progress || "";
+                          )?.progress || "Calculating...";
 
                         return {
                           ...b,
@@ -370,6 +581,14 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     console.log(
                       `Chapter processed: ${chapter.chapter}, Total processed: ${totalChaptersProcessed}`
                     );
+                    // Remove progress tracking for completed chapter
+                    useTranscriptionTrackingStore
+                      .getState()
+                      .removeTranscriptionProgress(
+                        currentProject.project_id,
+                        bookId,
+                        chapter.chapter_id
+                      );
                     resolve();
                   } else {
                     setTimeout(pollChapterStatus, 10000);
@@ -418,6 +637,14 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                 },
               };
             });
+            // Remove progress tracking for failed chapter
+            useTranscriptionTrackingStore
+              .getState()
+              .removeTranscriptionProgress(
+                currentProject.project_id,
+                bookId,
+                chapter.chapter_id
+              );
 
             throw error;
           }
@@ -544,7 +771,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
                     const currentChapterProgress =
                       updatedChapters.find((ch) => ch.chapter_id === chapterId)
-                        ?.progress || "";
+                        ?.progress || "Calculating...";
 
                     if (hasTranscriptionError) {
                       return {

@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { useProjectDetailsStore } from "@/store/useProjectStore";
+import {
+  useProjectDetailsStore,
+  useTranscriptionTrackingStore,
+} from "@/store/useProjectStore";
 import {
   Table,
   TableBody,
@@ -82,22 +85,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     useState<SelectedChapter | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  // const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
-    const loadData = async () => {
-      clearProjectState();
-      // setInitialLoading(true);
-      setLoading(true);
+    clearProjectState();
 
-      // Add artificial delay for better UX
-      // await new Promise(resolve => setTimeout(resolve, 2000));
+    setLoading(true);
 
-      await fetchProjectDetails(projectId);
-      // setInitialLoading(false);
-    };
-
-    loadData();
+    fetchProjectDetails(projectId);
   }, [projectId, fetchProjectDetails, clearProjectState]);
 
   useEffect(() => {
@@ -120,6 +114,81 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       setLoading(false);
     }
   }, [project, projectId]);
+
+  useEffect(() => {
+    if (project && project.project_id === projectId && !loading) {
+      // Get transcription tracking store state
+      const trackingStore = useTranscriptionTrackingStore.getState();
+
+      project.books.forEach((book) => {
+        let bookHasInProgressChapters = false;
+
+        // Check each chapter's status
+        const updatedChapters = book.chapters.map((chapter) => {
+          const isChapterInProgress = trackingStore.isTranscriptionInProgress(
+            projectId,
+            book.book_id,
+            chapter.chapter_id
+          );
+
+          if (isChapterInProgress) {
+            bookHasInProgressChapters = true;
+            return chapter; // Keep current status if chapter is in progress
+          }
+
+          // Reset status only for chapters that were inProgress or notTranscribed
+          return {
+            ...chapter,
+            status: ["inProgress", "notTranscribed"].includes(
+              chapter.status || ""
+            )
+              ? "notTranscribed"
+              : chapter.status,
+            progress: ["inProgress", "notTranscribed"].includes(
+              chapter.status || ""
+            )
+              ? ""
+              : chapter.progress,
+          };
+        });
+
+        // Update the project state with the new chapter statuses
+        useProjectDetailsStore.getState().setProject((prevProject) => {
+          if (!prevProject) return prevProject;
+
+          const updatedBooks = prevProject.books.map((b) => {
+            if (b.book_id === book.book_id) {
+              // Determine book status based on chapters
+              const allChaptersNotTranscribed = updatedChapters.every(
+                (ch) => ch.status === "notTranscribed" || ch.status === "error"
+              );
+              const hasInProgressChapters = updatedChapters.some(
+                (ch) => ch.status === "inProgress"
+              );
+
+              const newBookStatus = bookHasInProgressChapters
+                ? "inProgress"
+                : allChaptersNotTranscribed
+                ? "notTranscribed"
+                : hasInProgressChapters
+                ? "inProgress"
+                : b.status;
+
+              return {
+                ...b,
+                chapters: updatedChapters,
+                status: newBookStatus,
+                progress: bookHasInProgressChapters ? b.progress : "",
+              };
+            }
+            return b;
+          });
+
+          return { ...prevProject, books: updatedBooks };
+        });
+      });
+    }
+  }, [projectId, loading]);
 
   const handleTranscribe = async (bookId: number) => {
     try {
@@ -372,20 +441,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     (lang) => String(lang.id) === scriptLanguage
   );
 
-  // if (initialLoading) {
-  //   return (
-  //     <div className="min-h-screen flex flex-col items-center justify-center">
-  //       <div className="w-16 h-16 border-4 border-t-purple-600 border-purple-200 rounded-full animate-spin mb-4"></div>
-  //       <div className="text-lg font-medium text-gray-600">Loading project details...</div>
-  //     </div>
-  //   );
-  // }
-
   return (
     <div className="px-4 md:px-8 lg:px-12 mt-10 font-sans">
       {loading || project?.project_id !== projectId ? (
-        <div className="flex justify-center items-center h-full">
-          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="min-h-screen flex flex-col items-center justify-center">
+          <div className="w-16 h-16 border-4 border-t-purple-600 border-purple-200 rounded-full animate-spin mb-4"></div>
+          <div className="text-lg font-medium text-gray-600">
+            Loading project details...
+          </div>
         </div>
       ) : (
         <>

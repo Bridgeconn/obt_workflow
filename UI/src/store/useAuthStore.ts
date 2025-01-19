@@ -183,7 +183,6 @@ const useAuthStore = create<AuthState>()(
           },
         });
         const userResp = await response.json();
-        console.log("user response", userResp);
         if (!response.ok) {
           throw new Error(userResp.detail || "Failed to fetch user details");
         }
