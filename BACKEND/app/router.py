@@ -445,6 +445,208 @@ async def upload_zip(
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/projects/{project_id}/add-book", tags=["Project"])
+async def add_new_book_zip(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(dependency.get_db),
+):
+    """
+    Add a new book to a project from a ZIP file. Check for missing verses and delete chapters with zero verses.
+ 
+    Args:
+    - project_id: The ID of the project to which the book is added.
+    - file: The uploaded ZIP file containing the book structure.
+    """
+    try:
+        # Check if the project exists
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+ 
+        # Ensure the uploaded file is a ZIP file
+        if not file.filename.endswith(".zip"):
+            raise HTTPException(status_code=400, detail="Uploaded file is not a ZIP file")
+ 
+        # Paths for temporary storage
+        temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
+        temp_extract_path = BASE_DIR / "temp" / "extracted_book"
+ 
+        # Create temporary directories
+        temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_extract_path.mkdir(parents=True, exist_ok=True)
+ 
+        # Save the uploaded ZIP file
+        with open(temp_zip_path, "wb") as buffer:
+            buffer.write(await file.read())
+ 
+        # Extract the ZIP file
+        try:
+            with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+                zip_ref.extractall(temp_extract_path)
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
+ 
+        # Remove the ZIP file after extraction
+        temp_zip_path.unlink()
+        
+        book_name = file.filename.rsplit(".", 1)[0]
+        # Verify and normalize the extracted structure
+        extracted_items = list(temp_extract_path.iterdir())
+ 
+        if len(extracted_items) == 1 and extracted_items[0].is_dir():
+            # Case: Single folder encapsulating everything
+            primary_folder = extracted_items[0]
+ 
+            # Check if it contains another folder with the same name
+            inner_items = list(primary_folder.iterdir())
+            if len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name == primary_folder.name:
+                # Case: Nested folder with the same name
+                logger.info(f"Detected nested folder with the same name: {inner_items[0]}")
+                book_folder = inner_items[0]
+            else:
+                # Case: No nested folder, use the primary folder directly
+                book_folder = primary_folder
+        elif len(extracted_items) > 1:
+            # Case: Multiple folders/files, pick the first valid folder
+            book_folder = temp_extract_path
+            if not book_folder:
+                raise HTTPException(status_code=400, detail="No valid book folder found in the ZIP file")
+        else:
+            raise HTTPException(status_code=400, detail="Unexpected structure in the extracted ZIP file")
+ 
+ 
+        # Check if the book already exists in the project
+        existing_book = (
+            db.query(Book)
+            .filter(Book.project_id == project_id, Book.book == book_name)
+            .first()
+        )
+        if existing_book:
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="Book already exists in the project")
+ 
+        # Add the book to the database
+        book_entry = Book(
+            project_id=project_id,
+            book=book_name,
+        )
+        db.add(book_entry)
+        db.commit()
+        db.refresh(book_entry)
+ 
+        # Dynamically locate the ingredients folder
+        base_name = project.name.split("(")[0].strip()
+        project_root_path = BASE_DIR / str(project_id) / "input" / base_name
+        
+        ingredients_path = None
+ 
+        # Check for ingredients folder in root or audio
+        if (project_root_path / "ingredients").exists():
+            ingredients_path = project_root_path / "ingredients"
+        elif (project_root_path / "audio" / "ingredients").exists():
+            ingredients_path = project_root_path / "audio" / "ingredients"
+        else:
+            # Create ingredients path if not present
+            ingredients_path = project_root_path / "ingredients"
+            ingredients_path.mkdir(parents=True, exist_ok=True)
+ 
+        # Move the book folder into the ingredients folder
+        target_book_path = ingredients_path / book_name
+        if target_book_path.exists():
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="Book folder already exists in ingredients")
+ 
+        shutil.move(str(book_folder), str(target_book_path))
+        # Load versification.json
+        versification_path = "versification.json"
+        if not Path(versification_path).exists():
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            raise HTTPException(status_code=500, detail="versification.json not found")
+ 
+        with open(versification_path, "r", encoding="utf-8") as versification_file:
+            versification_data = json.load(versification_file)
+ 
+        max_verses = versification_data.get("maxVerses", {})
+        book_max_verses = max_verses.get(book_name, [])
+ 
+        # Process the book structure (chapters and verses)
+        for chapter_dir in target_book_path.iterdir():
+            if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+                chapter_number = int(chapter_dir.name)
+                chapter_max_verses = (
+                    int(book_max_verses[chapter_number - 1])
+                    if chapter_number <= len(book_max_verses)
+                    else 0
+                )
+ 
+                # Get all available verses in the chapter
+                available_verses = set(
+                    int(verse_file.stem.split("_")[1])
+                    for verse_file in chapter_dir.iterdir()
+                    if verse_file.is_file() and "_" in verse_file.stem
+                )
+ 
+                # If no verses are found, delete the empty chapter folder
+                if not available_verses:
+                    logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
+                    shutil.rmtree(chapter_dir)
+                    continue
+ 
+                # Determine missing verses
+                expected_verses = set(range(1, chapter_max_verses + 1))
+                missing_verses = list(expected_verses - available_verses)
+ 
+                # Create chapter entry in the database
+                chapter_entry = Chapter(
+                    book_id=book_entry.book_id,
+                    chapter=chapter_number,
+                    approved=False,
+                    missing_verses=missing_verses if missing_verses else None,
+                )
+                db.add(chapter_entry)
+                db.commit()
+                db.refresh(chapter_entry)
+ 
+                # Add verse records
+                for verse_file in chapter_dir.iterdir():
+                    if verse_file.is_file() and "_" in verse_file.stem:
+                        try:
+                            verse_number = int(verse_file.stem.split("_")[1])
+                            verse = Verse(
+                                chapter_id=chapter_entry.chapter_id,
+                                verse=verse_number,
+                                name=verse_file.name,
+                                path=str(verse_file),
+                                size=verse_file.stat().st_size,
+                                format=verse_file.suffix.lstrip("."),
+                                stt=False,
+                                text="",
+                                modified=False,
+                                tts=False,
+                                tts_path="",
+                                stt_msg="",
+                                tts_msg="",
+                            )
+                            db.add(verse)
+                        except ValueError:
+                            logger.warning(f"Invalid file name format: {verse_file.name}")
+                            continue
+        db.commit()
+ 
+        # Clean up the temporary extraction folder
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
+ 
+        return {"message": "Book added successfully", "book_id": book_entry.book_id}
+ 
+    except HTTPException as http_exc:
+        logger.error(f"HTTP Exception: {http_exc.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while adding the book")
 
 
 @router.get("/projects/", tags=["Project"])
