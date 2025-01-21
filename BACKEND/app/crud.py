@@ -169,6 +169,75 @@ def process_project_files(input_path, output_path, db, project):
     except Exception as e:
         logger.error(f"Error while processing project files: {str(e)}") 
         raise HTTPException(status_code=500, detail="Error while processing project files")
+    
+def process_chapters(book_folder, project, book_entry, db):
+    """
+    Process chapters: add new chapters and skip existing ones.
+    """
+    # Dynamically locate the ingredients folder
+    base_name = project.name.split("(")[0].strip()
+    project_root_path = BASE_DIR / str(project.project_id) / "input" / base_name
+ 
+    ingredients_path = None
+    if (project_root_path / "ingredients").exists():
+        ingredients_path = project_root_path / "ingredients"
+    elif (project_root_path / "audio" / "ingredients").exists():
+        ingredients_path = project_root_path / "audio" / "ingredients"
+    else:
+        ingredients_path = project_root_path / "ingredients"
+        ingredients_path.mkdir(parents=True, exist_ok=True)
+ 
+    target_book_path = ingredients_path / book_entry.book
+    target_book_path.mkdir(parents=True, exist_ok=True)
+ 
+    # Fetch existing chapters
+    existing_chapters = {
+        chapter.chapter for chapter in db.query(Chapter).filter(Chapter.book_id == book_entry.book_id)
+    }
+ 
+    added_chapters = []
+    # Process chapters in the book folder
+    skipped_chapters = []
+    for chapter_dir in book_folder.iterdir():
+        if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+            chapter_number = int(chapter_dir.name)
+            if chapter_number in existing_chapters:
+                logger.info(f"Skipping existing chapter: {chapter_number}")
+                skipped_chapters.append(chapter_number)
+                continue
+ 
+            # Move the new chapter folder
+            target_chapter_path = target_book_path / chapter_dir.name
+            shutil.move(str(chapter_dir), str(target_chapter_path))
+            logger.info(f"Added new chapter: {chapter_number}")
+            added_chapters.append(chapter_number)
+            # Add the chapter and its verses to the database
+            chapter_entry = Chapter(book_id=book_entry.book_id, chapter=chapter_number, approved=False)
+            db.add(chapter_entry)
+            db.commit()
+            db.refresh(chapter_entry)
+ 
+            # Add verses
+            for verse_file in target_chapter_path.iterdir():
+                if verse_file.is_file() and "_" in verse_file.stem:
+                    try:
+                        verse_number = int(verse_file.stem.split("_")[1])
+                        verse = Verse(
+                            chapter_id=chapter_entry.chapter_id,
+                            verse=verse_number,
+                            name=verse_file.name,
+                            path=str(verse_file),
+                            size=verse_file.stat().st_size,
+                            format=verse_file.suffix.lstrip("."),
+                            stt=False,
+                            text="",
+                        )
+                        db.add(verse)
+                    except ValueError:
+                        logger.warning(f"Invalid file format for verse: {verse_file.name}")
+                        continue
+    db.commit()
+    return added_chapters, skipped_chapters
 
 def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Session):
     """

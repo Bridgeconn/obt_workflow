@@ -496,26 +496,40 @@ async def add_new_book_zip(
         # Verify and normalize the extracted structure
         extracted_items = list(temp_extract_path.iterdir())
  
-        if len(extracted_items) == 1 and extracted_items[0].is_dir():
+        print("Debug: Extracted items in temp_extract_path:")
+        for item in extracted_items:
+            print(f" - {item} (Directory: {item.is_dir()})")
+ 
+        if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].name.isdigit():
+            # Case: Direct single chapter folder in the ZIP root
+            logger.info(f"Detected single chapter folder directly in ZIP root: {extracted_items[0]}")
+            book_folder = temp_extract_path
+        elif len(extracted_items) == 1 and extracted_items[0].is_dir():
             # Case: Single folder encapsulating everything
             primary_folder = extracted_items[0]
- 
-            # Check if it contains another folder with the same name
             inner_items = list(primary_folder.iterdir())
-            if len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name == primary_folder.name:
-                # Case: Nested folder with the same name
-                logger.info(f"Detected nested folder with the same name: {inner_items[0]}")
-                book_folder = inner_items[0]
-            else:
-                # Case: No nested folder, use the primary folder directly
+            print(f"Primary folder contents: {[item.name for item in inner_items]}")
+ 
+            if all(item.is_dir() and item.name.isdigit() for item in inner_items):
+                # Encapsulating folder directly contains chapter folders
+                logger.info(f"Detected encapsulating folder with chapters: {primary_folder}")
                 book_folder = primary_folder
-        elif len(extracted_items) > 1:
-            # Case: Multiple folders/files, pick the first valid folder
+            elif len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name.isdigit():
+                # Encapsulating folder contains a single chapter folder
+                logger.info(f"Detected single chapter folder inside book folder: {inner_items[0]}")
+                book_folder = primary_folder
+            else:
+                logger.error("Unexpected structure inside primary folder.")
+                raise HTTPException(status_code=400, detail="Unexpected structure in the extracted book folder.")
+        elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):
+            # Case: Multiple chapter folders in the root of the ZIP
+            logger.info("Detected multiple chapter folders directly in the ZIP root.")
             book_folder = temp_extract_path
-            if not book_folder:
-                raise HTTPException(status_code=400, detail="No valid book folder found in the ZIP file")
         else:
+            logger.error("Unexpected structure in the extracted ZIP file.")
             raise HTTPException(status_code=400, detail="Unexpected structure in the extracted ZIP file")
+     
+ 
  
  
         # Check if the book already exists in the project
@@ -524,18 +538,27 @@ async def add_new_book_zip(
             .filter(Book.project_id == project_id, Book.book == book_name)
             .first()
         )
+        
         if existing_book:
+            # Perform chapter-level checks for the existing book
+            added_chapters, skipped_chapters = crud.process_chapters(book_folder, project, existing_book, db)
             shutil.rmtree(temp_extract_path, ignore_errors=True)
-            raise HTTPException(status_code=400, detail="Book already exists in the project")
+            return {
+                "message": "Book already exists. Additional chapters processed.",
+                "book": book_name,
+                "added_chapters": added_chapters,
+                "skipped_chapters": skipped_chapters
+            }
+        else:
+            # Add a new book and process chapters
  
-        # Add the book to the database
-        book_entry = Book(
-            project_id=project_id,
-            book=book_name,
-        )
-        db.add(book_entry)
-        db.commit()
-        db.refresh(book_entry)
+            book_entry = Book(
+                project_id=project_id,
+                book=book_name,
+            )
+            db.add(book_entry)
+            db.commit()
+            db.refresh(book_entry)
  
         # Dynamically locate the ingredients folder
         base_name = project.name.split("(")[0].strip()
@@ -571,7 +594,9 @@ async def add_new_book_zip(
  
         max_verses = versification_data.get("maxVerses", {})
         book_max_verses = max_verses.get(book_name, [])
- 
+        
+        # Initialize has_valid_chapters to track valid chapters
+        has_valid_chapters = False
         # Process the book structure (chapters and verses)
         for chapter_dir in target_book_path.iterdir():
             if chapter_dir.is_dir() and chapter_dir.name.isdigit():
@@ -594,6 +619,9 @@ async def add_new_book_zip(
                     logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
                     shutil.rmtree(chapter_dir)
                     continue
+ 
+                # Mark that at least one valid chapter with verses exists
+                has_valid_chapters = True
  
                 # Determine missing verses
                 expected_verses = set(range(1, chapter_max_verses + 1))
@@ -634,12 +662,23 @@ async def add_new_book_zip(
                         except ValueError:
                             logger.warning(f"Invalid file name format: {verse_file.name}")
                             continue
+        
+        # After processing all chapters, check if there were any valid chapters
+        if not has_valid_chapters:
+            logger.error(f"No valid chapters with verses found for book: {book_name}. Removing the book folder.")
+            shutil.rmtree(target_book_path, ignore_errors=True)
+            db.delete(book_entry)
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail=f"No valid chapters with verses found for book: {book_name}.",
+            )
         db.commit()
  
         # Clean up the temporary extraction folder
         shutil.rmtree(temp_extract_path, ignore_errors=True)
  
-        return {"message": "Book added successfully", "book_id": book_entry.book_id}
+        return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book_name}
  
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")
@@ -647,6 +686,7 @@ async def add_new_book_zip(
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
+ 
 
 
 @router.get("/projects/", tags=["Project"])
@@ -688,9 +728,18 @@ async def get_user_projects(
                             "book_id": book.book_id,
                             "book": book.book,
                             # "approved": book.approved,
-                            "approved" : all(
-                                    chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
-                                ),
+                            "approved" : (
+                                False  # Default for empty chapters
+                                if not db.query(Chapter)
+                                    .filter(Chapter.book_id == book.book_id)
+                                    .first()
+                                else all(
+                                    chapter.approved
+                                    for chapter in db.query(Chapter)
+                                        .filter(Chapter.book_id == book.book_id)
+                                        .all()
+                                    )
+                            ),
                         }
                         for book in books
                     ],
@@ -734,9 +783,18 @@ async def get_user_projects(
                             "book_id": book.book_id,
                             "book": book.book,
                             # "approved": book.approved,
-                            "approved" : all(
-                                    chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
-                                ),
+                            "approved" : (
+                                False  # Default for empty chapters
+                                if not db.query(Chapter)
+                                    .filter(Chapter.book_id == book.book_id)
+                                    .first()
+                                else all(
+                                    chapter.approved
+                                    for chapter in db.query(Chapter)
+                                        .filter(Chapter.book_id == book.book_id)
+                                        .all()
+                                    )
+                            ),
                         }
                         for book in books
                     ],
@@ -783,12 +841,12 @@ async def get_project_details(
                 {
                     "book_id": book.book_id,
                     "book": book.book,
-                    "approved": all(
-                        chapter.approved
-                        for chapter in db.query(Chapter)
+                    "approved": (
+                    bool(chapters := db.query(Chapter)
                         .filter(Chapter.book_id == book.book_id)
-                        .all()
-                    ),
+                        .all())
+                        and all(chapter.approved for chapter in chapters)
+                ),
                     "chapters": [
                         {
                             "chapter_id": chapter.chapter_id,

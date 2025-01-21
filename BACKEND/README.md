@@ -103,7 +103,11 @@ Alternatively, log out and log back in to refresh the `.bashrc` file.
 
 #### Configuration
 
-1. Create and update the `.env` file with `BASE_DIRECTORY` path. (e.g., `BASE_DIRECTORY=/home/user/Desktop/obt-workflow`)
+1. Create and update the `.env` file with the following variables:
+   - `BASE_DIRECTORY` path. (e.g., `BASE_DIRECTORY=/home/user/Desktop/obt-workflow`)
+   - `FRONTEND_URL` (e.g., `FRONTEND_URL=http://localhost:3000`)
+   - `SENDGRID_API_KEY` (e.g., `SENDGRID_API_KEY=your_sendgrid_api_key`)
+   - `MAIL_FROM` (e.g., `MAIL_FROM=your_sendgrid_email`)
 2. Ensure the database is configured and accessible.
 
 
@@ -145,6 +149,9 @@ Ensure `.env` file is created in the docker folder with following variables.
    AI_OBT_POSTGRES_DATABASE=<database_name>
    AI_OBT_DOMAIN=http://localhost
    AI_OBT_DATA_PATH=<base_directory_path>
+   FRONTEND_URL=http://localhost
+   SENDGRID_API_KEY=<sendgrid_api_key>
+   MAIL_FROM=<sendgrid_registered_mail>
    ```
 
 From the `cd docker` folder:
