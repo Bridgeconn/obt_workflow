@@ -1,3 +1,4 @@
+import { useEffect } from "react"; 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
@@ -19,6 +20,10 @@ const AVAILABLE_MODELS = [
 export default function ServedModel() {
 
   const { servedModels, isLoading, refetch } = useServedModels();
+
+  useEffect(() => {
+    refetch();
+  }, []);
 
   return (
     <div className="p-8 max-w-4xl space-y-6 rounded-lg max-h-[420px] h-[420px]">

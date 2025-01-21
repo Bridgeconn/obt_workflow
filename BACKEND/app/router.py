@@ -22,6 +22,7 @@ from pydantic import EmailStr
 from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
 from crud import call_ai_api, call_tts_api
+from utils import send_email
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ load_dotenv()
 
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
+FRONTEND_URL = os.getenv("FRONTEND_URL")
 
 # Raise an error if the environment variable is not set
 if not BASE_DIRECTORY:
@@ -151,6 +153,83 @@ def login(
         "token_type": "bearer",
         "message": "Login successful",
     }
+    
+    
+@router.post("/user/forgot_password/", tags=["User"])
+async def forgot_password(email: EmailStr, db: Session = Depends(dependency.get_db)):
+    """
+    Generate a password reset link and send it to the user's email using SendGrid.
+    """
+    logger.info(f"Forgot password request initiated for email: {email}")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        logger.warning(f"Forgot password failed: Email '{email}' not found")
+        raise HTTPException(status_code=404, detail="Email not registered")
+
+    # Generate reset token
+    reset_token = auth.create_reset_token(email)
+    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+
+    # Email body
+    email_body = f"""
+        <html>
+        <body>
+            <h4>Hello {user.username},</h4>
+            <p>We received a request to reset your password. You can reset your password by clicking the link below:</p>
+            
+            <p><strong><a href="{reset_link}">Reset Password</a></strong></p>
+            
+            <p>Alternatively, you can copy and paste this link into your browser:</p>
+            
+            <blockquote>{reset_link}</blockquote>
+
+            <p>If you didn’t request a password reset, please ignore this email.</p>
+            
+            <footer>
+                <small>If you need help, please reach out to our support team.</small>
+            </footer>
+        </body>
+        </html>
+    """
+
+    # Send the email
+    send_email(
+        subject="Password Reset Request",
+        recipient=email,
+        body=email_body,
+    )
+
+    logger.info(f"Password reset email sent to {email}")
+    return {"message": "Password reset email sent successfully"}
+
+@router.post("/user/reset_password/", tags=["User"])
+async def reset_password(
+    token: str,
+    new_password: str,
+    db: Session = Depends(dependency.get_db),
+):
+    """
+    Reset the user's password using the reset token.
+    """
+    logger.info("Password reset request initiated")
+    email = auth.verify_reset_token(token)
+    if not email:
+        logger.error("Password reset failed: Invalid or expired token")
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        logger.error(f"Password reset failed: User not found for email {email}")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Update the password
+    user.hashed_password = auth.get_password_hash(new_password)
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"Password successfully reset for user: {email}")
+    return {"message": "Password reset successfully"}
+
 
 
 @router.post("/user/logout/", tags=["User"])
@@ -366,6 +445,248 @@ async def upload_zip(
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/projects/{project_id}/add-book", tags=["Project"])
+async def add_new_book_zip(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(dependency.get_db),
+):
+    """
+    Add a new book to a project from a ZIP file. Check for missing verses and delete chapters with zero verses.
+ 
+    Args:
+    - project_id: The ID of the project to which the book is added.
+    - file: The uploaded ZIP file containing the book structure.
+    """
+    try:
+        # Check if the project exists
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+ 
+        # Ensure the uploaded file is a ZIP file
+        if not file.filename.endswith(".zip"):
+            raise HTTPException(status_code=400, detail="Uploaded file is not a ZIP file")
+ 
+        # Paths for temporary storage
+        temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
+        temp_extract_path = BASE_DIR / "temp" / "extracted_book"
+ 
+        # Create temporary directories
+        temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_extract_path.mkdir(parents=True, exist_ok=True)
+ 
+        # Save the uploaded ZIP file
+        with open(temp_zip_path, "wb") as buffer:
+            buffer.write(await file.read())
+ 
+        # Extract the ZIP file
+        try:
+            with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+                zip_ref.extractall(temp_extract_path)
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
+ 
+        # Remove the ZIP file after extraction
+        temp_zip_path.unlink()
+        
+        book_name = file.filename.rsplit(".", 1)[0]
+        # Verify and normalize the extracted structure
+        extracted_items = list(temp_extract_path.iterdir())
+ 
+        print("Debug: Extracted items in temp_extract_path:")
+        for item in extracted_items:
+            print(f" - {item} (Directory: {item.is_dir()})")
+ 
+        if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].name.isdigit():
+            # Case: Direct single chapter folder in the ZIP root
+            logger.info(f"Detected single chapter folder directly in ZIP root: {extracted_items[0]}")
+            book_folder = temp_extract_path
+        elif len(extracted_items) == 1 and extracted_items[0].is_dir():
+            # Case: Single folder encapsulating everything
+            primary_folder = extracted_items[0]
+            inner_items = list(primary_folder.iterdir())
+            print(f"Primary folder contents: {[item.name for item in inner_items]}")
+ 
+            if all(item.is_dir() and item.name.isdigit() for item in inner_items):
+                # Encapsulating folder directly contains chapter folders
+                logger.info(f"Detected encapsulating folder with chapters: {primary_folder}")
+                book_folder = primary_folder
+            elif len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name.isdigit():
+                # Encapsulating folder contains a single chapter folder
+                logger.info(f"Detected single chapter folder inside book folder: {inner_items[0]}")
+                book_folder = primary_folder
+            else:
+                logger.error("Unexpected structure inside primary folder.")
+                raise HTTPException(status_code=400, detail="Unexpected structure in the extracted book folder.")
+        elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):
+            # Case: Multiple chapter folders in the root of the ZIP
+            logger.info("Detected multiple chapter folders directly in the ZIP root.")
+            book_folder = temp_extract_path
+        else:
+            logger.error("Unexpected structure in the extracted ZIP file.")
+            raise HTTPException(status_code=400, detail="Unexpected structure in the extracted ZIP file")
+     
+ 
+ 
+ 
+        # Check if the book already exists in the project
+        existing_book = (
+            db.query(Book)
+            .filter(Book.project_id == project_id, Book.book == book_name)
+            .first()
+        )
+        
+        if existing_book:
+            # Perform chapter-level checks for the existing book
+            added_chapters, skipped_chapters = crud.process_chapters(book_folder, project, existing_book, db)
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            return {
+                "message": "Book already exists. Additional chapters processed.",
+                "book": book_name,
+                "added_chapters": added_chapters,
+                "skipped_chapters": skipped_chapters
+            }
+        else:
+            # Add a new book and process chapters
+ 
+            book_entry = Book(
+                project_id=project_id,
+                book=book_name,
+            )
+            db.add(book_entry)
+            db.commit()
+            db.refresh(book_entry)
+ 
+        # Dynamically locate the ingredients folder
+        base_name = project.name.split("(")[0].strip()
+        project_root_path = BASE_DIR / str(project_id) / "input" / base_name
+        
+        ingredients_path = None
+ 
+        # Check for ingredients folder in root or audio
+        if (project_root_path / "ingredients").exists():
+            ingredients_path = project_root_path / "ingredients"
+        elif (project_root_path / "audio" / "ingredients").exists():
+            ingredients_path = project_root_path / "audio" / "ingredients"
+        else:
+            # Create ingredients path if not present
+            ingredients_path = project_root_path / "ingredients"
+            ingredients_path.mkdir(parents=True, exist_ok=True)
+ 
+        # Move the book folder into the ingredients folder
+        target_book_path = ingredients_path / book_name
+        if target_book_path.exists():
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="Book folder already exists in ingredients")
+ 
+        shutil.move(str(book_folder), str(target_book_path))
+        # Load versification.json
+        versification_path = "versification.json"
+        if not Path(versification_path).exists():
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
+            raise HTTPException(status_code=500, detail="versification.json not found")
+ 
+        with open(versification_path, "r", encoding="utf-8") as versification_file:
+            versification_data = json.load(versification_file)
+ 
+        max_verses = versification_data.get("maxVerses", {})
+        book_max_verses = max_verses.get(book_name, [])
+        
+        # Initialize has_valid_chapters to track valid chapters
+        has_valid_chapters = False
+        # Process the book structure (chapters and verses)
+        for chapter_dir in target_book_path.iterdir():
+            if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+                chapter_number = int(chapter_dir.name)
+                chapter_max_verses = (
+                    int(book_max_verses[chapter_number - 1])
+                    if chapter_number <= len(book_max_verses)
+                    else 0
+                )
+ 
+                # Get all available verses in the chapter
+                available_verses = set(
+                    int(verse_file.stem.split("_")[1])
+                    for verse_file in chapter_dir.iterdir()
+                    if verse_file.is_file() and "_" in verse_file.stem
+                )
+ 
+                # If no verses are found, delete the empty chapter folder
+                if not available_verses:
+                    logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
+                    shutil.rmtree(chapter_dir)
+                    continue
+ 
+                # Mark that at least one valid chapter with verses exists
+                has_valid_chapters = True
+ 
+                # Determine missing verses
+                expected_verses = set(range(1, chapter_max_verses + 1))
+                missing_verses = list(expected_verses - available_verses)
+ 
+                # Create chapter entry in the database
+                chapter_entry = Chapter(
+                    book_id=book_entry.book_id,
+                    chapter=chapter_number,
+                    approved=False,
+                    missing_verses=missing_verses if missing_verses else None,
+                )
+                db.add(chapter_entry)
+                db.commit()
+                db.refresh(chapter_entry)
+ 
+                # Add verse records
+                for verse_file in chapter_dir.iterdir():
+                    if verse_file.is_file() and "_" in verse_file.stem:
+                        try:
+                            verse_number = int(verse_file.stem.split("_")[1])
+                            verse = Verse(
+                                chapter_id=chapter_entry.chapter_id,
+                                verse=verse_number,
+                                name=verse_file.name,
+                                path=str(verse_file),
+                                size=verse_file.stat().st_size,
+                                format=verse_file.suffix.lstrip("."),
+                                stt=False,
+                                text="",
+                                modified=False,
+                                tts=False,
+                                tts_path="",
+                                stt_msg="",
+                                tts_msg="",
+                            )
+                            db.add(verse)
+                        except ValueError:
+                            logger.warning(f"Invalid file name format: {verse_file.name}")
+                            continue
+        
+        # After processing all chapters, check if there were any valid chapters
+        if not has_valid_chapters:
+            logger.error(f"No valid chapters with verses found for book: {book_name}. Removing the book folder.")
+            shutil.rmtree(target_book_path, ignore_errors=True)
+            db.delete(book_entry)
+            db.commit()
+            raise HTTPException(
+                status_code=400,
+                detail=f"No valid chapters with verses found for book: {book_name}.",
+            )
+        db.commit()
+ 
+        # Clean up the temporary extraction folder
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
+ 
+        return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book_name}
+ 
+    except HTTPException as http_exc:
+        logger.error(f"HTTP Exception: {http_exc.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while adding the book")
+ 
 
 
 @router.get("/projects/", tags=["Project"])
@@ -407,9 +728,18 @@ async def get_user_projects(
                             "book_id": book.book_id,
                             "book": book.book,
                             # "approved": book.approved,
-                            "approved" : all(
-                                    chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
-                                ),
+                            "approved" : (
+                                False  # Default for empty chapters
+                                if not db.query(Chapter)
+                                    .filter(Chapter.book_id == book.book_id)
+                                    .first()
+                                else all(
+                                    chapter.approved
+                                    for chapter in db.query(Chapter)
+                                        .filter(Chapter.book_id == book.book_id)
+                                        .all()
+                                    )
+                            ),
                         }
                         for book in books
                     ],
@@ -453,9 +783,18 @@ async def get_user_projects(
                             "book_id": book.book_id,
                             "book": book.book,
                             # "approved": book.approved,
-                            "approved" : all(
-                                    chapter.approved for chapter in db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
-                                ),
+                            "approved" : (
+                                False  # Default for empty chapters
+                                if not db.query(Chapter)
+                                    .filter(Chapter.book_id == book.book_id)
+                                    .first()
+                                else all(
+                                    chapter.approved
+                                    for chapter in db.query(Chapter)
+                                        .filter(Chapter.book_id == book.book_id)
+                                        .all()
+                                    )
+                            ),
                         }
                         for book in books
                     ],
@@ -502,12 +841,12 @@ async def get_project_details(
                 {
                     "book_id": book.book_id,
                     "book": book.book,
-                    "approved": all(
-                        chapter.approved
-                        for chapter in db.query(Chapter)
+                    "approved": (
+                    bool(chapters := db.query(Chapter)
                         .filter(Chapter.book_id == book.book_id)
-                        .all()
-                    ),
+                        .all())
+                        and all(chapter.approved for chapter in chapters)
+                ),
                     "chapters": [
                         {
                             "chapter_id": chapter.chapter_id,

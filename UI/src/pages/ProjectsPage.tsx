@@ -207,7 +207,7 @@ const ProjectsPage: React.FC = () => {
     },
     onError: (error: Error) => {
       toast({
-        title: error instanceof Error ? error.message : "Upload failed",
+        title: error instanceof Error ? error?.message : "Upload failed",
         variant: "destructive",
       });
     },
@@ -224,7 +224,7 @@ const ProjectsPage: React.FC = () => {
     },
     onError: (error: Error) => {
       toast({
-        title: error instanceof Error ? error.message : "Download failed",
+        title: error instanceof Error ? error?.message : "Download failed",
         variant: "destructive",
       });
     },
@@ -277,14 +277,14 @@ const ProjectsPage: React.FC = () => {
     columnHelper.accessor("books", {
       header: "Books",
       cell: (info) => (
-        <div className="w-[50px] truncate text-center">{info.getValue()}</div>
+        <div className="truncate text-center">{info.getValue()}</div>
       ),
       size: 50,
     }),
     columnHelper.accessor("approved", {
       header: "Approved",
       cell: (info) => (
-        <div className="w-[50px] truncate text-center">{info.getValue()}</div>
+        <div className="truncate text-center">{info.getValue()}</div>
       ),
       size: 50,
     }),
@@ -292,7 +292,7 @@ const ProjectsPage: React.FC = () => {
       id: "actions",
       header: "Download",
       cell: ({ row }) => (
-        <div className="w-[50px] truncate text-center">
+        <div className="truncate text-center">
           <Button
             variant="ghost"
             size="icon"

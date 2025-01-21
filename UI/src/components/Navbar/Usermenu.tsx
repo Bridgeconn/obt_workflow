@@ -15,7 +15,6 @@ import { useQueryClient } from "@tanstack/react-query";
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { user, logout } = useAuthStore();
-    console.log("user details", user);
   
     const handleLogout = async () => {
       await logout(queryClient);

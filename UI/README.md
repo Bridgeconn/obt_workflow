@@ -44,11 +44,12 @@
 
 8. **Create an Environment File**  
    - In the root directory of the UI folder, create a `.env` file.
-   - add the `VITE_BASE_URL`
+   - add the `VITE_BASE_URL` & `VITE_AI_BASE_URL` environment variables.
 
    example -
      ```
      VITE_BASE_URL = "YOUR_BASE_URL"
+     VITE_AI_BASE_URL="AI_BASE_URL"
      ```
 
 9. **Run the Development Server**  

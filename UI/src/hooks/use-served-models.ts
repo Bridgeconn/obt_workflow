@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE_URL = import.meta.env.VITE_AI_BASE_URL;
@@ -48,17 +48,14 @@ export const useServedModels = (): UseServedModelsReturn => {
       const error = err instanceof Error ? err : new Error("An error occurred");
       setError(error);
       toast({
-        title: error.message,
+        title: error?.message,
         variant: "destructive",
       });
+      console.error("Error fetching served models:", error);
     } finally {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   return {
     servedModels,

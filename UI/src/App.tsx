@@ -18,6 +18,8 @@ import ProfilePage from "./pages/Profile";
 import UsersTable from "./pages/Users";
 import AdminLogs from "./pages/AdminLogs";
 import ServedModel from "./pages/ServedModel";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 
 function AppContent() {
   const { checkAuthStatus } = useAuthStore();
@@ -57,6 +59,8 @@ function AppContent() {
             isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
           }
         />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route
           path="/profile"
@@ -109,22 +113,30 @@ function AppContent() {
         <Route
           path="/"
           element={
-            isAuthenticated ? <ProjectsPage /> : <Navigate to="/login" replace />
+            isAuthenticated ? (
+              <ProjectsPage />
+            ) : (
+              <Navigate to="/login" replace />
+            )
           }
         />
         <Route
-         path = "/projects/:projectId"
-         element={
-           isAuthenticated ? <ProjectRouteWrapper /> : <Navigate to="/login" replace />
-         }
-         />
+          path="/projects/:projectId"
+          element={
+            isAuthenticated ? (
+              <ProjectRouteWrapper />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
       </Routes>
     </>
   );
 }
 
 const ProjectRouteWrapper: React.FC = () => {
-  const { projectId  } = useParams<{ projectId: string }>();
+  const { projectId } = useParams<{ projectId: string }>();
 
   if (!projectId) {
     return <Navigate to="/projects" replace />;
