@@ -93,7 +93,7 @@ const ForgotPassword: React.FC = () => {
                 )}
               />
               <Button type="submit" className="w-full">
-                Reset Password
+                Submit
               </Button>
             </form>
           </Form>

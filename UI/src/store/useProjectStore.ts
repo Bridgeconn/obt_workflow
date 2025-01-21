@@ -331,6 +331,12 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         // Fetch detailed status for each book and chapter
         const updatedBooks = await Promise.all(
           data.project.books.map(async (book: Book) => {
+            if (!book.chapters || book.chapters.length === 0) {
+              return {
+                ...book,
+                chapters: [],
+              };
+            }
             const sortedChapters = book.chapters.sort(
               (a, b) => a.chapter - b.chapter
             );

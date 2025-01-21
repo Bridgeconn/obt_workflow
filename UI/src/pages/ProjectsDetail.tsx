@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   useProjectDetailsStore,
   useTranscriptionTrackingStore,
@@ -18,7 +18,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { Download, RotateCcw, CornerDownLeft } from "lucide-react";
+import {
+  Download,
+  RotateCcw,
+  ArrowLeft,
+  Upload,
+  X,
+  Archive,
+  PackageOpen
+} from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -29,6 +37,8 @@ import ChapterModal from "@/components/ChapterModal";
 import { toast } from "@/hooks/use-toast";
 import { useServedModels } from "@/hooks/use-served-models";
 import LanguageSelect from "@/components/LanguageSelect";
+import UploadDialog from "@/components/UploadDialog";
+import ArchiveDialog from "@/components/ArchiveDialog";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -85,6 +95,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     useState<SelectedChapter | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadedBookData, setUploadedBookData] = useState<{
+    book: string;
+    added_chapters: number[];
+    skipped_chapters: number[];
+  } | null>(null);
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     clearProjectState();
@@ -190,6 +211,74 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   }, [projectId, loading]);
 
+  const handleFileUpload = async (file: File) => {
+    const token = useAuthStore.getState().token;
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch(
+        `${BASE_URL}/projects/${projectId}/add-book`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
+        }
+      );
+
+      const responseData = await response.json();
+      console.log("response data", responseData);
+
+      if (!response.ok) {
+        throw new Error(responseData.detail || "Failed to upload book");
+      }
+
+      if (responseData.message === "Book added successfully") {
+        toast({
+          title: `Book ${responseData.book} added successfully`,
+          variant: "success",
+        });
+      } else {
+        setUploadedBookData(responseData);
+        setUploadDialogOpen(true);
+      }
+      // Invalidate and refetch project details
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      await fetchProjectDetails(projectId);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: error instanceof Error ? error.message : "Failed to upload book",
+      });
+    }
+  };
+
+  // Add drag and drop handlers
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFileUpload(files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  };
+
   const handleTranscribe = async (bookId: number) => {
     try {
       await transcribeBook(bookId, queryClient);
@@ -203,33 +292,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   };
 
-  // const handleChapterRetry = async (book: Book, chapter: Chapter, e: React.MouseEvent) => {
-  //   e.stopPropagation();
-
-  //   if (book.status === "inProgress") {
-  //     toast({
-  //       variant: "destructive",
-  //       title: "Book transcription is in progress. Please wait.",
-  //     });
-  //     return;
-  //   }
-
-  //   try {
-  //     await retryChapterTranscription(projectId, book.book_id, chapter.chapter_id, queryClient);
-  //   } catch (error) {
-  //     toast({
-  //       variant: "destructive",
-  //       title: "Failed to retry chapter transcription",
-  //     });
-  //     console.error("Error retrying chapter transcription:", error);
-  //   }
-  // };
-
   const checkServedModels = (
     audioLanguage: string | undefined,
     scriptLanguage: string | undefined
   ) => {
-    refetch();
     if (!servedModels || !audioLanguage || !scriptLanguage) return;
 
     const requiredModels =
@@ -293,6 +359,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       return;
     }
     setScriptLanguage(String(selectedScriptLanguage?.id));
+
+    //fetch the served models
+    await refetch();
+
     checkServedModels(
       selectedAudioLanguage.source_language,
       selectedScriptLanguage.major_language
@@ -382,6 +452,15 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     navigate("/");
   };
 
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileUpload(files[0]);
+      // Reset the file input value after upload
+      e.target.value = "";
+    }
+  };
+
   const handleArchiveProject = async () => {
     if (project?.project_id === undefined) return;
     await archiveProject(project?.project_id, !archive);
@@ -453,19 +532,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       ) : (
         <>
           {/* Project Title */}
-          <div className="flex items-center gap-2 mb-6">
-            <button
-              onClick={() => navigate("/")}
-              className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
-              title="Back to Projects"
-            >
-              <CornerDownLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-4xl font-bold text-purple-700">
-              {project?.name}
-            </h1>
-          </div>
-          <div className="flex flex-col md:flex-row justify-between mb-6 items-start md:items-center gap-4 flex-wrap">
+          <div className="flex flex-col md:flex-row items-center sm:items-start justify-between gap-4 mb-10">
+            <div className="flex flex-col md:flex-row items-center gap-8">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate("/")}
+                className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
+                title="Back to Projects"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <h1 className="text-4xl font-bold text-purple-700">
+                {project?.name}
+              </h1>
+            </div>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-wrap">
             {/* Audio Language */}
             <LanguageSelect
               onLanguageChange={handleLanguageChange}
@@ -475,236 +556,294 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             {/* Script Language */}
             <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
               <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-                Script Language
+                Script Language : {matchedLanguage && (matchedLanguage.language_name)}
               </label>
-              <div className="w-full md:w-[250px] min-h-[36px] border rounded-lg px-3 py-2">
-                {matchedLanguage && (
-                  <div className="text-gray-800 font-medium bold hover:border-gray-400">
-                    {matchedLanguage.language_name}
-                  </div>
-                )}
-              </div>
+             
             </div>
           </div>
+          </div>
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3">
+              <input
+                type="file"
+                accept=".zip"
+                onChange={handleFileInputChange}
+                ref={fileInputRef}
+                hidden
+              />
+              <Button
+              variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload a book"
+              >
+                <Upload className="w-4 h-4" />
+                {/* Upload Book */}
+              </Button>
+              <Button
+                size= "icon"
+                variant="outline"
+                onClick={handleDownloadProject}
+                disabled={!project.books.some((book) => book.approved)}
+                title="Download Project"
+              >
+                <Download size={20} />
+              </Button>
+              <Button variant="outline" onClick={() => !archive ? setArchiveDialogOpen(true) : handleArchiveProject()} title={archive ? "Unarchive" : "Archive"}>
+                {archive ? <PackageOpen size={20} /> : <Archive size={20} />}
+              </Button>
+              <Button variant="outline" onClick={handleCloseProject} title="Close Project" style={{ color: "red" }}><X size={20} /></Button>
+            </div>
+          </div>
+          
 
           {/* Table Section */}
-          <div className="overflow-x-auto shadow-lg rounded-lg h-[420px] border-2">
-            <Table className="w-full min-w-[600px] border-b">
-              <TableHeader>
-                <TableRow className="bg-gray-100">
-                  <TableHead className="font-semibold text-center text-primary px-3 py-3">
-                    Books
-                  </TableHead>
-                  <TableHead className="font-semibold text-center text-primary px-3 py-3">
-                    Chapters
-                  </TableHead>
-                  <TableHead className="font-semibold text-center text-primary px-3 py-3">
-                    Status
-                  </TableHead>
-                  <TableHead className="font-semibold text-center text-primary px-3 py-3">
-                    USFM
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {project?.books.map((book) => (
-                  <TableRow key={book.book_id} className="hover:bg-gray-50">
-                    {/* Books */}
-                    <TableCell className="text-center px-3 py-2 font-medium text-gray-800">
-                      {book.book}
-                    </TableCell>
-
-                    {/* Chapters */}
-                    <TableCell className="text-center relative">
-                      <div className="flex justify-center items-center gap-2 flex-wrap">
-                        {book.chapters.map((chapter) => {
-                          const chapterContent = (
-                            <div
-                              key={chapter.chapter_id}
-                              className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
-                                chapter.status === "approved"
-                                  ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
-                                  : chapter.status === "transcribed" ||
-                                    chapter.status === "converted"
-                                  ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
-                                  : chapter.status === "inProgress" ||
-                                    chapter.status === "converting"
-                                  ? "text-orange-700 border border-gray-100 bg-orange-200"
-                                  : chapter.status === "error"
-                                  ? "text-red-700 border border-red-600 bg-red-200"
-                                  : "text-gray-700 border border-gray-300"
-                              }`}
-                              onClick={() => openChapterModal(chapter, book)}
-                            >
-                              {chapter.missing_verses?.length > 0 &&
-                                chapter.status === "notTranscribed" &&
-                                book.status === "notTranscribed" && (
-                                  <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
-                                    !
-                                  </span>
-                                )}
-                              {chapter.status === "error" && (
-                                <button
-                                  className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
-                                  // onClick={(e) =>
-                                  //   handleChapterRetry(book, chapter, e)
-                                  // }
-                                  // title="Retry transcription"
-                                >
-                                  <RotateCcw className="w-3 h-3" />
-                                </button>
-                              )}
-                              <span>{chapter.chapter}</span>
-                            </div>
-                          );
-
-                          return chapter.missing_verses?.length > 0 &&
-                            chapter.status === "notTranscribed" &&
-                            book.status === "notTranscribed" ? (
-                            <TooltipProvider key={chapter.chapter_id}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  {chapterContent}
-                                </TooltipTrigger>
-                                <TooltipContent
-                                  className="bg-white rounded-lg shadow-lg border border-gray-200 w-72"
-                                  side="top"
-                                  sideOffset={5}
-                                >
-                                  <div className="p-3">
-                                    <div className="flex items-center gap-2 border-b pb-2 mb-3">
-                                      <div>
-                                        <h4 className="font-semibold text-left text-sm text-gray-900">
-                                          Missing Verse
-                                          {chapter.missing_verses.length > 1
-                                            ? "s"
-                                            : ""}
-                                        </h4>
-                                        <p className="text-xs text-gray-500">
-                                          {chapter.missing_verses.length} verse
-                                          {chapter.missing_verses.length > 1
-                                            ? "s"
-                                            : ""}{" "}
-                                          missing from Chapter {chapter.chapter}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="text-sm text-gray-600 max-h-28 overflow-y-auto pr-1">
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {chapter.missing_verses
-                                          .sort((a, b) => a - b)
-                                          .map((verse) => (
-                                            <span
-                                              key={verse}
-                                              className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-medium"
-                                            >
-                                              {verse}
-                                            </span>
-                                          ))}
-                                      </div>
-                                    </div>
-                                  </div>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          ) : (
-                            chapterContent
-                          );
-                        })}
-                      </div>
-                    </TableCell>
-
-                    {/* Status */}
-                    <TableCell className="text-center">
-                      {book.status === "approved" ? (
-                        <Button
-                          className="bg-blue-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-blue-600"
-                          disabled
-                        >
-                          Approved
-                        </Button>
-                      ) : book.status === "converted" ? (
-                        <Button
-                          className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
-                          disabled
-                        >
-                          Done
-                        </Button>
-                      ) : book.status === "transcribed" ? (
-                        <Button
-                          className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
-                          disabled
-                        >
-                          Transcribed
-                        </Button>
-                      ) : book.status === "converted" ? (
-                        <Button
-                          className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
-                          disabled
-                        >
-                          Done
-                        </Button>
-                      ) : (
-                        <Button
-                          className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
-                            book.status === "inProgress" ||
-                            book.status === "converting" ||
-                            !scriptLanguage ||
-                            !audioLanguage
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:bg-gray-700"
-                          }`}
-                          onClick={() => {
-                            if (!scriptLanguage || !audioLanguage) {
-                              toast({
-                                variant: "destructive",
-                                title: "Please select the Audio Language",
-                              });
-                              return;
-                            }
-                            if (
-                              book.status === "inProgress" ||
-                              book.status === "converting"
-                            ) {
-                              return;
-                            }
-                            handleTranscribe(book.book_id);
-                          }}
-                        >
-                          {book.status === "inProgress" ||
-                          book.status === "converting" ? (
-                            <span>{book.progress}</span>
-                          ) : book.status === "error" ? (
-                            "Retry"
-                          ) : (
-                            "Convert to Text"
-                          )}
-                        </Button>
-                      )}
-                    </TableCell>
-
-                    {/* USFM Download */}
-                    <TableCell className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="w-full md:w-auto"
-                        disabled={
-                          !book.chapters.every((chapter) => chapter.approved)
-                        }
-                        onClick={() =>
-                          handleDownloadUSFM(project.project_id, book)
-                        }
-                      >
-                        <Download size={20} />
-                      </Button>
-                    </TableCell>
+          <div
+            className=" relative overflow-x-auto shadow-lg rounded-lg h-[420px] border-2"
+            onDragOver={handleDragOver}
+            onDragEnter={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {isDragging ? (
+              <div className="absolute inset-0 bg-gray-50/90 flex flex-col items-center justify-center space-y-2 border-2 border-dashed border-gray-300 rounded-lg z-10">
+                <Upload className="w-12 h-12 text-gray-400" />
+                <p className="text-lg font-medium text-gray-600">
+                  Drop book ZIP file here
+                </p>
+              </div>
+            ) : (
+              <Table className="w-full min-w-[600px] border-b">
+                <TableHeader>
+                  <TableRow className="bg-gray-100">
+                    <TableHead className="font-semibold text-center text-primary px-3 py-3">
+                      Books
+                    </TableHead>
+                    <TableHead className="font-semibold text-center text-primary px-3 py-3">
+                      Chapters
+                    </TableHead>
+                    <TableHead className="font-semibold text-center text-primary px-3 py-3">
+                      Status
+                    </TableHead>
+                    <TableHead className="font-semibold text-center text-primary px-3 py-3">
+                      USFM
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
 
+                <TableBody>
+                  {project?.books.map((book) => (
+                    <TableRow key={book.book_id} className="hover:bg-gray-50">
+                      {/* Books */}
+                      <TableCell className="text-center px-3 py-2 font-medium text-gray-800">
+                        {book.book}
+                      </TableCell>
+
+                      {/* Chapters */}
+                      <TableCell className="text-center relative">
+                        <div className="flex justify-center items-center gap-2 flex-wrap">
+                          {book.chapters.map((chapter) => {
+                            const chapterContent = (
+                              <div
+                                key={chapter.chapter_id}
+                                className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
+                                  chapter.status === "approved"
+                                    ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
+                                    : chapter.status === "transcribed" ||
+                                      chapter.status === "converted"
+                                    ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
+                                    : chapter.status === "inProgress" ||
+                                      chapter.status === "converting"
+                                    ? "text-orange-700 border border-gray-100 bg-orange-200"
+                                    : chapter.status === "error"
+                                    ? "text-red-700 border border-red-600 bg-red-200"
+                                    : "text-gray-700 border border-gray-300"
+                                }`}
+                                onClick={() => openChapterModal(chapter, book)}
+                              >
+                                {chapter.missing_verses?.length > 0 &&
+                                  chapter.status === "notTranscribed" &&
+                                  book.status === "notTranscribed" && (
+                                    <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
+                                      !
+                                    </span>
+                                  )}
+                                {chapter.status === "error" && (
+                                  <button
+                                    className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
+                                    // onClick={(e) =>
+                                    //   handleChapterRetry(book, chapter, e)
+                                    // }
+                                    // title="Retry transcription"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                  </button>
+                                )}
+                                <span>{chapter.chapter}</span>
+                              </div>
+                            );
+
+                            return chapter.missing_verses?.length > 0 &&
+                              chapter.status === "notTranscribed" &&
+                              book.status === "notTranscribed" ? (
+                              <TooltipProvider key={chapter.chapter_id}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    {chapterContent}
+                                  </TooltipTrigger>
+                                  <TooltipContent
+                                    className="bg-white rounded-lg shadow-lg border border-gray-200 w-72"
+                                    side="top"
+                                    sideOffset={5}
+                                  >
+                                    <div className="p-3">
+                                      <div className="flex items-center gap-2 border-b pb-2 mb-3">
+                                        <div>
+                                          <h4 className="font-semibold text-left text-sm text-gray-900">
+                                            Missing Verse
+                                            {chapter.missing_verses.length > 1
+                                              ? "s"
+                                              : ""}
+                                          </h4>
+                                          <p className="text-xs text-gray-500">
+                                            {chapter.missing_verses.length}{" "}
+                                            verse
+                                            {chapter.missing_verses.length > 1
+                                              ? "s"
+                                              : ""}{" "}
+                                            missing from Chapter{" "}
+                                            {chapter.chapter}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="text-sm text-gray-600 max-h-28 overflow-y-auto pr-1">
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {chapter.missing_verses
+                                            .sort((a, b) => a - b)
+                                            .map((verse) => (
+                                              <span
+                                                key={verse}
+                                                className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-medium"
+                                              >
+                                                {verse}
+                                              </span>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              chapterContent
+                            );
+                          })}
+                        </div>
+                      </TableCell>
+
+                      {/* Status */}
+                      <TableCell className="text-center">
+                        {book.status === "approved" ? (
+                          <Button
+                            className="bg-blue-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-blue-600"
+                            disabled
+                          >
+                            Approved
+                          </Button>
+                        ) : book.status === "converted" ? (
+                          <Button
+                            className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
+                            disabled
+                          >
+                            Done
+                          </Button>
+                        ) : book.status === "transcribed" ? (
+                          <Button
+                            className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
+                            disabled
+                          >
+                            Transcribed
+                          </Button>
+                        ) : book.status === "converted" ? (
+                          <Button
+                            className="bg-green-600 text-white font-bold px-4 py-2 w-36 rounded-lg hover:bg-green-600"
+                            disabled
+                          >
+                            Done
+                          </Button>
+                        ) : (
+                          <Button
+                            className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
+                              book.status === "inProgress" ||
+                              book.status === "converting" ||
+                              !scriptLanguage ||
+                              !audioLanguage
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:bg-gray-700"
+                            }`}
+                            onClick={() => {
+                              if (!scriptLanguage || !audioLanguage) {
+                                toast({
+                                  variant: "destructive",
+                                  title: "Please select the Audio Language",
+                                });
+                                return;
+                              }
+                              if (
+                                book.status === "inProgress" ||
+                                book.status === "converting"
+                              ) {
+                                return;
+                              }
+                              handleTranscribe(book.book_id);
+                            }}
+                          >
+                            {book.status === "inProgress" ||
+                            book.status === "converting" ? (
+                              <span>{book.progress}</span>
+                            ) : book.status === "error" ? (
+                              "Retry"
+                            ) : (
+                              "Convert to Text"
+                            )}
+                          </Button>
+                        )}
+                      </TableCell>
+
+                      {/* USFM Download */}
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="w-full md:w-auto"
+                          disabled={
+                            book.chapters.length === 0 ||
+                            !book.chapters.every((chapter) => chapter.approved)
+                          }
+                          onClick={() =>
+                            handleDownloadUSFM(project.project_id, book)
+                          }
+                        >
+                          <Download size={20} />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            {uploadedBookData && (
+              <UploadDialog
+                isOpen={uploadDialogOpen}
+                onClose={() => {
+                  setUploadDialogOpen(false);
+                  setUploadedBookData(null);
+                }}
+                bookCode={uploadedBookData?.book}
+                addedChapters={uploadedBookData?.added_chapters}
+                skippedChapters={uploadedBookData?.skipped_chapters}
+              />
+            )}
             {project && project.project_id !== undefined && selectedChapter && (
               <ChapterModal
                 isOpen={modalOpen}
@@ -714,9 +853,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 chapter={selectedChapter}
               />
             )}
+            {archiveDialogOpen && (
+              <ArchiveDialog
+                isOpen={archiveDialogOpen}
+                onClose={() => setArchiveDialogOpen(false)}
+                handleArchiveProject={handleArchiveProject}
+              />
+            )}
           </div>
 
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-6">
+          {/* <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-6">
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
               <Button className="w-full md:w-auto" onClick={handleCloseProject}>
                 Close
@@ -728,6 +874,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 {archive ? "Unarchive" : "Archive"}
               </Button>
             </div>
+            <>
+              <input
+                type="file"
+                accept=".zip"
+                onChange={handleFileInputChange}
+                ref={fileInputRef}
+                hidden
+              />
+              <Button
+                className="w-full md:w-auto"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Upload Book
+              </Button>
+            </>
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
               <Button
                 className="w-full md:w-auto"
@@ -737,7 +898,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 Download Project
               </Button>
             </div>
-          </div>
+          </div> */}
         </>
       )}
     </div>

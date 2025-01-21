@@ -277,14 +277,14 @@ const ProjectsPage: React.FC = () => {
     columnHelper.accessor("books", {
       header: "Books",
       cell: (info) => (
-        <div className="w-[50px] truncate text-center">{info.getValue()}</div>
+        <div className="truncate text-center">{info.getValue()}</div>
       ),
       size: 50,
     }),
     columnHelper.accessor("approved", {
       header: "Approved",
       cell: (info) => (
-        <div className="w-[50px] truncate text-center">{info.getValue()}</div>
+        <div className="truncate text-center">{info.getValue()}</div>
       ),
       size: 50,
     }),
@@ -292,7 +292,7 @@ const ProjectsPage: React.FC = () => {
       id: "actions",
       header: "Download",
       cell: ({ row }) => (
-        <div className="w-[50px] truncate text-center">
+        <div className="truncate text-center">
           <Button
             variant="ghost"
             size="icon"

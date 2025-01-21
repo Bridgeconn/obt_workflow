@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE_URL = import.meta.env.VITE_AI_BASE_URL;
@@ -56,10 +56,6 @@ export const useServedModels = (): UseServedModelsReturn => {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   return {
     servedModels,
