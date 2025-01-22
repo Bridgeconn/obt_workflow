@@ -68,16 +68,16 @@ def process_project_files(input_path, output_path, db, project):
         else:
             logger.error("Unexpected folder structure in the input path.")
             raise HTTPException(
-                status_code=400, detail="Unexpected folder structure in the input path"
+                status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file"
             )
         if not project_input_path or not project_input_path.is_dir():
             logger.error("Project directory not found under input path.")
-            raise HTTPException(status_code=400, detail="Project directory not found under input path")
+            raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
         # Locate versification.json
         versification_path= "versification.json"
         if not versification_path:
             logger.error("versification.json not found .")
-            raise HTTPException(status_code=400, detail="versification.json not found ")
+            raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
         # Read versification.json
         with open(versification_path, "r", encoding="utf-8") as versification_file:
             versification_data = json.load(versification_file)
@@ -96,7 +96,7 @@ def process_project_files(input_path, output_path, db, project):
                 break
         if not ingredients_path:
             logger.error("Ingredients folder not found. Checked all possible locations.")
-            raise HTTPException(status_code=400, detail="ingredients folder not found in the project folder")
+            raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
         logger.info(f"Ingredients folder found at: {ingredients_path}")
         # Process books, chapters, and verses in `ingredients`
         for book_dir in ingredients_path.iterdir():

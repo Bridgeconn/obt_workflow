@@ -384,7 +384,7 @@ async def upload_zip(
         metadata_path = next(temp_extract_path.rglob("metadata.json"), None)
         if not metadata_path:
             raise HTTPException(
-                status_code=400, detail="metadata.json not found in the ZIP file"
+                status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file"
             )
  
         # Read metadata.json
