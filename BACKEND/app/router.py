@@ -460,6 +460,7 @@ async def add_new_book_zip(
     - project_id: The ID of the project to which the book is added.
     - file: The uploaded ZIP file containing the book structure.
     """
+    temp_extract_path = None
     try:
         # Check if the project exists
         project = db.query(Project).filter(Project.project_id == project_id).first()
@@ -470,7 +471,7 @@ async def add_new_book_zip(
         versification_path= "versification.json"
         if not versification_path:
             logger.error("versification.json not found .")
-            raise HTTPException(status_code=400, detail="versification.json not found ")
+            raise HTTPException(status_code=400, detail="versification.json not found")
         # Read versification.json
         with open(versification_path, "r", encoding="utf-8") as versification_file:
             versification_data = json.load(versification_file)
@@ -538,14 +539,14 @@ async def add_new_book_zip(
                 book_folder = primary_folder
             else:
                 logger.error("Unexpected structure inside primary folder.")
-                raise HTTPException(status_code=400, detail="Unexpected structure in the extracted book folder.")
+                raise HTTPException(status_code=400, detail="Invalid book folder structure")
         elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):
             # Case: Multiple chapter folders in the root of the ZIP
             logger.info("Detected multiple chapter folders directly in the ZIP root.")
             book_folder = temp_extract_path
         else:
             logger.error("Unexpected structure in the extracted ZIP file.")
-            raise HTTPException(status_code=400, detail="Unexpected structure in the extracted ZIP file")
+            raise HTTPException(status_code=400, detail="Invalid book folder structure")
  
         # Check if the book already exists in the project
         existing_book = (
@@ -731,19 +732,22 @@ async def add_new_book_zip(
         db.commit()
  
         # Clean up the temporary extraction folder
-        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        if temp_extract_path:
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
  
         return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book_name}
  
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")
          # Cleanup temporary extraction folder
-        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        if temp_extract_path:
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
          # Cleanup temporary extraction folder
-        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        if temp_extract_path:
+            shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
  
 

@@ -198,7 +198,7 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
     versification_path = "versification.json"
     if not Path(versification_path).exists():
         logger.error("versification.json not found.")
-        raise HTTPException(status_code=400, detail="versification.json not found.")
+        raise HTTPException(status_code=400, detail="versification.json not found")
 
     # Read versification.json
     with open(versification_path, "r", encoding="utf-8") as versification_file:
