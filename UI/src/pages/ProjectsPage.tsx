@@ -28,6 +28,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DebouncedInput } from "@/components/DebouncedInput";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
+const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024;
 
 // Improved Book Interface
 interface Book {
@@ -98,37 +99,50 @@ const fetchProjects = async (): Promise<Project[]> => {
   const { projects } = await response.json();
 
   return projects.map((project: ProjectResponse) => ({
-    id: project.project_id.toString(),
-    name: project.name,
-    owner: project.user_name,
-    scriptLanguage: project.script_lang,
-    audioLanguage: project.audio_lang,
-    books: project.books.length,
-    approved: project.books.filter((book: Book) => book.approved).length,
-    archive: project.archive,
-  }));
+      id: project.project_id.toString(),
+      name: project.name,
+      owner: project.user_name,
+      scriptLanguage: project.script_lang,
+      audioLanguage: project.audio_lang,
+      books: project.books.length,
+      approved: project.books.filter((book: Book) => book.approved).length,
+      archive: project.archive,
+    }));
 };
 
-const uploadProject = async (file: File) => {
+const uploadProject = async (
+  file: File,
+  onProgress: (progress: number) => void
+) => {
   const token = useAuthStore.getState().token;
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${BASE_URL}/projects`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE_URL}/projects`, true);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const progress = (event.loaded / event.total) * 100;
+        onProgress(progress);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        const errorResponse = JSON.parse(xhr.responseText);
+        reject(new Error(errorResponse.detail || "Failed to upload project"));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+
+    xhr.send(formData);
   });
-
-  if (!response.ok) {
-    const errRep = await response.json();
-    console.log("errRep", errRep);
-    throw new Error(errRep.detail || "Failed to upload project");
-  }
-
-  return response.json();
 };
 
 const downloadProject = async (projectId: string, name: string) => {
@@ -178,6 +192,7 @@ const ProjectsPage: React.FC = () => {
   // const [containerHeight, setContainerHeight] = useState<string>("auto");
   const { user } = useAuthStore();
   const navigate = useNavigate();
+  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -197,12 +212,13 @@ const ProjectsPage: React.FC = () => {
   );
 
   const uploadMutation = useMutation({
-    mutationFn: uploadProject,
+    mutationFn: (file: File) => uploadProject(file, setUploadProgress),
     onSuccess: () => {
       toast({
         variant: "success",
         title: "Project uploaded successfully!",
       });
+      setUploadProgress(0);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
     onError: (error: Error) => {
@@ -210,6 +226,7 @@ const ProjectsPage: React.FC = () => {
         title: error instanceof Error ? error?.message : "Upload failed",
         variant: "destructive",
       });
+      setUploadProgress(0);
     },
   });
 
@@ -254,16 +271,16 @@ const ProjectsPage: React.FC = () => {
           }),
         ]
       : []),
-    
-      columnHelper.accessor("audioLanguage", {
-        header: "Audio Language",
-        cell: (info) => (
-          <div className="w-[80px] truncate" title={info.getValue() || "N/A"}>
-            {info.getValue() || "N/A"}
-          </div>
-        ),
-        size: 80,
-      }),
+
+    columnHelper.accessor("audioLanguage", {
+      header: "Audio Language",
+      cell: (info) => (
+        <div className="w-[80px] truncate" title={info.getValue() || "N/A"}>
+          {info.getValue() || "N/A"}
+        </div>
+      ),
+      size: 80,
+    }),
 
     columnHelper.accessor("scriptLanguage", {
       header: "Script Language",
@@ -336,7 +353,7 @@ const ProjectsPage: React.FC = () => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      uploadMutation.mutate(files[0]);
+      validateAndUploadFile(files[0]);
     }
   };
 
@@ -345,16 +362,24 @@ const ProjectsPage: React.FC = () => {
     e.stopPropagation();
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      uploadMutation.mutate(files[0]);
+      validateAndUploadFile(files[0]);
     }
   };
 
+  const validateAndUploadFile = (file: File) => {
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: "File too large. Maximum size is 1GB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    uploadMutation.mutate(file);
+  };
+
   return (
-    <div
-      className="w-full mt-8 px-4 md:px-8 lg:px-12"
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={handleDrop}
-    >
+    <div className="w-full mt-8 px-4 md:px-8 lg:px-12">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
         <h1 className="text-3xl font-bold">Projects</h1>
         <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-4 md:justify-start">
@@ -386,14 +411,17 @@ const ProjectsPage: React.FC = () => {
         className="mt-10"
         onDragOver={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setIsDragging(true);
         }}
         onDragEnter={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setIsDragging(true);
         }}
         onDragLeave={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           // Check if leaving the drop area
           if (!e.currentTarget.contains(e.relatedTarget as Node)) {
             setIsDragging(false);
@@ -410,6 +438,17 @@ const ProjectsPage: React.FC = () => {
           </div>
         ) : (
           <>
+            {uploadProgress > 0 && (
+              <div className="mb-4">
+                <div
+                  className="bg-green-500 h-1 rounded"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+                <p className="text-center">{`Uploading: ${Math.round(
+                  uploadProgress
+                )}%`}</p>
+              </div>
+            )}
             <div className="relative overflow-hidden h-[420px] border-2 rounded-lg">
               <Table>
                 <TableHeader>
