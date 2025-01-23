@@ -170,7 +170,7 @@ def process_project_files(input_path, output_path, db, project):
         logger.error(f"Error while processing project files: {str(e)}") 
         raise HTTPException(status_code=500, detail="Error while processing project files")
     
-def process_chapters(book_folder, project, book_entry, db):
+def process_chapters(book_folder, project, book_entry, db,book_name):
     """
     Process chapters: add new chapters and skip existing ones.
     """
@@ -189,22 +189,81 @@ def process_chapters(book_folder, project, book_entry, db):
  
     target_book_path = ingredients_path / book_entry.book
     target_book_path.mkdir(parents=True, exist_ok=True)
- 
+    
     # Fetch existing chapters
     existing_chapters = {
         chapter.chapter for chapter in db.query(Chapter).filter(Chapter.book_id == book_entry.book_id)
     }
- 
+    # Validate versification.json
+    versification_path = "versification.json"
+    if not Path(versification_path).exists():
+        logger.error("versification.json not found.")
+        raise HTTPException(status_code=400, detail="versification.json not found.")
+
+    # Read versification.json
+    with open(versification_path, "r", encoding="utf-8") as versification_file:
+        versification_data = json.load(versification_file)
+
+    max_verses_data = versification_data.get("maxVerses", {})
+    valid_books = set(max_verses_data.keys())
+
+    # Validate the book name
+    if book_name not in valid_books:
+        logger.error(f"Invalid book code: {book_name}.")
+        raise HTTPException(status_code=400, detail=f"Invalid book code: {book_name}")
+
+    max_chapters = len(max_verses_data[book_name])
+    max_verses_per_chapter = {
+        chapter_num + 1: int(verses)
+        for chapter_num, verses in enumerate(max_verses_data[book_name])
+    }
     added_chapters = []
     # Process chapters in the book folder
     skipped_chapters = []
+    
     for chapter_dir in book_folder.iterdir():
         if chapter_dir.is_dir() and chapter_dir.name.isdigit():
             chapter_number = int(chapter_dir.name)
+            # Check if the chapter exceeds the maximum allowed chapters
+            if chapter_number > max_chapters:
+                logger.error(f"Invalid chapter {chapter_number}: Exceeds maximum allowed chapters ({max_chapters})")
+                shutil.rmtree(chapter_dir)  # Remove the invalid chapter folder
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{book_name} should have {max_chapters} chapter(s) but found chapter {chapter_number}. "
+                    "Please upload the ZIP file with proper chapter count"
+                )
+            
             if chapter_number in existing_chapters:
                 logger.info(f"Skipping existing chapter: {chapter_number}")
                 skipped_chapters.append(chapter_number)
                 continue
+            
+             # Validate verses in the chapter
+            available_verses = set(
+                int(verse_file.stem.split("_")[1])
+                for verse_file in chapter_dir.iterdir()
+                if verse_file.is_file() and "_" in verse_file.stem
+            )
+            
+            # If no verses are found, delete the empty chapter folder
+            if not available_verses:
+                logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
+                shutil.rmtree(chapter_dir)
+                continue
+
+            max_verses_in_chapter = max_verses_per_chapter.get(chapter_number, 0)
+            if available_verses and max(available_verses) > max_verses_in_chapter:
+                logger.error(
+                    f"Invalid chapter {chapter_number}: Exceeds maximum allowed verses or has no valid verses."
+                )
+                shutil.rmtree(chapter_dir)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{book_name}: Chapter {chapter_number} should have {max_verses_in_chapter} verses "
+                    f"but {max(available_verses)} verses found. "
+                    "Please upload the ZIP file with correct verse count",
+                )
  
             # Move the new chapter folder
             target_chapter_path = target_book_path / chapter_dir.name
@@ -236,6 +295,12 @@ def process_chapters(book_folder, project, book_entry, db):
                     except ValueError:
                         logger.warning(f"Invalid file format for verse: {verse_file.name}")
                         continue
+                    
+    if(not added_chapters and not skipped_chapters):
+        raise HTTPException(
+            status_code=400,
+            detail=f"No verse data found. Please upload valid ZIP file",
+        ) 
     db.commit()
     return added_chapters, skipped_chapters
 
@@ -442,7 +507,7 @@ def call_ai_api(file_path: str, script_lang: str) -> dict:
 
 
 
-def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_lang: str, db):
+def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_lang: str, db,output_format):
     """
     Generate speech for each verse and update the database, saving files in the appropriate output directory.
     """
@@ -484,7 +549,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.refresh(job)
  
                 # Call AI API for text-to-speech
-                result = call_tts_api([verse.text], audio_lang)
+                result = call_tts_api([verse.text], audio_lang,output_format)
                 if "error" in result:
                     # Handle API error
                     job.status = "failed"
@@ -512,13 +577,18 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                 book_folder = ingredients_audio_dir / book_code
                                 chapter_folder = book_folder / str(chapter.chapter)
                                 os.makedirs(chapter_folder, exist_ok=True)
+
+                                supported_formats = ["wav", "mp3"]
                                 # Find and move the audio file to the appropriate folder
                                 for root, _, files in os.walk(extracted_folder):
                                     for file in files:
-                                        if file == "audio_0.wav":
+                                        # if file == "audio_0.wav":
+                                        file_extension = file.split(".")[-1].lower()
+                                        if file.startswith("audio_0") and file_extension in supported_formats:
                                             # Update filename based on the verse
                                             base_name = os.path.splitext(verse.name)[0]  # Strip existing extension
-                                            new_audio_filename = f"{base_name}.wav"  # Add .wav extension
+                                            # new_audio_filename = f"{base_name}.wav"  # Add .wav extension
+                                            new_audio_filename = f"{base_name}.{file_extension}"
                                             new_audio_path = chapter_folder / new_audio_filename
                                             shutil.move(os.path.join(root, file), new_audio_path)
                                             new_audio_path = validate_and_resample_wav(str(new_audio_path))
@@ -634,7 +704,7 @@ def find_audio_file(folder_path: str, verse_name: str) -> str:
     logger.error(f"Audio file not found for verse: {verse_name} in folder: {folder_path}")
     return None
 
-def call_tts_api(text: str, audio_lang: str) -> dict:
+def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     """
     Call the AI API for text-to-speech.
     """
@@ -713,6 +783,7 @@ def call_tts_api(text: str, audio_lang: str) -> dict:
     params = {
         "model_name": model_name,
         "language": lang_code,  # Dynamically mapped language code
+        "output_format": output_format, 
     }
     data_payload = [text]
     headers = {"Authorization": f"Bearer {api_token}"}
@@ -765,4 +836,3 @@ def validate_and_resample_wav(file_path: str) -> str:
         raise HTTPException(status_code=500, detail="Failed to validate or resample WAV audio file")
 
     return file_path
-     

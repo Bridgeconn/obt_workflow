@@ -465,7 +465,25 @@ async def add_new_book_zip(
         project = db.query(Project).filter(Project.project_id == project_id).first()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
- 
+        
+        # Locate versification.json
+        versification_path= "versification.json"
+        if not versification_path:
+            logger.error("versification.json not found .")
+            raise HTTPException(status_code=400, detail="versification.json not found ")
+        # Read versification.json
+        with open(versification_path, "r", encoding="utf-8") as versification_file:
+            versification_data = json.load(versification_file)
+        valid_books = set(versification_data.get("maxVerses", {}).keys())
+        # Extract book name from file
+        book_name = file.filename.rsplit(".", 1)[0]
+
+        # Validate book name
+        if book_name not in valid_books:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid book code: {book_name}",
+            )
         # Ensure the uploaded file is a ZIP file
         if not file.filename.endswith(".zip"):
             raise HTTPException(status_code=400, detail="Uploaded file is not a ZIP file")
@@ -528,9 +546,6 @@ async def add_new_book_zip(
         else:
             logger.error("Unexpected structure in the extracted ZIP file.")
             raise HTTPException(status_code=400, detail="Unexpected structure in the extracted ZIP file")
-     
- 
- 
  
         # Check if the book already exists in the project
         existing_book = (
@@ -541,7 +556,7 @@ async def add_new_book_zip(
         
         if existing_book:
             # Perform chapter-level checks for the existing book
-            added_chapters, skipped_chapters = crud.process_chapters(book_folder, project, existing_book, db)
+            added_chapters, skipped_chapters = crud.process_chapters(book_folder, project, existing_book, db,book_name)
             shutil.rmtree(temp_extract_path, ignore_errors=True)
             return {
                 "message": "Book already exists. Additional chapters processed.",
@@ -583,24 +598,32 @@ async def add_new_book_zip(
             raise HTTPException(status_code=400, detail="Book folder already exists in ingredients")
  
         shutil.move(str(book_folder), str(target_book_path))
-        # Load versification.json
-        versification_path = "versification.json"
-        if not Path(versification_path).exists():
-            shutil.rmtree(temp_extract_path, ignore_errors=True)
-            raise HTTPException(status_code=500, detail="versification.json not found")
+        
+        max_verses_data = versification_data.get("maxVerses", {})
+        
+        # Get maximum chapters for the book
+        max_chapters = len(max_verses_data[book_name])
  
-        with open(versification_path, "r", encoding="utf-8") as versification_file:
-            versification_data = json.load(versification_file)
- 
-        max_verses = versification_data.get("maxVerses", {})
-        book_max_verses = max_verses.get(book_name, [])
+        book_max_verses = max_verses_data.get(book_name, [])
         
         # Initialize has_valid_chapters to track valid chapters
         has_valid_chapters = False
-        # Process the book structure (chapters and verses)
+        
+        # Filter out invalid chapters first
         for chapter_dir in target_book_path.iterdir():
             if chapter_dir.is_dir() and chapter_dir.name.isdigit():
                 chapter_number = int(chapter_dir.name)
+                if chapter_number > max_chapters:
+                    logger.error(f"Invalid chapter {chapter_number}: Exceeds maximum allowed chapters ({max_chapters})")
+                    shutil.rmtree(target_book_path, ignore_errors=True)
+                    db.delete(book_entry)
+                    db.commit()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{book_name} should have {max_chapters} chapter(s) but found chapter {chapter_number}. "
+                            "Please upload the ZIP file with proper chapter count"
+                    )
+                    
                 chapter_max_verses = (
                     int(book_max_verses[chapter_number - 1])
                     if chapter_number <= len(book_max_verses)
@@ -619,9 +642,41 @@ async def add_new_book_zip(
                     logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
                     shutil.rmtree(chapter_dir)
                     continue
+                
+                # Validate verses
+                if available_verses and max(available_verses) > chapter_max_verses:
+                    logger.error(
+                        f"{book_name}: Chapter {chapter_number} should have {chapter_max_verses} verses "
+                        f"but {max(available_verses)} verses found"
+                    )
+                    # Clean up and raise immediate error
+                    shutil.rmtree(target_book_path, ignore_errors=True)
+                    db.delete(book_entry)
+                    db.commit()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"{book_name}: Chapter {chapter_number} has only {chapter_max_verses} verses "
+                            f"but {max(available_verses)} verses found. "
+                            "Please upload the ZIP file with correct verse count."
+                    )
+                 
+        # Process the book structure (chapters and verses)
+        for chapter_dir in target_book_path.iterdir():
+            if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+                chapter_number = int(chapter_dir.name)
+                
+                chapter_max_verses = (
+                    int(book_max_verses[chapter_number - 1])
+                    if chapter_number <= len(book_max_verses)
+                    else 0
+                )
  
-                # Mark that at least one valid chapter with verses exists
-                has_valid_chapters = True
+                # Get all available verses in the chapter
+                available_verses = set(
+                    int(verse_file.stem.split("_")[1])
+                    for verse_file in chapter_dir.iterdir()
+                    if verse_file.is_file() and "_" in verse_file.stem
+                )
  
                 # Determine missing verses
                 expected_verses = set(range(1, chapter_max_verses + 1))
@@ -637,7 +692,7 @@ async def add_new_book_zip(
                 db.add(chapter_entry)
                 db.commit()
                 db.refresh(chapter_entry)
- 
+                has_valid_chapters = True
                 # Add verse records
                 for verse_file in chapter_dir.iterdir():
                     if verse_file.is_file() and "_" in verse_file.stem:
@@ -671,7 +726,7 @@ async def add_new_book_zip(
             db.commit()
             raise HTTPException(
                 status_code=400,
-                detail=f"No valid chapters with verses found for book: {book_name}.",
+                detail=f"No verse data found in book: {book_name}",
             )
         db.commit()
  
@@ -682,9 +737,13 @@ async def add_new_book_zip(
  
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")
+         # Cleanup temporary extraction folder
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
+         # Cleanup temporary extraction folder
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
  
 
@@ -1363,10 +1422,18 @@ async def convert_to_speech(
     if not verses:
         return {"message": "No verses with modified text found in the chapter"}
         
-    
+    # Get the file extension from the first verse in the chapter
+    output_format = None
+    if verses[0].path:
+        output_format = verses[0].path.split(".")[-1]
+    if not output_format:
+        raise HTTPException(
+            status_code=400,
+            detail="Unable to determine the output format from the verse path.",
+        )
     # Check if the TTS model is served before starting the task
     test_text = "Test text"
-    test_result = call_tts_api(test_text, project.audio_lang)
+    test_result = call_tts_api(test_text, project.audio_lang,output_format)
     if "error" in test_result:
         raise HTTPException(status_code=400, detail=test_result["error"])
 
@@ -1378,6 +1445,7 @@ async def convert_to_speech(
         verses,
         project.audio_lang,
         db,
+        output_format
     )
 
     return {
