@@ -536,7 +536,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           <div className="flex flex-col xl:flex-row w-full gap-8">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => navigate("/")}
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["projects"] });
+                  navigate("/")
+                }}
                 className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
                 title="Back to Projects"
               >

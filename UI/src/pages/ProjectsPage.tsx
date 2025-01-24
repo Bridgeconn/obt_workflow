@@ -100,8 +100,7 @@ const fetchProjects = async (): Promise<Project[]> => {
 
   return projects
     .sort(
-      (a: ProjectResponse, b: ProjectResponse) =>
-        b.project_id - a.project_id
+      (a: ProjectResponse, b: ProjectResponse) => b.project_id - a.project_id
     )
     .map((project: ProjectResponse) => ({
       id: project.project_id.toString(),
@@ -381,6 +380,11 @@ const ProjectsPage: React.FC = () => {
     }
 
     uploadMutation.mutate(file);
+
+    // Reset file input to allow re-uploading the same file
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
