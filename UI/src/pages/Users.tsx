@@ -34,6 +34,16 @@ interface User {
   created_date: string;
 }
 
+interface UpdateUserParams {
+  role?: string;
+  active?: string;
+}
+
+interface UpdateResponse {
+  success: boolean;
+  error?: string;
+}
+
 const fetchUsers = async (token: string | null): Promise<User[]> => {
   if (!token) throw new Error("Missing token");
 
@@ -68,11 +78,17 @@ const UsersTable = () => {
     retry: false,
   });
 
-  const updateUserRole = async (userId: string, role: string) => {
+  const updateUser = async (userId: string, updates: UpdateUserParams): Promise<UpdateResponse> => {
     try {
       setIsUpdating(true);
+      
+      // Build query params
+      const params = new URLSearchParams({ user_id: userId });
+      if (updates.role) params.append('role', updates.role);
+      if (updates.active) params.append('active', (updates.active === "Yes").toString());
+  
       const response = await fetch(
-        `${BASE_URL}/user/?user_id=${userId}&role=${role}`,
+        `${BASE_URL}/user/?${params.toString()}`,
         {
           method: "PUT",
           headers: {
@@ -82,43 +98,19 @@ const UsersTable = () => {
         }
       );
   
+      const data = await response.json();
+  
       if (!response.ok) {
-        throw new Error("Failed to update role");
+        throw new Error(data?.detail || "Failed to update user");
       }
   
       queryClient.invalidateQueries({ queryKey: ['users', token] });
-      return { updated: true, type: "role" };
+      return { success: true };
     } catch (err) {
-      console.error("Failed to update role", err);
-      return { updated: false, type: "role" };
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-  
-  const updateUserActive = async (userId: string, active: string) => {
-    try {
-      setIsUpdating(true);
-      const response = await fetch(
-        `${BASE_URL}/user/?user_id=${userId}&active=${active === "Yes" ? true : false}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-  
-      if (!response.ok) {
-        throw new Error("Failed to update user status");
-      }
-  
-      queryClient.invalidateQueries({ queryKey: ['users', token] });
-      return { updated: true, type: "active" };
-    } catch (err) {
-      console.error("Failed to update status", err);
-      return { updated: false, type: "active" };
+      return { 
+        success: false, 
+        error: err instanceof Error ? err.message : "Failed to update user" 
+      };
     } finally {
       setIsUpdating(false);
     }
@@ -136,51 +128,48 @@ const UsersTable = () => {
     setModalOpen(false);
     setSelectedUser(null);
     setSelectedRole("");
+    setSelectedActive(""); 
   };
 
   const handleUpdate = async () => {
     if (!selectedUser) return;
-  
-    let roleUpdated = null;
-    let activeUpdated = null;
+
+    const updates: UpdateUserParams = {};
+    let hasChanges = false;
+
   
     if (selectedRole !== selectedUser.role) {
-      roleUpdated = await updateUserRole(selectedUser.user_id, selectedRole);
+      updates.role = selectedRole;
+      hasChanges = true;
     }
   
     if ((selectedActive === "Yes") !== selectedUser.active) {
-      activeUpdated = await updateUserActive(
-        selectedUser.user_id,
-        selectedActive === "Yes" ? "Yes" : "No"
-      );
+      updates.active = selectedActive;
+      hasChanges = true;
     }
+
+    if (!hasChanges) {
+      toast({
+        variant: "destructive",
+        title: "No Changes found!",
+      });
+      closeModal();
+      return;
+    }
+
+    const result = await updateUser(selectedUser.user_id, updates);
   
-    if (roleUpdated?.updated && activeUpdated?.updated) {
+    if (result.success) {
       toast({
         variant: "success",
-        title: "User Updated",
-        description: "Role and active status updated successfully",
-      });
-    } else if (roleUpdated?.updated) {
-      toast({
-        variant: "success",
-        title: "Role Updated",
-        description: "User role updated successfully",
-      });
-    } else if (activeUpdated?.updated) {
-      toast({
-        variant: "success",
-        title: "Status Updated",
-        description: "User active status updated successfully",
+        title: "User Updated"
       });
     } else {
       toast({
         variant: "destructive",
-        title: "No Changes",
-        description: "No updates were made to the user",
+        title: result.error || "Failed to update user",
       });
     }
-  
     closeModal();
   };
   
