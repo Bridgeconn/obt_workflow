@@ -97,11 +97,7 @@ const fetchProjects = async (): Promise<Project[]> => {
 
   const { projects } = await response.json();
 
-  return projects
-    .sort(
-      (a: ProjectResponse, b: ProjectResponse) => b.project_id - a.project_id
-    )
-    .map((project: ProjectResponse) => ({
+  return projects.map((project: ProjectResponse) => ({
       id: project.project_id.toString(),
       name: project.name,
       owner: project.user_name,

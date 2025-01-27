@@ -52,6 +52,7 @@ class Project(Base):
     audio_lang = Column(String, nullable=True)   
     meta_data = Column(String, nullable=False)
     archive = Column(Boolean, default=False)
+    created_date = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 

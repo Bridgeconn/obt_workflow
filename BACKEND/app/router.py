@@ -766,7 +766,7 @@ async def get_user_projects(
     """
     if current_user.role in ["Admin", "AI"]:
         # Fetch all projects
-        projects = db.query(Project).all()
+        projects = db.query(Project).order_by(Project.created_date.desc()).all()
 
         if not projects:
             raise HTTPException(status_code=404, detail="No projects found.")
@@ -819,7 +819,10 @@ async def get_user_projects(
         # Users can only view their own projects
         # Fetch all projects for the user
         projects = (
-            db.query(Project).filter(Project.owner_id == current_user.user_id).all()
+            db.query(Project)
+            .filter(Project.owner_id == current_user.user_id)
+            .order_by(Project.created_date.desc())
+            .all()
         )
 
         if not projects:
