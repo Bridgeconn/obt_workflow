@@ -21,7 +21,7 @@ import datetime
 from pydantic import EmailStr
 from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
-from crud import call_ai_api, call_tts_api
+from crud import call_stt_api, call_tts_api
 from utils import send_email
 
 load_dotenv()
@@ -1164,7 +1164,7 @@ async def convert_to_text(
                 db.commit()
         
     file_paths = [verse.path for verse in verses]
-    test_result = call_ai_api(file_paths[0], script_lang)
+    test_result = call_stt_api(file_paths[0], script_lang)
     if "error" in test_result:
         raise HTTPException(status_code=400, detail=test_result["error"])
     background_tasks.add_task(crud.transcribe_verses, file_paths, script_lang, db)

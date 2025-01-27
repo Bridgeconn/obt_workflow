@@ -387,7 +387,7 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             db_session.refresh(job)
             try:
                 # Call AI API for transcription
-                result = call_ai_api(file_path,script_lang)
+                result = call_stt_api(file_path,script_lang)
                 if "error" in result:
                     # Update job and verse statuses in case of an error
                     job.status = "failed"
@@ -461,19 +461,54 @@ def check_ai_job_status(ai_jobid: str) -> dict:
     """
     job_status_url = f"https://api.vachanengine.org/v2/ai/model/job?job_id={ai_jobid}"
     headers = {"Authorization": "Bearer ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"}
-    response = requests.get(job_status_url, headers=headers)
+    try:
+        response = requests.get(job_status_url, headers=headers, timeout=30)
 
-    if response.status_code == 200:
-        return response.json()
-    else:
-        logger.error(f"Failed to fetch AI job status: {response.status_code} - {response.text}")
-        return {"error": "Failed to fetch job status"}
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Failed to fetch AI job status: {response.status_code} - {response.text}")
+            return {"error": "Failed to fetch job status", 
+                    "data": {
+                        "status": "Error",
+                        "details": f"Failed to fetch AI job status: {response.status_code} - {response.text}"
+                    }}
+    
+    except requests.exceptions.Timeout:
+        logger.error("Timeout while checking job status")
+        return {
+            "error": "Timeout Error",
+            "data": {
+                "status": "Error",
+                "details": "Request timed out while checking job status"
+            }
+        }
+        
+    except requests.exceptions.ConnectionError:
+        logger.error("Connection error while checking job status")
+        return {
+            "error": "Connection Error",
+            "data": {
+                "status": "Error",
+                "details": "Failed to connect to the API"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Unexpected error checking job status: {str(e)}")
+        return {
+            "error": "Unexpected Error",
+            "data": {
+                "status": "Error",
+                "details": str(e)
+            }
+        }
 
 
 
 
 
-def call_ai_api(file_path: str, script_lang: str) -> dict:
+def call_stt_api(file_path: str, script_lang: str) -> dict:
     """
      Calls the AI API to transcribe the given audio file.
     """
@@ -552,7 +587,7 @@ def call_ai_api(file_path: str, script_lang: str) -> dict:
             logger.error(f"AI API Error: {response.status_code} - {response.text}")
             return {"error": "Failed to transcribe", "status_code": response.status_code}
     except Exception as e:
-        logger.error(f"Error in call_ai_api: {str(e)}")
+        logger.error(f"Error in call_stt_api: {str(e)}")
         return {"error": "Exception occurred", "details": str(e)}
 
 
