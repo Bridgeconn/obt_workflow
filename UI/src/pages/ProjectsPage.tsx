@@ -28,7 +28,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DebouncedInput } from "@/components/DebouncedInput";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
-const MAX_FILE_SIZE = 1 * 1024 * 1024 * 1024;
 
 // Improved Book Interface
 interface Book {
@@ -357,7 +356,7 @@ const ProjectsPage: React.FC = () => {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      validateAndUploadFile(files[0]);
+      uploadFile(files[0]);
     }
   };
 
@@ -366,18 +365,11 @@ const ProjectsPage: React.FC = () => {
     e.stopPropagation();
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-      validateAndUploadFile(files[0]);
+      uploadFile(files[0]);
     }
   };
 
-  const validateAndUploadFile = (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
-      toast({
-        title: "File too large. Maximum size is 1GB",
-        variant: "destructive",
-      });
-      return;
-    }
+  const uploadFile = (file: File) => {
 
     uploadMutation.mutate(file);
 
