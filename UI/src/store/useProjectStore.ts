@@ -12,12 +12,6 @@ interface ProjectDetailsState {
   fetchProjectDetails: (projectId: number) => void;
   clearProjectState: () => void;
   transcribeBook: (bookId: number, queryClient?: QueryClient) => Promise<void>;
-  retryChapterTranscription: (
-    projectId: number,
-    bookId: number,
-    chapterId: number,
-    queryClient?: QueryClient
-  ) => Promise<void>;
   archiveProject: (projectId: number, archive: boolean) => Promise<void>;
 }
 
@@ -534,7 +528,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     if (!state.project) return {};
 
                     const updatedBooks = state.project.books.map((b) => {
-                      if (b.book_id === bookId) {
+                      if (b.book_id === bookId && b?.chapters.length) {
                         const updatedChapters = b.chapters.map((ch) => {
                           if (ch.chapter === chapter.chapter) {
                             return {
@@ -552,14 +546,14 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                           return ch;
                         });
 
-                        const bookStatus = updatedChapters.every(
-                          (ch) => ch.status === "transcribed"
+                          const bookStatus = !updatedChapters.length
+                          ? b.status
+                          : updatedChapters.every((ch) => ch.status === "transcribed"
                         )
                           ? "transcribed"
                           : "inProgress";
 
-                        const currentChapterProgress =
-                          updatedChapters.find(
+                        const currentChapterProgress = updatedChapters.find(
                             (ch) => ch.chapter_id === chapter.chapter_id
                           )?.progress || "Calculating...";
 
@@ -614,7 +608,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
               if (!state.project) return {};
 
               const updatedBooks = state.project.books.map((b) => {
-                if (b.book_id === bookId) {
+                if (b.book_id === bookId && b?.chapters.length) {
                   const updatedChapters = b.chapters.map((ch) => {
                     if (ch.chapter === chapter.chapter) {
                       return {
@@ -659,7 +653,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
           if (!state.project) return {};
 
           const updatedBooks = state.project.books.map((b) => {
-            if (b.book_id === bookId) {
+            if (b.book_id === bookId && b?.chapters.length) {
               const bookStatus = hasErrors ? "error" : "transcribed";
               return { ...b, status: bookStatus };
             }
@@ -678,225 +672,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         set({ error: "Error transcribing book", isLoading: false });
         throw error;
       }
-    },
-
-    retryChapterTranscription: async (
-      projectId: number,
-      bookId: number,
-      chapterId: number,
-      queryClient?: QueryClient
-    ) => {
-      const currentProject = get().project;
-      if (!currentProject) return;
-
-      const token = useAuthStore.getState().token;
-      const book = currentProject.books.find((b) => b.book_id === bookId);
-      const chapter = book?.chapters.find((ch) => ch.chapter_id === chapterId);
-
-      if (!book || !chapter) {
-        throw new Error("Book or chapter not found");
-      }
-
-      try {
-        const transcribeResponse = await fetch(
-          `${BASE_URL}/project/chapter/stt?project_id=${projectId}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        if (!transcribeResponse.ok) {
-          const errRep = await transcribeResponse.json();
-          throw new Error(
-            errRep.detail || `Failed to transcribe chapter ${chapter.chapter}`
-          );
-        }
-
-        await new Promise<void>((resolve, reject) => {
-          const pollChapterStatus = async () => {
-            try {
-              const response = await fetch(
-                `${BASE_URL}/project/${projectId}/${book.book}/${chapter.chapter}`,
-                {
-                  method: "GET",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                  },
-                }
-              );
-
-              if (!response.ok) {
-                throw new Error(
-                  `Failed to fetch chapter status: ${response.statusText}`
-                );
-              }
-
-              const data: ChapterStatusResponse = await response.json();
-              const verses = data.data;
-              const allTranscribed = verses.every((verse) => verse.stt);
-              const completed = verses.filter((verse) => verse.stt).length;
-              const total = verses.length;
-
-              const hasTranscriptionError = verses.some(
-                (verse) =>
-                  verse.stt_msg && verse.stt_msg !== "Transcription successful"
-              );
-
-              // Update progress
-              set((state) => {
-                if (!state.project) return {};
-
-                const updatedBooks = state.project.books.map((b) => {
-                  if (b.book_id === bookId) {
-                    const updatedChapters = b.chapters.map((ch) => {
-                      if (ch.chapter_id === chapterId) {
-                        return {
-                          ...ch,
-                          status: hasTranscriptionError
-                            ? "error"
-                            : allTranscribed
-                            ? "transcribed"
-                            : "inProgress",
-                          progress: allTranscribed
-                            ? ""
-                            : `${completed} out of ${total} done`,
-                        };
-                      }
-                      return ch;
-                    });
-                    const bookStatus = updatedChapters.every(
-                      (ch) => ch.status === "transcribed"
-                    )
-                      ? "transcribed"
-                      : "inProgress";
-
-                    const currentChapterProgress =
-                      updatedChapters.find((ch) => ch.chapter_id === chapterId)
-                        ?.progress || "Calculating...";
-
-                    if (hasTranscriptionError) {
-                      return {
-                        ...b,
-                        chapters: updatedChapters,
-                        status: "error",
-                        progress: "Transcription failed",
-                      };
-                    }
-
-                    return {
-                      ...b,
-                      chapters: updatedChapters,
-                      status: bookStatus,
-                      progress: currentChapterProgress,
-                    };
-                  }
-                  return b;
-                });
-
-                return {
-                  project: {
-                    ...state.project,
-                    books: updatedBooks,
-                  },
-                };
-              });
-              // Check if transcription is complete
-              if (completed === total) {
-                set((state) => {
-                  if (!state.project) return {};
-
-                  const updatedBooks = state.project.books.map((b) => {
-                    if (b.book_id === bookId) {
-                      const updatedChapters = b.chapters.map((ch) => {
-                        if (ch.chapter_id === chapterId) {
-                          return {
-                            ...ch,
-                            status: "transcribed",
-                            progress: "",
-                          };
-                        }
-                        return ch;
-                      });
-
-                      const allTranscribed = updatedChapters.every(
-                        (ch) => ch.status === "transcribed"
-                      );
-
-                      return {
-                        ...b,
-                        chapters: updatedChapters,
-                        status: allTranscribed ? "transcribed" : b.status,
-                        progress: "",
-                      };
-                    }
-                    return b;
-                  });
-
-                  return {
-                    project: {
-                      ...state.project,
-                      books: updatedBooks,
-                    },
-                  };
-                });
-
-                resolve();
-              } else {
-                setTimeout(pollChapterStatus, 10000);
-              }
-            } catch (error) {
-              reject(error);
-            }
-          };
-
-          pollChapterStatus();
-        });
-      } catch (error) {
-        set((state) => {
-          if (!state.project) return {};
-
-          const updatedBooks = state.project.books.map((b) => {
-            if (b.book_id === bookId) {
-              const updatedChapters = b.chapters.map((ch) => {
-                if (ch.chapter_id === chapterId) {
-                  return {
-                    ...ch,
-                    status: "error",
-                    progress: "API Error: Transcription failed",
-                  };
-                }
-                return ch;
-              });
-
-              return {
-                ...b,
-                chapters: updatedChapters,
-                status: "error",
-                progress: "API Error: Transcription failed",
-              };
-            }
-            return b;
-          });
-
-          return {
-            project: {
-              ...state.project,
-              books: updatedBooks,
-            },
-          };
-        });
-
-        throw error;
-      }
-      set({ isLoading: false });
-      queryClient?.invalidateQueries({
-        queryKey: ["project-details", currentProject.project_id],
-      });
     },
 
     archiveProject: async (projectId, archive) => {
@@ -1004,7 +779,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
         useProjectDetailsStore.getState().setProject((prevProject) => {
           if (!prevProject) return prevProject;
           const updatedBooks = prevProject.books.map((b) => {
-            if (b.book === book) {
+            if (b.book === book && b.chapters?.length) {
               const updatedChapters = b.chapters.map((ch) => {
                 if (ch.chapter === chapter) {
                   const newStatus =
@@ -1013,15 +788,16 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                 }
                 return ch;
               });
-              const updatedBookStatus = updatedChapters.every(
-                (ch) => ch.status === "approved"
-              )
-                ? "approved"
-                : updatedChapters.every((ch) =>
-                    ["transcribed", "approved"].includes(ch.status ?? "")
-                  )
-                ? "transcribed"
-                : b.status || "notTranscribed";
+              const updatedBookStatus = !updatedChapters.length
+              ? b.status || "notTranscribed"
+              : updatedChapters.every((ch) => ch.status === "approved")
+              ? "approved"
+              : updatedChapters.every((ch) =>
+                  ["transcribed", "approved"].includes(ch.status ?? "")
+                )
+              ? "transcribed"
+              : b.status || "notTranscribed";
+
               return {
                 ...b,
                 chapters: updatedChapters,
@@ -1074,7 +850,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
           if (!prevProject) return null;
 
           const updatedBooks = prevProject.books.map((b) => {
-            if (b.book === book) {
+            if (b.book === book && b.chapters?.length) {
               const updatedChapters = b.chapters.map((ch) => {
                 if (ch.chapter === chapter) {
                   const newStatus = approve
@@ -1092,27 +868,30 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                 }
                 return ch;
               });
-              const updatedBookStatus = updatedChapters.every(
-                (ch) => ch.approved
-              )
-                ? "approved"
-                : updatedChapters.every((ch) =>
-                    ["converted", "approved"].includes(ch.status ?? "")
+
+                const updatedBookStatus = !updatedChapters.length
+                  ? b.status || "notTranscribed"
+                  : updatedChapters.every(
+                    (ch) => ch.approved
                   )
-                ? "converted"
-                : updatedChapters.every((ch) =>
-                    ["transcribed", "converted", "approved"].includes(
-                      ch.status ?? ""
-                    )
-                  )
-                ? "transcribed"
-                : b.status || "notTranscribed";
+                    ? "approved"
+                    : updatedChapters.every((ch) =>
+                        ["converted", "approved"].includes(ch.status ?? "")
+                      )
+                    ? "converted"
+                    : updatedChapters.every((ch) =>
+                        ["transcribed", "converted", "approved"].includes(
+                          ch.status ?? ""
+                        )
+                      )
+                    ? "transcribed"
+                    : b.status || "notTranscribed";
 
               return {
                 ...b,
                 chapters: updatedChapters,
                 status: updatedBookStatus,
-                approved: updatedChapters.every((ch) => ch.approved),
+                approved: updatedChapters.length > 0 && updatedChapters.every((ch) => ch.approved),
               };
             }
             return b;
@@ -1204,7 +983,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
               if (!prevProject) return prevProject;
 
               const updatedBooks = prevProject.books.map((b) => {
-                if (b.book === bookName) {
+                if (b.book === bookName && b.chapters?.length) {
                   const updatedChapters = b.chapters.map((ch) => {
                     if (ch.chapter_id === chapter.chapter_id) {
                       // Check for any TTS errors
@@ -1233,8 +1012,8 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                   });
 
                   // Update book status based on chapters
-                  const allConverted = updatedChapters.every(
-                    (ch) => ch.status === "converted"
+                  const allConverted =  updatedChapters.length > 0 && updatedChapters.every(
+                    (ch) => ["converted", "approved"].includes(ch?.status || "")
                   );
                   // const hasError = updatedChapters.some(
                   //   ch => ch.status === "error"
@@ -1280,7 +1059,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                 if (!prevProject) return prevProject;
 
                 const updatedBooks = prevProject.books.map((b) => {
-                  if (b.book === bookName) {
+                  if (b.book === bookName && b?.chapters.length) {
                     const updatedChapters = b.chapters.map((ch) => {
                       if (ch.chapter_id === chapter.chapter_id) {
                         return {
@@ -1291,7 +1070,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       }
                       return ch;
                     });
-                    const checkTranscribed = updatedChapters.every((ch) =>
+                    const checkTranscribed = updatedChapters.length > 0 && updatedChapters.every((ch) =>
                       ["transcribed", "converted", "approved"].includes(
                         ch.status ?? ""
                       )
@@ -1335,7 +1114,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                 if (!prevProject) return prevProject;
 
                 const updatedBooks = prevProject.books.map((b) => {
-                  if (b.book === bookName) {
+                  if (b.book === bookName && b.chapters?.length) {
                     const updatedChapters = b.chapters.map((ch) => {
                       if (ch.chapter_id === chapter.chapter_id) {
                         return {
@@ -1347,7 +1126,9 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       return ch;
                     });
 
-                    const bookStatus = updatedChapters.every(
+                    const bookStatus = !updatedChapters.length
+                    ? b.status
+                    : updatedChapters.every(
                       (ch) => ch.status === "converted"
                     )
                       ? "converted"

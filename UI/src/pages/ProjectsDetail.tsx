@@ -81,7 +81,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     fetchProjectDetails,
     clearProjectState,
     transcribeBook,
-    // retryChapterTranscription,
     archiveProject,
   } = useProjectDetailsStore();
   const { servedModels, refetch } = useServedModels();
