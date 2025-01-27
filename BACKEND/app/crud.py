@@ -117,17 +117,72 @@ def process_project_files(input_path, output_path, db, project):
                     if chapter_dir.is_dir() and chapter_dir.name.isdigit():
                         chapter_number = int(chapter_dir.name)
                         chapter_max_verses = int(book_max_verses[chapter_number - 1]) if chapter_number <= len(book_max_verses) else 0
-                        # Get all available verses in the chapter
-                        available_verses = set(
-                            int(verse_file.stem.split("_")[1])
-                            for verse_file in chapter_dir.iterdir()
-                            if verse_file.is_file() and "_" in verse_file.stem
-                        )
+                        
+                        # # Get all available verses in the chapter
+                        # available_verses = set(
+                        #     int(verse_file.stem.split("_")[1])
+                        #     for verse_file in chapter_dir.iterdir()
+                        #     if verse_file.is_file() and "_" in verse_file.stem
+                        # )
+                        
+                        # Process verses, tracking and removing duplicates
+                        verse_files = {}
+                        for verse_file in chapter_dir.iterdir():
+                            if verse_file.is_file() and "_" in verse_file.stem:
+                                try:
+                                    # Split the filename to extract components
+                                    parts = verse_file.stem.split("_")
+                                    
+                                    # Ensure the file matches chapter and has verse number
+                                    if (int(parts[0]) == chapter_number and 
+                                        len(parts) >= 2 and 
+                                        parts[1].isdigit()):
+                                        
+                                        verse_number = int(parts[1])
+                                        
+                                        # Determine file priority
+                                        if len(parts) == 2:  # Basic format like 1_1.mp3
+                                            priority = 2
+                                        elif "default" in parts:  # Contains 'default'
+                                            priority = 1
+                                        else:  # Any other format (takes)
+                                            priority = 0
+                                    
+                                        # Add or replace based on priority
+                                        if verse_number not in verse_files:
+                                            # First file for this verse number
+                                            verse_files[verse_number] = {
+                                                'file': verse_file,
+                                                'priority': priority
+                                            }
+                                        elif priority > verse_files[verse_number]['priority']:
+                                            # New file has higher priority (basic format or default)
+                                            logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['file']}")
+                                            os.remove(verse_files[verse_number]['file'])
+                                            verse_files[verse_number] = {
+                                                'file': verse_file,
+                                                'priority': priority
+                                            }
+                                        else:
+                                            # Keep existing file, remove the current one
+                                            logger.info(f"Removing duplicate verse file: {verse_file}")
+                                            os.remove(verse_file)
+
+                                except (ValueError, IndexError):
+                                    logger.warning(f"Invalid file name format: {verse_file.name}")
+                                    
+                        # Finalize verse files after prioritization
+                        selected_files = {verse: data['file'] for verse, data in verse_files.items()}
+                        
+                        # Get available verses after duplicate removal
+                        available_verses = set(selected_files.keys())
+                        
                         if not available_verses:
                             # If no verses are found, delete the empty chapter folder
                             logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
                             shutil.rmtree(chapter_dir)
-                            continue  
+                            continue
+
                         # Determine missing verses
                         expected_verses = set(range(1, chapter_max_verses + 1))
                         missing_verses = list(expected_verses - available_verses)
@@ -142,29 +197,25 @@ def process_project_files(input_path, output_path, db, project):
                         db.commit()
                         db.refresh(chapter_entry)
                         # Add verse records
-                        for verse_file in chapter_dir.iterdir():
-                            if verse_file.is_file() and "_" in verse_file.stem:
-                                try:
-                                    verse_number = int(verse_file.stem.split("_")[1])
-                                    verse = Verse(
-                                        chapter_id=chapter_entry.chapter_id,
-                                        verse=verse_number,
-                                        name=verse_file.name,
-                                        path=str(verse_file),
-                                        size=verse_file.stat().st_size,
-                                        format=verse_file.suffix.lstrip("."),
-                                        stt=False,
-                                        text="",
-                                        modified=False,
-                                        tts=False,
-                                        tts_path="",
-                                        stt_msg="",
-                                        tts_msg="",
-                                    )
-                                    db.add(verse)
-                                except ValueError:
-                                    logger.warning(f"Invalid file name format: {verse_file.name}")
-                                    continue
+                        for verse_number, verse_file in selected_files.items():
+                            # Create a verse entry in the database  
+                            verse = Verse(
+                                chapter_id=chapter_entry.chapter_id,
+                                verse=verse_number,
+                                name=verse_file.name,
+                                path=str(verse_file),
+                                size=verse_file.stat().st_size,
+                                format=verse_file.suffix.lstrip("."),
+                                stt=False,
+                                text="",
+                                modified=False,
+                                tts=False,
+                                tts_path="",
+                                stt_msg="",
+                                tts_msg="",
+                            )
+                            db.add(verse)
+                               
         db.commit()
     except Exception as e:
         logger.error(f"Error while processing project files: {str(e)}") 

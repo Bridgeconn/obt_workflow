@@ -452,6 +452,7 @@ async def add_new_book_zip(
     project_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(dependency.get_db),
+    current_user: dict = Depends(auth.get_current_user),
 ):
     """
     Add a new book to a project from a ZIP file. Check for missing verses and delete chapters with zero verses.
