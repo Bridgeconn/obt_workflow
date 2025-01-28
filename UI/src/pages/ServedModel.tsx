@@ -9,6 +9,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useServedModels } from "@/hooks/use-served-models";
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 
 const AVAILABLE_MODELS = [
   "mms-1b-all",
@@ -20,10 +22,15 @@ const AVAILABLE_MODELS = [
 export default function ServedModel() {
 
   const { servedModels, isLoading, refetch } = useServedModels();
+  const navigate = useNavigate();
 
   useEffect(() => {
     refetch();
   }, []);
+
+  const handleClose = () => {
+    navigate("/"); // Navigate back to the home page
+  };
 
   return (
     <div className="p-8 max-w-4xl space-y-6 rounded-lg max-h-[420px] h-[420px]">
@@ -78,6 +85,14 @@ export default function ServedModel() {
           </div>
         )}
       </div>
+      <div className="flex justify-between mt-4">
+      <Button
+        variant="outline"
+        onClick={handleClose} // Navigate back when Close is clicked
+      >
+        Close
+      </Button>
+    </div>
     </div>
   );
 }
