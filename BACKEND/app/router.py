@@ -464,7 +464,11 @@ async def add_new_book_zip(
     temp_extract_path = None
     try:
         # Check if the project exists
-        project = db.query(Project).filter(Project.project_id == project_id).first()
+        project = (
+        db.query(Project).filter(
+            Project.owner_id == current_user.user_id, Project.project_id == project_id
+        ).first()
+        )
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         

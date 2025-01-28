@@ -35,8 +35,6 @@ UPLOAD_DIR = "Input"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-
-
 def process_project_files(input_path, output_path, db, project):
     """
     Process the files in the extracted project directory and populate the database.
@@ -98,11 +96,37 @@ def process_project_files(input_path, output_path, db, project):
             logger.error("Ingredients folder not found. Checked all possible locations.")
             raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
         logger.info(f"Ingredients folder found at: {ingredients_path}")
+        has_valid_books =False
         # Process books, chapters, and verses in `ingredients`
         for book_dir in ingredients_path.iterdir():
             if book_dir.is_dir():
                 book_name = book_dir.name
                 book_max_verses = max_verses.get(book_name, [])
+                
+                # Check if the book has any chapters with valid verses
+                has_valid_chapters = False
+                for chapter_dir in book_dir.iterdir():
+                    if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+                        chapter_number = int(chapter_dir.name)
+                        chapter_max_verses = int(book_max_verses[chapter_number - 1]) if chapter_number <= len(book_max_verses) else 0
+                        # Get all available verses in the chapter
+                        available_verses = set(
+                        int(verse_file.stem.split("_")[1])
+                        for verse_file in chapter_dir.iterdir()
+                        if verse_file.is_file() and"_"in verse_file.stem
+                        )
+                
+                        if available_verses:
+                            has_valid_chapters = True
+                            break
+                # No need to check further chapters if one valid chapter is found
+                if not has_valid_chapters:
+                    logger.info(f"Skipping book '{book_name}' as it has no valid chapters.")
+                    continue# Skip this book if no valid chapters are found
+
+                # If at least one book with valid chapters is found, mark the project as valid
+                has_valid_books = True
+                
                 # Create a book entry in the database
                 book_entry = Book(
                     project_id=project.project_id,
@@ -112,7 +136,7 @@ def process_project_files(input_path, output_path, db, project):
                 db.add(book_entry)
                 db.commit()
                 db.refresh(book_entry)
-
+                
                 for chapter_dir in book_dir.iterdir():
                     if chapter_dir.is_dir() and chapter_dir.name.isdigit():
                         chapter_number = int(chapter_dir.name)
@@ -134,8 +158,8 @@ def process_project_files(input_path, output_path, db, project):
                                     parts = verse_file.stem.split("_")
                                     
                                     # Ensure the file matches chapter and has verse number
-                                    if (int(parts[0]) == chapter_number and 
-                                        len(parts) >= 2 and 
+                                    if (int(parts[0]) == chapter_number and
+                                        len(parts) >= 2 and
                                         parts[1].isdigit()):
                                         
                                         verse_number = int(parts[1])
@@ -215,11 +239,31 @@ def process_project_files(input_path, output_path, db, project):
                                 tts_msg="",
                             )
                             db.add(verse)
-                               
+
         db.commit()
+         # If no valid books or chapters were found, delete the project and its folder structure
+        if not has_valid_books:
+            logger.error("No valid books or chapters found in the project. Rolling back project creation.")
+
+            # Delete the project from the database
+            db.delete(project)
+            db.commit()
+
+            # Remove the project folder structure
+            project_base_path = BASE_DIR / str(project.project_id)
+            if project_base_path.exists():
+                shutil.rmtree(project_base_path)
+                logger.info(f"Deleted project folder: {project_base_path}")
+
+            raise HTTPException(status_code=400, detail="No valid books or chapters found in the project")
+    
+    except HTTPException as http_exc:
+    # If it's already an HTTPException, re-raise it without modification
+        raise http_exc
+
     except Exception as e:
-        logger.error(f"Error while processing project files: {str(e)}") 
-        raise HTTPException(status_code=500, detail="Error while processing project files")
+        logger.error(f"Error while processing project files: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     
 def process_chapters(book_folder, project, book_entry, db,book_name):
     """
