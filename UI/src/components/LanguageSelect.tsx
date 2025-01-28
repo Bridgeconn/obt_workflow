@@ -6,6 +6,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from "@/components/ui/command";
 import {
   Popover,
@@ -13,13 +14,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Check, ChevronDown } from "lucide-react";
-import source_languages from "../data/source_languages.json";
+import languages from "../data/source_languages.json";
 
-interface LanguageItem {
-  id: number;
-  language_name: string;
-  source_language: string;
-}
 
 interface LanguageSelectProps {
   onLanguageChange: (selectedId: string) => void;
@@ -34,7 +30,14 @@ const LanguageSelect: React.FC<LanguageSelectProps> = ({
   const [value, setValue] = useState(selectedLanguageId);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const languages = source_languages as LanguageItem[];
+  // Get unique source languages
+  const sourceLanguages = [...new Set(languages.map(lang => lang.source_language))];
+
+  // Create groups
+  const groupedLanguages = sourceLanguages.map(source => ({
+    sourceLanguage: source,
+    languages: languages.filter(lang => lang.source_language === source)
+  }));
 
   const selectedLanguage = value
     ? languages.find((lang) => lang.id === parseInt(value))?.language_name
@@ -46,8 +49,21 @@ const LanguageSelect: React.FC<LanguageSelectProps> = ({
     }
   }, [selectedLanguageId]);
 
+  const getFilteredGroups = (query: string) => {
+    if (!query) return groupedLanguages;
+    
+    return groupedLanguages
+      .map(group => ({
+        sourceLanguage: group.sourceLanguage,
+        languages: group.languages.filter(lang =>
+          lang.language_name.toLowerCase().includes(query.toLowerCase())
+        )
+      }))
+      .filter(group => group.languages.length > 0);
+  };
+
   return (
-    <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
+    <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-auto md:w-auto">
       <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
         Audio Language
       </label>
@@ -71,35 +87,34 @@ const LanguageSelect: React.FC<LanguageSelectProps> = ({
             />
             <CommandList>
               <CommandEmpty>No language found.</CommandEmpty>
-              <CommandGroup>
-                {languages
-                  .filter((language) =>
-                    language.language_name
-                      .toLowerCase()
-                      .includes(searchQuery.toLowerCase())
-                  )
-                  .map((language) => (
-                    <CommandItem
-                      key={language.id}
-                      value={language.language_name}
-                      onSelect={() => {
-                        setValue(String(language.id));
-                        setSearchQuery("");
-                        setOpen(false);
-                        onLanguageChange(String(language.id));
-                      }}
-                    >
-                      <Check
-                        className={`mr-2 h-4 w-4 ${
-                          value === String(language.id)
-                            ? "opacity-100"
-                            : "opacity-0"
-                        }`}
-                      />
-                      {language.language_name}
-                    </CommandItem>
-                  ))}
-              </CommandGroup>
+              {getFilteredGroups(searchQuery).map((group, index) => (
+                <React.Fragment key={group.sourceLanguage}>
+                  {index > 0 && <CommandSeparator />}
+                  <CommandGroup heading={group.sourceLanguage}>
+                    {group.languages.map((language) => (
+                      <CommandItem
+                        key={language.id}
+                        value={language.language_name}
+                        onSelect={() => {
+                          setValue(String(language.id));
+                          setSearchQuery("");
+                          setOpen(false);
+                          onLanguageChange(String(language.id));
+                        }}
+                      >
+                        <Check
+                          className={`mr-2 h-4 w-4 ${
+                            value === String(language.id)
+                              ? "opacity-100"
+                              : "opacity-0"
+                          }`}
+                        />
+                        {language.language_name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </React.Fragment>
+              ))}
             </CommandList>
           </Command>
         </PopoverContent>

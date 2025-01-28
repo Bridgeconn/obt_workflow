@@ -81,7 +81,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     fetchProjectDetails,
     clearProjectState,
     transcribeBook,
-    // retryChapterTranscription,
     archiveProject,
   } = useProjectDetailsStore();
   const { servedModels, refetch } = useServedModels();
@@ -532,21 +531,24 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       ) : (
         <>
           {/* Project Title */}
-          <div className="flex flex-col md:flex-row items-center sm:items-start justify-between gap-4 mb-10">
-            <div className="flex flex-col md:flex-row items-center gap-8">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-10">
+          <div className="flex flex-col xl:flex-row w-full gap-8">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => navigate("/")}
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["projects"] });
+                  navigate("/")
+                }}
                 className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
                 title="Back to Projects"
               >
                 <ArrowLeft className="w-6 h-6" />
               </button>
-              <h1 className="text-4xl font-bold text-purple-700">
+              <h1 className="text-4xl font-bold text-purple-700 whitespace-nowrap overflow-hidden text-ellipsis">
                 {project?.name}
               </h1>
             </div>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 flex-wrap">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 flex-wrap">
             {/* Audio Language */}
             <LanguageSelect
               onLanguageChange={handleLanguageChange}
@@ -556,7 +558,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             {/* Script Language */}
             <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
               <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-                Script Language : {matchedLanguage && (matchedLanguage.language_name)}
+                Script Language : <label className="text-gray-800 font-medium">{matchedLanguage && (matchedLanguage.language_name)}</label>
               </label>
              
             </div>
@@ -671,10 +673,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 {chapter.status === "error" && (
                                   <button
                                     className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
-                                    // onClick={(e) =>
-                                    //   handleChapterRetry(book, chapter, e)
-                                    // }
-                                    // title="Retry transcription"
                                   >
                                     <RotateCcw className="w-3 h-3" />
                                   </button>
@@ -861,44 +859,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               />
             )}
           </div>
-
-          {/* <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
-              <Button className="w-full md:w-auto" onClick={handleCloseProject}>
-                Close
-              </Button>
-              <Button
-                className="w-full md:w-auto"
-                onClick={handleArchiveProject}
-              >
-                {archive ? "Unarchive" : "Archive"}
-              </Button>
-            </div>
-            <>
-              <input
-                type="file"
-                accept=".zip"
-                onChange={handleFileInputChange}
-                ref={fileInputRef}
-                hidden
-              />
-              <Button
-                className="w-full md:w-auto"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Upload Book
-              </Button>
-            </>
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
-              <Button
-                className="w-full md:w-auto"
-                onClick={handleDownloadProject}
-                disabled={!project.books.some((book) => book.approved)}
-              >
-                Download Project
-              </Button>
-            </div>
-          </div> */}
         </>
       )}
     </div>
