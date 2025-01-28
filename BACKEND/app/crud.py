@@ -142,13 +142,6 @@ def process_project_files(input_path, output_path, db, project):
                         chapter_number = int(chapter_dir.name)
                         chapter_max_verses = int(book_max_verses[chapter_number - 1]) if chapter_number <= len(book_max_verses) else 0
                         
-                        # # Get all available verses in the chapter
-                        # available_verses = set(
-                        #     int(verse_file.stem.split("_")[1])
-                        #     for verse_file in chapter_dir.iterdir()
-                        #     if verse_file.is_file() and "_" in verse_file.stem
-                        # )
-                        
                         # Process verses, tracking and removing duplicates
                         verse_files = {}
                         for verse_file in chapter_dir.iterdir():

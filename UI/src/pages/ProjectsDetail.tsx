@@ -673,10 +673,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 {chapter.status === "error" && (
                                   <button
                                     className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
-                                    // onClick={(e) =>
-                                    //   handleChapterRetry(book, chapter, e)
-                                    // }
-                                    // title="Retry transcription"
                                   >
                                     <RotateCcw className="w-3 h-3" />
                                   </button>
@@ -863,44 +859,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               />
             )}
           </div>
-
-          {/* <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mt-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
-              <Button className="w-full md:w-auto" onClick={handleCloseProject}>
-                Close
-              </Button>
-              <Button
-                className="w-full md:w-auto"
-                onClick={handleArchiveProject}
-              >
-                {archive ? "Unarchive" : "Archive"}
-              </Button>
-            </div>
-            <>
-              <input
-                type="file"
-                accept=".zip"
-                onChange={handleFileInputChange}
-                ref={fileInputRef}
-                hidden
-              />
-              <Button
-                className="w-full md:w-auto"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Upload Book
-              </Button>
-            </>
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
-              <Button
-                className="w-full md:w-auto"
-                onClick={handleDownloadProject}
-                disabled={!project.books.some((book) => book.approved)}
-              >
-                Download Project
-              </Button>
-            </div>
-          </div> */}
         </>
       )}
     </div>

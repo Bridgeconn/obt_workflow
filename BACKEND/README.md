@@ -242,3 +242,5 @@ filename.zip
 ```
 
 **Note**: Each of these structures should contain all necessary files and directories to ensure proper processing of the project.
+
+Please refer to [this file](db/alembic.md) for any new database changes.

@@ -374,7 +374,6 @@ const UsersTable = () => {
 
       <div className="flex items-center justify-center gap-2 mt-4">
         <Button
-          variant="outline"
           size="sm"
           onClick={() => table.previousPage()}
           disabled={!table.getCanPreviousPage()}
@@ -383,13 +382,10 @@ const UsersTable = () => {
         </Button>
         <span className="flex items-center gap-1">
           <div>Page</div>
-          <strong>
             {table.getState().pagination.pageIndex + 1} of{" "}
             {table.getPageCount()}
-          </strong>
         </span>
         <Button
-          variant="outline"
           size="sm"
           onClick={() => table.nextPage()}
           disabled={!table.getCanNextPage()}
