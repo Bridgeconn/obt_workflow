@@ -49,8 +49,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     owner_id = Column(Integer, ForeignKey("user.user_id"), nullable=False)
     script_lang = Column(String, nullable=True)  
-    audio_lang = Column(String, nullable=True)   
-    meta_data = Column(String, nullable=False)
+    audio_lang = Column(String, nullable=True)
     archive = Column(Boolean, default=False)
     created_date = Column(DateTime, default=datetime.datetime.utcnow)
 
