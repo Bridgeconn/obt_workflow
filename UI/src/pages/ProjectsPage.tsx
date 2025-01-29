@@ -36,6 +36,11 @@ interface Book {
   approved: boolean;
 }
 
+interface DateInfo {
+  display: string;
+  full: string;
+}
+
 interface Project {
   id: string;
   name: string;
@@ -45,6 +50,7 @@ interface Project {
   books: number;
   approved: number;
   archive: boolean;
+  createdDate: DateInfo;
 }
 
 interface ProjectResponse {
@@ -54,6 +60,7 @@ interface ProjectResponse {
   script_lang: string;
   audio_lang: string;
   archive: boolean;
+  created_date: string;
   books: Book[];
 }
 
@@ -97,7 +104,25 @@ const fetchProjects = async (): Promise<Project[]> => {
 
   const { projects } = await response.json();
 
-  return projects.map((project: ProjectResponse) => ({
+  return projects.map((project: ProjectResponse) => {
+    // Format the date for display
+    const date = new Date(project.created_date);
+    const displayDate = date.toLocaleDateString('en-US', { 
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+    
+    const fullDateTime = date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    return {
       id: project.project_id.toString(),
       name: project.name,
       owner: project.user_name,
@@ -106,7 +131,12 @@ const fetchProjects = async (): Promise<Project[]> => {
       books: project.books.length,
       approved: project.books.filter((book: Book) => book.approved).length,
       archive: project.archive,
-    }));
+      createdDate: {
+        display: displayDate,
+        full: fullDateTime
+      }
+    };
+  });
 };
 
 const uploadProject = async (
@@ -304,6 +334,18 @@ const ProjectsPage: React.FC = () => {
       ),
       size: 50,
     }),
+    columnHelper.accessor("createdDate", {
+      header: "Created Date",
+      cell: (info) => (
+        <div 
+          className="truncate text-center" 
+          title={info.getValue().full}
+        >
+          {info.getValue().display}
+        </div>
+      ),
+      size: 80,
+    }),
     columnHelper.display({
       id: "actions",
       header: "Download",
@@ -456,7 +498,7 @@ const ProjectsPage: React.FC = () => {
                           key={header.id}
                           style={{ width: `${header.column.getSize()}px` }}
                           className={`text-primary bg-gray-100 ${
-                            ["books", "approved", "actions"].includes(header.id)
+                            ["books", "approved", "actions", "createdDate"].includes(header.id)
                               ? "text-center"
                               : "text-left justify-start"
                           }`}
@@ -508,6 +550,7 @@ const ProjectsPage: React.FC = () => {
                                 "books",
                                 "approved",
                                 "actions",
+                                "createdDate"
                               ].includes(cell.column.id)
                                 ? "center"
                                 : "start",

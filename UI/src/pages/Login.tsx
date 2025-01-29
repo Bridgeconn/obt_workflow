@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, FormEvent as ReactFormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import useAuthStore from "@/store/useAuthStore";
@@ -38,6 +38,11 @@ const Login: React.FC = () => {
     }
   };
 
+  const handleSubmit = (e: ReactFormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    handleLogin();
+  };
+
   return (
     <div className="flex flex-col justify-center items-center h-screen bg-gray-100">
       <Card className="w-full max-w-sm">
@@ -46,7 +51,7 @@ const Login: React.FC = () => {
           {/* <CardTitle>Login</CardTitle> */}
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               {/* <label htmlFor="username" className="block mb-2">
                 Username
@@ -71,7 +76,7 @@ const Login: React.FC = () => {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            <Button onClick={handleLogin} className="w-full">
+            <Button type="submit" className="w-full">
               Login
             </Button>
             <div className="text-center mt-4">
@@ -80,7 +85,7 @@ const Login: React.FC = () => {
                 Sign Up
               </Link>
             </div>
-          </div>
+          </form>
         </CardContent>
       </Card>
       <div className="text-center mt-4">
