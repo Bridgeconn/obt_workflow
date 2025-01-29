@@ -823,6 +823,7 @@ async def get_user_projects(
                     "owner_id": project.owner_id,
                     "user_name": owner.username if owner else None,
                     "archive": project.archive,
+                    "created_date": project.created_date,
                     "books": [
                         {
                             "book_id": book.book_id,
@@ -881,6 +882,7 @@ async def get_user_projects(
                     "owner_id": project.owner_id,
                     "user_name": current_user.username,
                     "archive": project.archive,
+                    "created_date": project.created_date,
                     "books": [
                         {
                             "book_id": book.book_id,
