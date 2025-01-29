@@ -361,7 +361,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const allModifiedConverted =
                     modifiedVerses.length > 0 &&
                     modifiedVerses.every((verse) => verse.tts);
-
+                  
                   // const allConverted = verses.every((verse) => verse.tts);
                   const completed = verses.filter((verse) => verse.stt).length;
                   const total = verses.length;
@@ -402,7 +402,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                 }
               })
             );
-
             const bookStatus = chapterStatuses.every(
               (ch) => ch.status === "approved"
             )
@@ -1019,10 +1018,14 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                   //   ch => ch.status === "error"
                   // );
 
+                  const isConverting = updatedChapters.length > 0 && updatedChapters.some(
+                    (ch) => ch.status === "converting"
+                  )
+
                   return {
                     ...b,
                     chapters: updatedChapters,
-                    status: allConverted ? "converted" : "converting",
+                    status: allConverted ? "converted" : isConverting ? "converting" : b.status,
                     progress: updatedChapters.find(
                       (ch) => ch.chapter_id === chapter.chapter_id
                     )?.progress,
@@ -1099,6 +1102,10 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
               await useChapterDetailsStore
                 .getState()
                 .fetchChapterDetails(project_id, bookName, chapter.chapter);
+
+              await useProjectDetailsStore.getState().fetchProjectDetails(
+                project_id
+              )
               set((state) => {
                 const verses = state.chapterVerses[key];
                 if (!verses) return state;
@@ -1126,11 +1133,17 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       return ch;
                     });
 
+                    const isConverting = updatedChapters.length > 0 && updatedChapters.some(
+                      (ch) => ch.status === "converting"
+                    )
+
+                    const isConverted = updatedChapters.length > 0 && updatedChapters.every(
+                      (ch) => ["converted", "approved"].includes(ch.status ?? "") && !isConverting
+                    )
+
                     const bookStatus = !updatedChapters.length
                     ? b.status
-                    : updatedChapters.every(
-                      (ch) => ch.status === "converted"
-                    )
+                    : isConverted
                       ? "converted"
                       : b.status;
 
