@@ -689,6 +689,16 @@ async def add_new_book_zip(
                                 
                                 verse_number = int(parts[1])
                                 
+                                # Store file stats before any deletion
+                                file_stats = {
+                                    'file': verse_file,
+                                    'name': verse_file.name,
+                                    'path': str(verse_file),
+                                    'size': verse_file.stat().st_size,
+                                    'format': verse_file.suffix.lstrip("."),
+                                    'stats': verse_file.stat()
+                                }
+                                
                                 # Determine file priority
                                 if len(parts) == 2:  # Basic format like 1_1.mp3
                                     priority = 2
@@ -700,14 +710,14 @@ async def add_new_book_zip(
                                 # Add or replace based on priority
                                 if verse_number not in verse_files:
                                     verse_files[verse_number] = {
-                                        'file': verse_file,
+                                        'stats': file_stats,
                                         'priority': priority
                                     }
                                 elif priority > verse_files[verse_number]['priority']:
-                                    logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['file']}")
-                                    os.remove(verse_files[verse_number]['file'])
+                                    logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['stats']['file']}")
+                                    os.remove(str(verse_files[verse_number]['stats']['file']))
                                     verse_files[verse_number] = {
-                                        'file': verse_file,
+                                        'stats': file_stats,
                                         'priority': priority
                                     }
                                 else:
@@ -718,7 +728,16 @@ async def add_new_book_zip(
                             logger.warning(f"Invalid file name format: {verse_file.name}")
 
                 # Finalize verse files after prioritization
-                selected_files = {verse: data['file'] for verse, data in verse_files.items()}
+                selected_files = {
+                verse: {
+                    'file': data['stats']['file'],
+                    'name': data['stats']['name'],
+                    'path': data['stats']['path'],
+                    'size': data['stats']['size'],
+                    'format': data['stats']['format']
+                }
+                for verse, data in verse_files.items()
+                }
                 
                 # Get available verses after duplicate removal
                 available_verses = set(selected_files.keys())
@@ -739,14 +758,14 @@ async def add_new_book_zip(
                 db.refresh(chapter_entry)
                 has_valid_chapters = True
                 # Add verse records
-                for verse_number, verse_file in selected_files.items():
+                for verse_number, data in selected_files.items():
                     verse = Verse(
                         chapter_id=chapter_entry.chapter_id,
                         verse=verse_number,
-                        name=verse_file.name,
-                        path=str(verse_file),
-                        size=verse_file.stat().st_size,
-                        format=verse_file.suffix.lstrip("."),
+                        name=data['name'],
+                        path=data['path'],
+                        size=data['size'],
+                        format=data['format'],
                         stt=False,
                         text="",
                         modified=False,
