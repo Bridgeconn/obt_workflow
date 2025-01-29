@@ -75,7 +75,7 @@ export default function AdminLogs() {
         variant: "destructive",
       });
     } finally {
-        setIsDownloading(false);
+      setIsDownloading(false);
     }
   };
 
@@ -110,20 +110,29 @@ export default function AdminLogs() {
 
   return (
     <div className="p-8 space-y-6 bg-gray-900 text-white rounded-lg shadow-lg max-w-5xl mx-auto mt-8">
-      <h1 className="text-xl font-bold text-green-400">Admin Logs Viewer</h1>
-      <div className="flex space-x-4">
-        <Button variant="default" onClick={handleFetchFile} disabled={isLoading}>
-          {isLoading ? "Loading..." : "Refresh"}
-        </Button>
-        <Button variant="default" onClick={handleDownloadFile} disabled={isLoading}>
-          {isDownloading ? "Downloading..." : "Download Logs"}
-        </Button>
-        <Button
-          onClick={handleClose}
-          variant="default"
-        >
-          Close
-        </Button>
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <h1 className="text-xl font-bold text-green-400">Server Logs</h1>
+        <div className="flex gap-4 items-center">
+          <Button
+            variant="default"
+            onClick={handleFetchFile}
+            disabled={isLoading}
+            className="border border-white"
+          >
+            {isLoading ? "Loading..." : "Refresh"}
+          </Button>
+          <Button
+            variant="default"
+            onClick={handleDownloadFile}
+            disabled={isLoading}
+            className="border border-white"
+          >
+            {isDownloading ? "Downloading..." : "Download Logs"}
+          </Button>
+          <Button className="border border-white" onClick={handleClose} variant="default">
+            Close
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6 bg-black rounded-lg border border-gray-700">
