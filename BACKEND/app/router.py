@@ -410,7 +410,6 @@ async def upload_zip(
             owner_id=current_user.user_id,
             script_lang="",
             audio_lang="",
-            meta_data=json.dumps(metadata_content),
         )
         db.add(project)
         db.commit()
@@ -821,7 +820,6 @@ async def get_user_projects(
                     "name": project.name,
                     "script_lang": project.script_lang,
                     "audio_lang": project.audio_lang,
-                    "metadata": project.meta_data,
                     "owner_id": project.owner_id,
                     "user_name": owner.username if owner else None,
                     "archive": project.archive,
