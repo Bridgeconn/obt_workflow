@@ -261,7 +261,7 @@ const ProjectsPage: React.FC = () => {
   
       // If there are incompatible verses, include them in the description
       if (incompartible_verses.length > 0) {
-        successDescription = `${incompartible_verses.length} verses skipped due to file incompatibility`
+        successDescription = `${incompartible_verses.length} verse file(s) skipped due to file incompatibility`
       }
   
       // Show the success toast, only including the description if there are incompatible verses

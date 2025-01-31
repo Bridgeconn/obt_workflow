@@ -238,7 +238,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       if (responseData.message === "Book added successfully") {
         let succcessDescription = ""
         if(responseData?.incompartible_verses.length > 0){
-          succcessDescription = `${responseData?.incompartible_verses.length} verses skipped due to file incompatibility`
+          succcessDescription = `${responseData?.incompartible_verses.length} verse file(s) skipped due to file incompatibility`
         } 
         toast({
           title: `Book ${responseData.book} added successfully`,

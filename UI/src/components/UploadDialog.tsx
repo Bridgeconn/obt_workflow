@@ -72,7 +72,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
                 <div className="flex items-center gap-2">No chapters added</div>
               )}
               {skippedVerses && skippedVerses?.length > 0 && (
-              <p className="text-sm"><label className="text-orange-500 font-bold">Warning :</label> {skippedVerses?.length} verses skipped due to file incompatibility</p>
+              <p className="text-sm"><label className="text-orange-500 font-bold">Warning :</label> {skippedVerses?.length} verse file(s) skipped due to file incompatibility</p>
               )}
             </div>
 

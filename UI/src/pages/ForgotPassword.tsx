@@ -32,7 +32,7 @@ const ForgotPassword: React.FC = () => {
     console.log("data", data);
     try {
       const response = await fetch(
-        `${BASE_URL}/user/forgot_password?email=${data.email}`,
+        `${BASE_URL}/user/forgot_password/?email=${data.email}`,
         {
           method: "POST",
           headers: {
