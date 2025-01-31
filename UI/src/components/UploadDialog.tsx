@@ -16,6 +16,7 @@ interface UploadDialogProps {
   bookCode: string;
   addedChapters: number[] | null;
   skippedChapters: number[] | null;
+  skippedVerses: string[] | null;
 }
 
 const UploadDialog: React.FC<UploadDialogProps> = ({
@@ -24,6 +25,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   bookCode,
   addedChapters,
   skippedChapters,
+  skippedVerses,
 }) => {
   const getBookName = (code: string): string => {
     const book = bookCodes.find((b) => b.abbreviation === code.toLowerCase());
@@ -43,6 +45,8 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             </div>
           </DialogTitle>
         </DialogHeader>
+
+        
 
         <ScrollArea className="pr-4 max-h-[400px]">
           <div className="py-4 space-y-6">
@@ -66,6 +70,9 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-2">No chapters added</div>
+              )}
+              {skippedVerses && skippedVerses?.length > 0 && (
+              <p className="text-sm"><label className="text-orange-500 font-bold">Warning :</label> {skippedVerses?.length} verses skipped due to file incompatibility</p>
               )}
             </div>
 

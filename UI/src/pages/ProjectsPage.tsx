@@ -64,6 +64,15 @@ interface ProjectResponse {
   books: Book[];
 }
 
+interface UploadProjectResponse {
+  message: string;
+  project_id: string;
+  result: {
+    status: string;
+    incompartible_verses: string[];
+  };
+}
+
 export const fuzzyFilter: FilterFn<Project> = (row, columnId, value) => {
   // Simple case-insensitive filtering
   const cellValue = String(row.getValue(columnId)).toLowerCase();
@@ -142,7 +151,7 @@ const fetchProjects = async (): Promise<Project[]> => {
 const uploadProject = async (
   file: File,
   onProgress: (progress: number) => void
-) => {
+): Promise<UploadProjectResponse> => {
   const token = useAuthStore.getState().token;
   const formData = new FormData();
   formData.append("file", file);
@@ -161,7 +170,8 @@ const uploadProject = async (
 
     xhr.onload = () => {
       if (xhr.status === 200) {
-        resolve(JSON.parse(xhr.responseText));
+        const response: UploadProjectResponse = JSON.parse(xhr.responseText);
+        resolve(response);
       } else {
         const errorResponse = JSON.parse(xhr.responseText);
         reject(new Error(errorResponse.detail || "Failed to upload project"));
@@ -173,6 +183,7 @@ const uploadProject = async (
     xhr.send(formData);
   });
 };
+
 
 const downloadProject = async (projectId: string, name: string) => {
   const response = await fetch(
@@ -242,11 +253,25 @@ const ProjectsPage: React.FC = () => {
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadProject(file, setUploadProgress),
-    onSuccess: () => {
+    onSuccess: (data: UploadProjectResponse) => {
+      const { message, result } = data;
+      const incompartible_verses = result?.incompartible_verses || [];
+  
+      let successDescription = ""; // Default to empty description
+  
+      // If there are incompatible verses, include them in the description
+      if (incompartible_verses.length > 0) {
+        successDescription = `${incompartible_verses.length} verses skipped due to file incompatibility`
+      }
+  
+      // Show the success toast, only including the description if there are incompatible verses
       toast({
         variant: "success",
-        title: "Project uploaded successfully!",
+        title: message,
+        description: successDescription,
       });
+  
+      // Reset progress and invalidate queries
       setUploadProgress(0);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
@@ -258,6 +283,7 @@ const ProjectsPage: React.FC = () => {
       setUploadProgress(0);
     },
   });
+  
 
   const downloadMutation = useMutation({
     mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>

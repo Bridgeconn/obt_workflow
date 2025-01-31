@@ -100,6 +100,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     book: string;
     added_chapters: number[];
     skipped_chapters: number[];
+    incompartible_verses: string[] | null;
   } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
@@ -235,9 +236,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       }
 
       if (responseData.message === "Book added successfully") {
+        let succcessDescription = ""
+        if(responseData?.incompartible_verses.length > 0){
+          succcessDescription = `${responseData?.incompartible_verses.length} verses skipped due to file incompatibility`
+        } 
         toast({
           title: `Book ${responseData.book} added successfully`,
           variant: "success",
+          description: succcessDescription
         });
       } else {
         setUploadedBookData(responseData);
@@ -558,7 +564,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             {/* Script Language */}
             <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
               <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-                Script Language : <label className="text-gray-800 font-medium">{matchedLanguage && (matchedLanguage.language_name)}</label>
+                Script : <label className="text-gray-800 font-medium">{matchedLanguage && (matchedLanguage.language_name)}</label>
               </label>
              
             </div>
@@ -840,6 +846,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 bookCode={uploadedBookData?.book}
                 addedChapters={uploadedBookData?.added_chapters}
                 skippedChapters={uploadedBookData?.skipped_chapters}
+                skippedVerses = {uploadedBookData?.incompartible_verses}
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (

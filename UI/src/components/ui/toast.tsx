@@ -46,7 +46,7 @@ const Toast = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> &
     VariantProps<typeof toastVariants>
 >(({ className, variant, ...props }, ref) => {
-  const toastDuration = variant === "destructive" ? undefined : 2000;
+  const toastDuration = variant === "destructive" ? undefined : 3000;
   return (
     <ToastPrimitives.Root
       ref={ref}
@@ -112,7 +112,7 @@ const ToastDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <ToastPrimitives.Description
     ref={ref}
-    className={cn("text-base opacity-90", className)}
+    className={cn("text-sm font-semibold text-white", className)}
     {...props}
   />
 ))
