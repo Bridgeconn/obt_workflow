@@ -91,6 +91,25 @@ const ProfilePage: React.FC = () => {
       });
     }
   };
+
+  const formatDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return "N/A";
+    
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } catch (error) {
+      console.error("Error parsing date:", error);
+      return "Invalid Date";
+    }
+  };
   
 
   return (
@@ -112,7 +131,7 @@ const ProfilePage: React.FC = () => {
               <span className="font-semibold">Role: </span> {user?.role || "N/A"}
             </p>
             <p>
-              <span className="font-semibold">Created Date: </span> {user?.created_date || "N/A"}
+              <span className="font-semibold">Created Date: </span> {formatDate(user?.created_date)}
             </p>
           </div>
         </CardContent>

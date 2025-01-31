@@ -50,7 +50,7 @@ const ResetPassword: React.FC = () => {
     }
     try {
       const response = await fetch(
-        `${BASE_URL}/user/reset_password?token=${token}&new_password=${data.password}`,
+        `${BASE_URL}/user/reset_password/?token=${token}&new_password=${data.password}`,
         {
           method: "POST",
           headers: {

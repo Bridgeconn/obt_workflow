@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 import zipfile
 import os
+import re
 import json
 from database import User, Project, Verse, Chapter, Job, Book
 # import logging
@@ -31,6 +32,9 @@ load_dotenv()
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
+
+# Regex pattern for valid verse file formats (ignores extension)
+VALID_VERSE_PATTERN = re.compile(r"^\d+_\d+(?:_\d+)?(?:_default)?$")
 
 # Raise an error if the environment variable is not set
 if not BASE_DIRECTORY:
@@ -430,11 +434,12 @@ async def upload_zip(
         output_path.mkdir(parents=True, exist_ok=True)
  
         # Process the project files (e.g., books, chapters, verses)
-        crud.process_project_files(input_path, output_path, db, project)
+        result = crud.process_project_files(input_path, output_path, db, project)
  
         return {
             "message": "Project uploaded successfully",
             "project_id": project_id,
+            "result": result,
         }
  
     except zipfile.BadZipFile:
@@ -561,13 +566,14 @@ async def add_new_book_zip(
         
         if existing_book:
             # Perform chapter-level checks for the existing book
-            added_chapters, skipped_chapters = crud.process_chapters(book_folder, project, existing_book, db,book_name)
+            added_chapters, skipped_chapters, incompartible_verses = crud.process_chapters(book_folder, project, existing_book, db,book_name)
             shutil.rmtree(temp_extract_path, ignore_errors=True)
             return {
                 "message": "Book already exists. Additional chapters processed.",
                 "book": book_name,
                 "added_chapters": added_chapters,
-                "skipped_chapters": skipped_chapters
+                "skipped_chapters": skipped_chapters,
+                "incompartible_verses": incompartible_verses
             }
         else:
             # Add a new book and process chapters
@@ -614,6 +620,7 @@ async def add_new_book_zip(
         # Initialize has_valid_chapters to track valid chapters
         has_valid_chapters = False
         
+        incompartible_verses = []
         # Filter out invalid chapters first
         for chapter_dir in target_book_path.iterdir():
             if chapter_dir.is_dir() and chapter_dir.name.isdigit():
@@ -637,10 +644,14 @@ async def add_new_book_zip(
  
                 # Get all available verses in the chapter
                 available_verses = set(
-                    int(verse_file.stem.split("_")[1])
+                    int(verse_digits.group(1))
                     for verse_file in chapter_dir.iterdir()
                     if verse_file.is_file() and "_" in verse_file.stem
+                    for verse_digits in [re.match(r"^(\d+)", verse_file.stem.split("_")[1])]
+                    if verse_digits
                 )
+                
+                print(f"available verses in chapter {chapter_number}", available_verses)
  
                 # If no verses are found, delete the empty chapter folder
                 if not available_verses:
@@ -679,65 +690,62 @@ async def add_new_book_zip(
                 # Process verses, tracking and removing duplicates
                 verse_files = {}
                 for verse_file in chapter_dir.iterdir():
-                    if verse_file.is_file() and "_" in verse_file.stem:
-                        try:
-                            parts = verse_file.stem.split("_")
-                            
-                            if (int(parts[0]) == chapter_number and
-                                len(parts) >= 2 and
-                                parts[1].isdigit()):
-                                
-                                verse_number = int(parts[1])
-                                
-                                # Store file stats before any deletion
-                                file_stats = {
-                                    'file': verse_file,
-                                    'name': verse_file.name,
-                                    'path': str(verse_file),
-                                    'size': verse_file.stat().st_size,
-                                    'format': verse_file.suffix.lstrip("."),
-                                    'stats': verse_file.stat()
-                                }
-                                
-                                # Determine file priority
-                                if len(parts) == 2:  # Basic format like 1_1.mp3
-                                    priority = 2
-                                elif "default" in parts:  # Contains 'default'
-                                    priority = 1
-                                else:  # Any other format (takes)
-                                    priority = 0
-                                
-                                # Add or replace based on priority
-                                if verse_number not in verse_files:
-                                    verse_files[verse_number] = {
-                                        'stats': file_stats,
-                                        'priority': priority
-                                    }
-                                elif priority > verse_files[verse_number]['priority']:
-                                    logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['stats']['file']}")
-                                    os.remove(str(verse_files[verse_number]['stats']['file']))
-                                    verse_files[verse_number] = {
-                                        'stats': file_stats,
-                                        'priority': priority
-                                    }
-                                else:
-                                    logger.info(f"Removing duplicate verse file: {verse_file}")
-                                    os.remove(verse_file)
+                    if not verse_file.is_file():
+                        continue  # Skip directories
+                    verse_filename = verse_file.stem
+                    if not VALID_VERSE_PATTERN.match(verse_filename):
+                        logger.info(f"Skipping invalid verse file: {verse_file.name}")
+                        print("Skipping invalid verse file:", verse_file.name)
+                        incompartible_verses.append(verse_filename)
+                        continue
 
-                        except (ValueError, IndexError):
-                            logger.warning(f"Invalid file name format: {verse_file.name}")
+                    try:
+                        parts = verse_file.stem.split("_")
+                        
+                        # Ensure first part matches chapter number
+                        if not (parts[0].isdigit() and int(parts[0]) == chapter_number):
+                            continue
+                        
+                        # Extract verse number
+                        if len(parts) >= 2 and parts[1].isdigit():
+                            verse_number = int(parts[1])
+                        else:
+                            logger.warning(f"Skipping malformed verse file: {verse_file.name}")
+                            continue
+                            
+                            
+                        # Determine file priority
+                        if len(parts) == 2:  # Basic format like 1_1.mp3
+                            priority = 2
+                        elif "default" in parts:  # Contains 'default'
+                            priority = 1
+                        else:  # Any other format (takes)
+                            priority = 0
+                                
+                        # Add or replace based on priority
+                        if verse_number not in verse_files:
+                            verse_files[verse_number] = {
+                                'file': verse_file,
+                                'priority': priority
+                            }
+                        elif priority > verse_files[verse_number]['priority']:
+                            logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['file']}")
+                            os.remove(verse_files[verse_number]['file'])
+                            verse_files[verse_number] = {
+                                'file': verse_file,
+                                'priority': priority
+                            }
+                        else:
+                            logger.info(f"Removing duplicate verse file: {verse_file}")
+                            os.remove(verse_file)
+                            
+                           
+                    except (ValueError, IndexError):
+                        logger.warning(f"Invalid file name format: {verse_file.name}")
+                        continue
 
                 # Finalize verse files after prioritization
-                selected_files = {
-                verse: {
-                    'file': data['stats']['file'],
-                    'name': data['stats']['name'],
-                    'path': data['stats']['path'],
-                    'size': data['stats']['size'],
-                    'format': data['stats']['format']
-                }
-                for verse, data in verse_files.items()
-                }
+                selected_files = {verse: data['file'] for verse, data in verse_files.items()}
                 
                 # Get available verses after duplicate removal
                 available_verses = set(selected_files.keys())
@@ -758,14 +766,14 @@ async def add_new_book_zip(
                 db.refresh(chapter_entry)
                 has_valid_chapters = True
                 # Add verse records
-                for verse_number, data in selected_files.items():
+                for verse_number, verse_file in selected_files.items():
                     verse = Verse(
                         chapter_id=chapter_entry.chapter_id,
                         verse=verse_number,
-                        name=data['name'],
-                        path=data['path'],
-                        size=data['size'],
-                        format=data['format'],
+                        name=verse_file.name,
+                        path=str(verse_file),
+                        size=verse_file.stat().st_size,
+                        format=verse_file.suffix.lstrip("."),
                         stt=False,
                         text="",
                         modified=False,
@@ -792,7 +800,7 @@ async def add_new_book_zip(
         if temp_extract_path:
             shutil.rmtree(temp_extract_path, ignore_errors=True)
  
-        return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book_name}
+        return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book_name, "incompartible_verses": incompartible_verses}
  
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")

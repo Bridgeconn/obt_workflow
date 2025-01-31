@@ -36,6 +36,11 @@ interface Book {
   approved: boolean;
 }
 
+interface DateInfo {
+  display: string;
+  full: string;
+}
+
 interface Project {
   id: string;
   name: string;
@@ -45,6 +50,7 @@ interface Project {
   books: number;
   approved: number;
   archive: boolean;
+  createdDate: DateInfo;
 }
 
 interface ProjectResponse {
@@ -54,7 +60,17 @@ interface ProjectResponse {
   script_lang: string;
   audio_lang: string;
   archive: boolean;
+  created_date: string;
   books: Book[];
+}
+
+interface UploadProjectResponse {
+  message: string;
+  project_id: string;
+  result: {
+    status: string;
+    incompartible_verses: string[];
+  };
 }
 
 export const fuzzyFilter: FilterFn<Project> = (row, columnId, value) => {
@@ -97,7 +113,25 @@ const fetchProjects = async (): Promise<Project[]> => {
 
   const { projects } = await response.json();
 
-  return projects.map((project: ProjectResponse) => ({
+  return projects.map((project: ProjectResponse) => {
+    // Format the date for display
+    const date = new Date(project.created_date);
+    const displayDate = date.toLocaleDateString('en-US', { 
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+    
+    const fullDateTime = date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    return {
       id: project.project_id.toString(),
       name: project.name,
       owner: project.user_name,
@@ -106,13 +140,18 @@ const fetchProjects = async (): Promise<Project[]> => {
       books: project.books.length,
       approved: project.books.filter((book: Book) => book.approved).length,
       archive: project.archive,
-    }));
+      createdDate: {
+        display: displayDate,
+        full: fullDateTime
+      }
+    };
+  });
 };
 
 const uploadProject = async (
   file: File,
   onProgress: (progress: number) => void
-) => {
+): Promise<UploadProjectResponse> => {
   const token = useAuthStore.getState().token;
   const formData = new FormData();
   formData.append("file", file);
@@ -131,7 +170,8 @@ const uploadProject = async (
 
     xhr.onload = () => {
       if (xhr.status === 200) {
-        resolve(JSON.parse(xhr.responseText));
+        const response: UploadProjectResponse = JSON.parse(xhr.responseText);
+        resolve(response);
       } else {
         const errorResponse = JSON.parse(xhr.responseText);
         reject(new Error(errorResponse.detail || "Failed to upload project"));
@@ -143,6 +183,7 @@ const uploadProject = async (
     xhr.send(formData);
   });
 };
+
 
 const downloadProject = async (projectId: string, name: string) => {
   const response = await fetch(
@@ -212,11 +253,25 @@ const ProjectsPage: React.FC = () => {
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadProject(file, setUploadProgress),
-    onSuccess: () => {
+    onSuccess: (data: UploadProjectResponse) => {
+      const { message, result } = data;
+      const incompartible_verses = result?.incompartible_verses || [];
+  
+      let successDescription = ""; // Default to empty description
+  
+      // If there are incompatible verses, include them in the description
+      if (incompartible_verses.length > 0) {
+        successDescription = `${incompartible_verses.length} verse file(s) skipped due to file incompatibility`
+      }
+  
+      // Show the success toast, only including the description if there are incompatible verses
       toast({
         variant: "success",
-        title: "Project uploaded successfully!",
+        title: message,
+        description: successDescription,
       });
+  
+      // Reset progress and invalidate queries
       setUploadProgress(0);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
@@ -228,6 +283,7 @@ const ProjectsPage: React.FC = () => {
       setUploadProgress(0);
     },
   });
+  
 
   const downloadMutation = useMutation({
     mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
@@ -303,6 +359,18 @@ const ProjectsPage: React.FC = () => {
         <div className="truncate text-center">{info.getValue()}</div>
       ),
       size: 50,
+    }),
+    columnHelper.accessor("createdDate", {
+      header: "Created Date",
+      cell: (info) => (
+        <div 
+          className="truncate text-center" 
+          title={info.getValue().full}
+        >
+          {info.getValue().display}
+        </div>
+      ),
+      size: 80,
     }),
     columnHelper.display({
       id: "actions",
@@ -456,7 +524,7 @@ const ProjectsPage: React.FC = () => {
                           key={header.id}
                           style={{ width: `${header.column.getSize()}px` }}
                           className={`text-primary bg-gray-100 ${
-                            ["books", "approved", "actions"].includes(header.id)
+                            ["books", "approved", "actions", "createdDate"].includes(header.id)
                               ? "text-center"
                               : "text-left justify-start"
                           }`}
@@ -508,6 +576,7 @@ const ProjectsPage: React.FC = () => {
                                 "books",
                                 "approved",
                                 "actions",
+                                "createdDate"
                               ].includes(cell.column.id)
                                 ? "center"
                                 : "start",

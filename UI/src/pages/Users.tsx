@@ -93,6 +93,25 @@ export const fuzzyFilter: FilterFn<User> = (row, columnId, value, _addMeta) => {
   return cellValue.includes(searchValue);
 };
 
+const formatDate = (dateString: string | null): string => {
+  if (!dateString) return "N/A";
+  
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  } catch (error) {
+    console.error("Error parsing date:", error);
+    return "Invalid Date";
+  }
+};
+
 const fetchUsers = async (token: string | null): Promise<User[]> => {
   if (!token) throw new Error("Missing token");
 
@@ -146,7 +165,7 @@ const UsersTable = () => {
     }),
     columnHelper.accessor("last_login", {
       header: "Last Login",
-      cell: (info) => info.getValue() || "N/A",
+      cell: (info) => formatDate(info.getValue()),
     }),
     columnHelper.accessor("active", {
       header: "Active",
@@ -154,7 +173,7 @@ const UsersTable = () => {
     }),
     columnHelper.accessor("created_date", {
       header: "Created Date",
-      cell: (info) => info.getValue() || "N/A",
+      cell: (info) => formatDate(info.getValue()),
     }),
     columnHelper.accessor("role", {
       header: "Role",
