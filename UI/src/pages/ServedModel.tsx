@@ -1,4 +1,4 @@
-import { useEffect } from "react"; 
+import { useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Table,
@@ -11,59 +11,72 @@ import {
 import { useServedModels } from "@/hooks/use-served-models";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-
+import { RefreshCw } from "lucide-react";
+ 
 const AVAILABLE_MODELS = [
-  "mms-1b-all",
-  "seamless-m4t-large",
-  "mms-tts-kannada",
-  "mms-tts-marathi",
+  { name: "mms-1b-all", useCase: "Convert to text (All)" },
+  { name: "seamless-m4t-large", useCase: "Convert to speech (Hindi, Telugu)" },
+  { name: "mms-tts-kannada", useCase: "Convert to speech (Kannada)" },
+  { name: "mms-tts-marathi", useCase: "Convert to speech (Marathi)" },
 ];
-
+ 
 export default function ServedModel() {
-
   const { servedModels, isLoading, refetch } = useServedModels();
   const navigate = useNavigate();
-
+ 
   useEffect(() => {
     refetch();
   }, []);
-
+ 
   const handleClose = () => {
     navigate("/"); // Navigate back to the home page
   };
-
+ 
   return (
-    <div className="p-8 max-w-4xl space-y-6 rounded-lg max-h-[420px] h-[420px]">
-      <div className="flex flex-col justify-between gap-4">
-        <h1 className="text-3xl font-bold">Served Models</h1>
-        <button 
-          onClick={refetch}
-          className="px-4 py-2 w-fit rounded-md bg-gray-200 hover:bg-gray-300 transition-colors"
-        >
-          Refresh
-        </button>
+    <div className="w-full mt-12 px-4 md:px-8 lg:px-12">
+      {/* Header with Title and Buttons */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+        <h1 className="text-3xl font-bold">AI Models</h1>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={refetch}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </Button>
+          <Button variant="outline" onClick={handleClose}>
+            Close
+          </Button>
+        </div>
       </div>
-
-      <div className="mt-6 rounded-lg border border-gray-400">
+ 
+      {/* Models Table */}
+      <div className="relative min-w-[800px] overflow-y-hidden h-auto border-2 rounded-lg">
         {!isLoading ? (
-          <ScrollArea className="p-4 overflow-y-auto h-full">
+          <ScrollArea className="overflow-y-auto">
             {servedModels ? (
-              <Table className="w-full border">
+              <Table className="w-full border-collapse border border-gray-300">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Model Name</TableHead>
-                    <TableHead>Served</TableHead>
+                  <TableRow className="border-b border-gray-300">
+                    <TableHead className="px-4 py-3">Model Name</TableHead>
+                    <TableHead className="px-4 py-3">Use</TableHead>
+                    <TableHead className="px-4 py-3">Served</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {AVAILABLE_MODELS.map((modelName) => {
+                  {AVAILABLE_MODELS.map(({ name, useCase }) => {
                     const isModelServed = servedModels.some(
-                      (servedModel) => servedModel.modelName === modelName
+                      (servedModel) => servedModel.modelName === name
                     );
                     return (
-                      <TableRow key={modelName}>
-                        <TableCell>{modelName}</TableCell>
-                        <TableCell>
+                      <TableRow
+                        key={name}
+                        className="hover:bg-gray-100 border-b border-gray-300"
+                      >
+                        <TableCell className="px-4 py-4">{name}</TableCell>
+                        <TableCell className="px-4 py-4">{useCase}</TableCell>
+                        <TableCell className="px-4 py-4">
                           {isModelServed ? (
                             <span className="text-green-500">✔</span>
                           ) : (
@@ -85,14 +98,6 @@ export default function ServedModel() {
           </div>
         )}
       </div>
-      <div className="flex justify-between mt-4">
-      <Button
-        variant="outline"
-        onClick={handleClose} // Navigate back when Close is clicked
-      >
-        Close
-      </Button>
-    </div>
     </div>
   );
 }
