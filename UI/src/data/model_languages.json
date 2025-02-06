@@ -1,10 +1,10 @@
 {
     "Hindi" : {
-        "tts" : "seamless-m4t-large",
+        "tts" : "mms-tts-hin-v2",
         "stt" : "mms-1b-all"
     },
     "Telugu" : {
-        "tts" : "seamless-m4t-large",
+        "tts" : "mms-tts-telugu",
         "stt" : "mms-1b-all"
     },
     "Kannada" : {
