@@ -5,11 +5,11 @@
   },
   "Hindi": {
     "stt": { "mms-1b-all": "hin" },
-    "tts": { "seamless-m4t-large": "hin" }
+    "tts": { "mms-tts-hin": "hin" }
   },
   "Telugu": {
     "stt": { "mms-1b-all": "tel" },
-    "tts": { "seamless-m4t-large": "tel" }
+    "tts": { "mms-tts-telugu": "tel" }
   },
   "Marathi": {
     "stt": { "mms-1b-all": "mar" },

@@ -15,7 +15,8 @@ import { RefreshCw } from "lucide-react";
  
 const AVAILABLE_MODELS = [
   { name: "mms-1b-all", useCase: "Convert to text (All)" },
-  { name: "seamless-m4t-large", useCase: "Convert to speech (Hindi, Telugu)" },
+  { name: "mms-tts-telugu", useCase: "Convert to speech (Telugu)" },
+  { name: "mms-tts-hin", useCase: "Convert to speech (Hindi)" },
   { name: "mms-tts-kannada", useCase: "Convert to speech (Kannada)" },
   { name: "mms-tts-marathi", useCase: "Convert to speech (Marathi)" },
 ];
