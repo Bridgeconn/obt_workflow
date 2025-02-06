@@ -1,6 +1,6 @@
 {
     "Hindi" : {
-        "tts" : "mms-tts-hin",
+        "tts" : "mms-tts-hin-v2",
         "stt" : "mms-1b-all"
     },
     "Telugu" : {

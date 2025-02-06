@@ -5,7 +5,7 @@
   },
   "Hindi": {
     "stt": { "mms-1b-all": "hin" },
-    "tts": { "mms-tts-hin": "hin" }
+    "tts": { "mms-tts-hin-v2": "hin" }
   },
   "Telugu": {
     "stt": { "mms-1b-all": "tel" },
