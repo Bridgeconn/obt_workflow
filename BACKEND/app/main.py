@@ -12,14 +12,14 @@ init_db()
 
 
 # FastAPI app initialization
-app = FastAPI(version="1.0.4")
+app = FastAPI(version="1.0.5")
 
 
 # ToDo: Add CORS when deploying to server to allow only UI origin
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://obt-workflow.vercel.app","https://dev-obt-workflow.vercel.app"], 
+    allow_origins=["http://localhost:5173","https://obt-workflow.vercel.app","https://dev-obt-workflow.vercel.app","https://obt.vachanengine.org"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
