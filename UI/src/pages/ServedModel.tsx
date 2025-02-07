@@ -60,9 +60,9 @@ export default function ServedModel() {
               <Table className="w-full border-collapse border border-gray-300">
                 <TableHeader>
                   <TableRow className="border-b border-gray-300">
-                    <TableHead className="px-4 py-3">Model Name</TableHead>
-                    <TableHead className="px-4 py-3">Use</TableHead>
-                    <TableHead className="px-4 py-3">Served</TableHead>
+                    <TableHead className="font-semibold text-primary px-3 py-3">Model Name</TableHead>
+                    <TableHead className="font-semibold text-primary px-3 py-3">Use</TableHead>
+                    <TableHead className="font-semibold text-primary px-3 py-3">Served</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

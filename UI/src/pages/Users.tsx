@@ -356,7 +356,7 @@ const UsersTable = () => {
           {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead key={header.id}className="font-semibold text-primary px-3 py-3">
                     {flexRender(
                       header.column.columnDef.header,
                       header.getContext()

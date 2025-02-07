@@ -1711,7 +1711,7 @@ async def download_processed_project_zip(
 ): 
     project = db.query(Project).filter(Project.project_id == project_id).first()
 
-    if current_user.role != "AI" and project.owner_id != current_user.user_id:
+    if current_user.role not in ["AI", "Admin"]  and project.owner_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied. Only the project owner or users with the AI role can download the ZIP file")
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
