@@ -63,6 +63,25 @@ def process_project_files(input_path, output_path, db, project):
                 project_input_path = input_path
             else:
                 logger.info("No duplicate folder found.")
+                # Check if project_input_path itself is a count folder (e.g., ONDMTT2(1))
+                if re.match(r".+\(\d+\)$", project_input_path.name) or any(char.isalpha() for char in project_input_path.name):
+                    logger.info(f"Flattening top-level count folder: {project_input_path}")
+    
+                    # Move all contents from the count folder to its parent directory
+                    for sub_item in project_input_path.iterdir():
+                        target_path = input_path / sub_item.name
+                        if target_path.exists():
+                            logger.warning(f"Conflict while moving {sub_item} to {target_path}, skipping.")
+                        else:
+                            shutil.move(str(sub_item), str(target_path))
+                            logger.info(f"Moved {sub_item} to {target_path}")
+    
+                    # Update project_input_path to its parent directory
+                    project_input_path.rmdir()
+                    logger.info(f"Removed count folder: {project_input_path}")
+                    project_input_path = input_path  
+                
+
         elif any((input_path / item).exists() for item in ["audio", "text-1", "metadata.json"]):
             # Case: Direct structure with `audio`, `text-1`, and `metadata.json`
             project_input_path = input_path
