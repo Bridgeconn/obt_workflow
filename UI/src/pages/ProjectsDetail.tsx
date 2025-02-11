@@ -442,6 +442,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       link.download = fileName;
       link.click();
       URL.revokeObjectURL(url);
+      toast({
+        variant: "success",
+        title: "File downloaded successfully!",
+      });
     } catch (error) {
       console.log("error", error);
       toast({
@@ -509,6 +513,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       link.download = fileName;
       link.click();
       URL.revokeObjectURL(url);
+      toast({
+        variant: "success",
+        title: "Project downloaded successfully!",
+      });
     } catch (error) {
       console.error("Error downloading project:", error);
       toast({
