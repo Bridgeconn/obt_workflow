@@ -1229,10 +1229,12 @@ async def convert_to_text(
                 db.commit()
         
     file_paths = [verse.path for verse in verses]
-    test_result = call_stt_api(file_paths[0], script_lang)
-    if "error" in test_result:
-        raise HTTPException(status_code=400, detail=test_result["error"])
-    background_tasks.add_task(crud.transcribe_verses, file_paths, script_lang, db)
+    if not crud.is_model_served(script_lang, "stt"):
+        raise HTTPException(
+            status_code=400, 
+            detail="The STT model is not currently available for this language."
+        )
+    background_tasks.add_task(crud.transcribe_verses, list(file_paths), script_lang, db)
     return {
         "message": "Transcription started for all verses in the chapter",
         "project_id": project_id,
@@ -1504,11 +1506,13 @@ async def convert_to_speech(
             status_code=400,
             detail="Unable to determine the output format from the verse path.",
         )
-    # Check if the TTS model is served before starting the task
-    test_text = "Test text"
-    test_result = call_tts_api(test_text, project.audio_lang,output_format)
-    if "error" in test_result:
-        raise HTTPException(status_code=400, detail=test_result["error"])
+    audio_lang = project.audio_lang
+    if not crud.is_model_served(audio_lang, "tts"):
+        raise HTTPException(
+            status_code=400, 
+            detail="The TTS model is not currently available for this language."
+        )
+
 
     # Start the text-to-speech generation task
     background_tasks.add_task(
