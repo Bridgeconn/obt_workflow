@@ -787,10 +787,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           <Button
                             className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                               book.status === "inProgress" ||
-                              book.status === "converting" ||
-                              !scriptLanguage ||
-                              !audioLanguage
-                                ? "opacity-50 cursor-not-allowed"
+                              book.status === "converting"
+                                ? "bg-gray-300 border border-gray-300 cursor-not-allowed hover:bg-gray-300"
+                                : !scriptLanguage || !audioLanguage
+                                ? "bg-gray-300 text-gray-500 opacity-70 cursor-not-allowed"
                                 : "hover:bg-gray-700"
                             }`}
                             onClick={() => {
@@ -812,7 +812,19 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           >
                             {book.status === "inProgress" ||
                             book.status === "converting" ? (
-                              <span>{book.progress}</span>
+                              <div className="flex items-center justify-center space-x-2">
+                                <span className="text-gray-800 font-medium">
+                                  {book.progress ||
+                                    (book.status === "converting"
+                                      ? "Converting"
+                                      : "Processing")}
+                                </span>
+                                <span className="flex space-x-1">
+                                  <span className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                  <span className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                  <span className="w-2 h-2 bg-black rounded-full animate-bounce"></span>
+                                </span>
+                              </div>
                             ) : book.status === "error" ? (
                               "Retry"
                             ) : (
