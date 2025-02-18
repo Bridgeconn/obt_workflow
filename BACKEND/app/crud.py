@@ -30,7 +30,9 @@ BASE_DIR = Path(BASE_DIRECTORY)
 
 # Regex pattern for valid verse file formats (ignores extension)
 VALID_VERSE_PATTERN = re.compile(r"^\d+_\d+(?:_\d+)?(?:_default)?$")
-
+# Load API Token from .env
+API_TOKEN = os.getenv("API_TOKEN", "api_token")
+BASE_URL = os.getenv("BASE_URL", "base ai url")
 
 
 # Directory for extracted files
@@ -503,94 +505,85 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
     """
     Background task to transcribe verses and update the database.
     """
+    logger.info(f"Inside transcribe_verses - Received type: {type(file_paths)}, value: {file_paths}")
     try:
-        for file_path in file_paths:
-            # Retrieve the Verse entry based on the file path
-            verse = db_session.query(Verse).filter(Verse.path == file_path).first()
-            if not verse:
-                logger.error(f"Verse file not found for path: {file_path}")
-                continue
-            
-            # Clear any non-successful stt_msg before processing
+        # Retrieve the Verse entry based on the file path
+        verses = db_session.query(Verse).filter(
+            Verse.path.in_(file_paths),
+            (Verse.text == None) | (Verse.text == "") | (Verse.stt_msg != "Transcription successful")
+        ).all()
+        if not verses:
+            logger.info("No pending files for transcription. All are successfully transcribed.")
+            return  # Exit early if no files need transcription
+        # Get the paths of pending files only
+        pending_file_paths = [verse.path for verse in verses]
+        logger.info(f"Processing {len(pending_file_paths)} pending files: {pending_file_paths}")
+        # Reset all non-successful statuses before transcription
+        for verse in verses:
             if verse.stt_msg != "Transcription successful":
                 logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
                 verse.stt_msg = ""
                 verse.stt = False# Resetting stt flag as well
                 db_session.add(verse)
-                db_session.commit()
 
-            # Check if transcription is already successful
-            if verse.stt_msg == "Transcription successful":
-                logger.debug(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
-                continue
+        db_session.commit()  # Save the updates before calling STT API
 
-            # Create a job entry linked to the verse
-            job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
+        # Create a job entry linked to the verse
+        job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
+        db_session.add(job)
+        db_session.commit()
+        db_session.refresh(job)
+        # logger.info(f"Inside transcribe_verses - Before calling call_stt_api: type={type(file_paths)}, value={file_paths}")
+        result = call_stt_api(list(pending_file_paths), script_lang)  # Explicitly convert to a list
+        if "error" in result:
+            # Update job and verse statuses in case of an error
+            job.status = "failed"
+            verse.stt = False
+            verse.stt_msg = result.get("error", "Unknown error")
+        else:
+            # Update the job with the AI job ID
+            ai_jobid = result.get("data", {}).get("jobId")
+            job.ai_jobid = ai_jobid
+            job.status = "in_progress"
             db_session.add(job)
             db_session.commit()
-            db_session.refresh(job)
-            try:
-                # Call AI API for transcription
-                result = call_stt_api(file_path,script_lang)
-                if "error" in result:
-                    # Update job and verse statuses in case of an error
+            # Poll AI job status until it's finished
+            while True:
+                transcription_result = check_ai_job_status(ai_jobid)
+                job_status = transcription_result.get("data", {}).get("status")
+                if job_status == "job finished":
+                    # Extract transcription results
+                    transcriptions = transcription_result["data"]["output"]["transcriptions"]
+                    for transcription in transcriptions:
+                        audio_file = transcription["audioFile"]
+                        transcribed_text = transcription["transcribedText"]
+
+                        # Update the verse text and mark as successful
+                        for verse in verses:
+                            if os.path.basename(verse.path) == audio_file:
+                                verse.text = transcribed_text
+                                verse.stt = True
+                                verse.stt_msg = "Transcription successful"
+                                break
+
+                    job.status = "completed"
+                    break
+                elif job_status == "job failed":
                     job.status = "failed"
                     verse.stt = False
-                    verse.stt_msg = result.get("error", "Unknown error")
-                else:
-                    # Update the job with the AI job ID
-                    ai_jobid = result.get("data", {}).get("jobId")
-                    job.ai_jobid = ai_jobid
-                    job.status = "in_progress"
-                    db_session.add(job)
-                    db_session.commit()
-                    # Poll AI job status until it's finished
-                    while True:
-                        transcription_result = check_ai_job_status(ai_jobid)
-                        job_status = transcription_result.get("data", {}).get("status")
-                        if job_status == "job finished":
-                            # Extract transcription results
-                            transcriptions = transcription_result["data"]["output"]["transcriptions"]
-                            for transcription in transcriptions:
-                                audio_file = transcription["audioFile"]
-                                transcribed_text = transcription["transcribedText"]
-
-                                # Update the verse text and mark as successful
-                                if os.path.basename(file_path) == audio_file:
-                                    verse.text = transcribed_text
-                                    verse.stt = True
-                                    verse.stt_msg = "Transcription successful"
-                                    break
-
-                            job.status = "completed"
-                            break
-                        elif job_status == "job failed":
-                            job.status = "failed"
-                            verse.stt = False
-                            verse.stt_msg = "AI transcription failed"
-                            break
-                        elif job_status == "Error":
-                            job.status = "failed"
-                            verse.stt = False
-                            verse.stt_msg = "AI transcription failed"
-                            break
-                        # Wait for a few seconds before polling again
-                        time.sleep(5)
-                # Save the updated job and verse statuses
-                db_session.add(job)
-                db_session.add(verse)
-                db_session.commit()
-
-            except Exception as e:
-                # Handle errors during transcription
-                job.status = "failed"
-                verse.stt = False
-                verse.stt_msg = f"Error during transcription: {str(e)}"
-                db_session.add(job)
-                db_session.add(verse)
-                db_session.commit()
-                logger.error(f"Error during transcription for verse {verse.verse_id}: {str(e)}")
-
+                    verse.stt_msg = "AI transcription failed"
+                    break
+                elif job_status == "Error":
+                    job.status = "failed"
+                    verse.stt = False
+                    verse.stt_msg = "AI transcription failed"
+                    break
+                # Wait for a few seconds before polling again
+                time.sleep(5)
+            # Save the updated job and verse statuses
+            db_session.add(job)
+            db_session.add(verse)
+            db_session.commit()
     except Exception as e:
         logger.error(f"Error in transcribe_verses: {str(e)}")
 
@@ -603,8 +596,8 @@ def check_ai_job_status(ai_jobid: str) -> dict:
     """
     Check the status of an AI transcription job.
     """
-    job_status_url = f"https://api.vachanengine.org/v2/ai/model/job?job_id={ai_jobid}"
-    headers = {"Authorization": "Bearer ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"}
+    job_status_url =  f"{BASE_URL}/model/job?job_id={ai_jobid}"
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
     try:
         response = requests.get(job_status_url, headers=headers, timeout=30)
 
@@ -649,10 +642,67 @@ def check_ai_job_status(ai_jobid: str) -> dict:
         }
 
 
+def is_model_served(lang: str, model_type: str) -> bool:
+    """
+    Check if the STT or TTS model is currently available for the given language.
+
+    Args:
+        lang (str): The spoken language to check.
+        model_type (str): Either "stt" for Speech-to-Text or "tts" for Text-to-Speech.
+
+    Returns:
+        bool: True if the model is available, False otherwise.
+    """
+    SERVED_MODELS_URL = f"{BASE_URL}/model/served-models"
+    logger.info(f"Checking if {model_type.upper()} model is served for language: {lang}")
+
+    try:
+        headers = {"Authorization": f"Bearer {API_TOKEN}"}
+        response = requests.get(SERVED_MODELS_URL, headers=headers, timeout=10)
+        if response.status_code != 200:
+            logger.error(f" Error fetching served models: {response.status_code} - {response.text}")
+            return False
+        
+        served_models = response.json()
+        served_model_names = {model["modelName"] for model in served_models}
+        logger.info(f" Available models: {served_model_names}")
+
+        # Load language mappings
+        with open("language_codes.json", "r") as file:
+            language_mapping = json.load(file)
+        with open("source_languages.json", "r") as file:
+            source_language_mapping = json.load(file)
+
+        # Determine the correct source language
+        source_language = next(
+            (entry["source_language"] for entry in source_language_mapping if entry["language_name"] == lang),
+            lang  # Default to original language if no mapping is found
+        )
+        logger.info(f"Mapped '{lang}' to source language '{source_language}'")
+
+        # Fetch the correct model mapping (STT/TTS)
+        model_mapping = language_mapping.get(source_language, {}).get(model_type, {})
+
+        if not model_mapping:
+            logger.error(f"❌ No {model_type.upper()} model found for language: {source_language}")
+            return False
+
+        # Check if any mapped model is served
+        for model_name in model_mapping.keys():
+            if model_name in served_model_names:
+                logger.info(f"✅ Model '{model_name}' is available for {model_type.upper()}.")
+                return True
+
+        logger.warning(f"⚠ No matching {model_type.upper()} model found in served models for '{source_language}'.")
+        return False
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Request error checking served models: {str(e)}")
+        return False
 
 
 
-def call_stt_api(file_path: str, script_lang: str) -> dict:
+def call_stt_api(file_paths: list[str], script_lang: str) -> dict:
     """
      Calls the AI API to transcribe the given audio file.
     """
@@ -660,13 +710,11 @@ def call_stt_api(file_path: str, script_lang: str) -> dict:
     LANGUAGE_CODES_FILE = "language_codes.json"
     
     # AI API Base URL (model_name will be dynamic)
-    BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/transcribe"
-    SERVED_MODELS_URL = "https://api.vachanengine.org/v2/ai/model/served-models"
- 
- 
-    # API Token
-    api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
- 
+    TRANSCRIBE_API_URL = f"{BASE_URL}/model/audio/transcribe"
+    device_type = os.getenv("STT_DEVICE", "cpu") 
+    if isinstance(file_paths, str):  # Ensure input is a list
+        logger.warning(f"Received string instead of list: {file_paths}")
+        file_paths = [file_paths]
     # Load the language mapping
     try:
         with open(LANGUAGE_CODES_FILE, "r") as file:
@@ -690,37 +738,28 @@ def call_stt_api(file_path: str, script_lang: str) -> dict:
     except Exception as e:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
-    
-    # Check if the model is served
-    try:
-        headers = {"Authorization": f"Bearer {api_token}"}
-        response = requests.get(SERVED_MODELS_URL, headers=headers)
-        if response.status_code == 200:
-            served_models = response.json()
-            served_model_names = {model["modelName"] for model in served_models}
-            if model_name not in served_model_names:
-                logger.error(f"Model '{model_name}' is not served.")
-                return {"error": f"Model '{model_name}' is not served."}
-        else:
-            logger.error(f"Error fetching served models: {response.status_code} - {response.text}")
-            return {"error": "Failed to fetch served models", "status_code": response.status_code}
-    except Exception as e:
-        logger.error(f"Error checking served models: {str(e)}")
-        return {"error": "Exception occurred while checking served models", "details": str(e)}
  
     # Prepare API URL
-    ai_api_url = f"{BASE_API_URL}?model_name={model_name}"
- 
+    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}"
+    valid_file_paths = [fp for fp in file_paths if os.path.exists(fp) and os.path.isfile(fp)]
+    if not valid_file_paths:
+        return {"error": "No valid audio files found for transcription."}
     # Prepare the file and payload
-    file_name = os.path.basename(file_path)
+    # file_name = os.path.basename(file_paths)
     try:
-        with open(file_path, "rb") as audio_file:
-            files_payload = {"files": (file_name, audio_file, "audio/wav")}
-            data_payload = {"transcription_language": lang_code}
-            headers = {"Authorization": f"Bearer {api_token}"}
- 
-            # Make the API request
-            response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+        # Open all files and prepare payload
+        file_objects = [open(fp, "rb") for fp in valid_file_paths]
+        files_payload = [("files", (os.path.basename(fp), f_obj, "audio/wav")) for fp, f_obj in zip(valid_file_paths, file_objects)]
+        data_payload = {"transcription_language": lang_code}
+        headers = {"Authorization": f"Bearer {API_TOKEN}"}
+
+        # Send batch request
+        response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+        logger.info(f"AI API Response: {response.status_code} - {response.text}")
+
+        # Close files
+        for f_obj in file_objects:
+            f_obj.close()
  
         logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
@@ -800,7 +839,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
  
                         if job_status == "job finished":
                             # Download and extract the audio ZIP file
-                            audio_zip_url = f"https://api.vachanengine.org/v2/ai/assets?job_id={ai_jobid}"
+                            audio_zip_url = f"{BASE_URL}/assets?job_id={ai_jobid}"
                             extracted_folder = download_and_extract_audio_zip(audio_zip_url)
                             if extracted_folder:
                                 temp_audio_dirs.append(extracted_folder)
@@ -893,7 +932,7 @@ def download_and_extract_audio_zip(audio_zip_url: str) -> str:
     """
     Downloads the audio ZIP file, extracts it, and returns the folder path where files are extracted.
     """
-    headers = {"Authorization": "Bearer ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"}
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
     response = requests.get(audio_zip_url, stream=True,headers=headers)
     if response.status_code == 200:
         # Save the ZIP file locally
@@ -943,8 +982,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     SOURCE_LANGUAGES_FILE = "source_languages.json"
     
     # AI API Base URL
-    BASE_API_URL = "https://api.vachanengine.org/v2/ai/model/audio/generate"
-    SERVED_MODELS_URL = "https://api.vachanengine.org/v2/ai/model/served-models"
+    TTS_API_URL = f"{BASE_URL}/model/audio/generate"
     # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
  
@@ -992,23 +1030,6 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
     
-    # Check if the model is served
-    try:
-        headers = {"Authorization": f"Bearer {api_token}"}
-        response = requests.get(SERVED_MODELS_URL, headers=headers)
-        if response.status_code == 200:
-            served_models = response.json()
-            served_model_names = {model["modelName"] for model in served_models}
-            if model_name not in served_model_names:
-                logger.error(f"Model '{model_name}' is not served.")
-                return {"error": f"Model '{model_name}' is not served."}
-        else:
-            logger.error(f"Error fetching served models: {response.status_code} - {response.text}")
-            return {"error": "Failed to fetch served models", "status_code": response.status_code}
-    except Exception as e:
-        logger.error(f"Error checking served models: {str(e)}")
-        return {"error": "Exception occurred while checking served models", "details": str(e)}
- 
     # Prepare API parameters and headers
     params = {
         "model_name": model_name,
@@ -1020,7 +1041,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
  
     try:
         # Make the API request
-        response = requests.post(BASE_API_URL, params=params, json=data_payload, headers=headers)
+        response = requests.post(TTS_API_URL, params=params, json=data_payload, headers=headers)
         logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
         # Handle API response
