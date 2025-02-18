@@ -362,9 +362,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     modifiedVerses.length > 0 &&
                     modifiedVerses.every((verse) => verse.tts);
                   
-                  // const allConverted = verses.every((verse) => verse.tts);
-                  const completed = verses.filter((verse) => verse.stt).length;
-                  const total = verses.length;
                   const isApproved = chapter.approved;
 
                   const isInProgress = useTranscriptionTrackingStore
@@ -389,7 +386,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         : "notTranscribed",
                     progress: allTranscribed
                       ? ""
-                      : isInProgress && `${completed} out of ${total} done`,
+                      : isInProgress && "Processing",
                     verses: verses,
                   };
                 } catch (error) {
@@ -514,8 +511,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const verses = data.data;
                   const allTranscribed =
                     verses.length > 0 && verses.every((verse) => verse.stt);
-                  const completed = verses.filter((verse) => verse.stt).length;
-                  const total = verses.length;
 
                   const hasTranscriptionError = verses.some(
                     (verse) =>
@@ -539,7 +534,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                                 : "inProgress",
                               progress: allTranscribed
                                 ? ""
-                                : `${completed} out of ${total} done`,
+                                : "Processing",
                             };
                           }
                           return ch;
@@ -554,7 +549,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
                         const currentChapterProgress = updatedChapters.find(
                             (ch) => ch.chapter_id === chapter.chapter_id
-                          )?.progress || "Calculating...";
+                          )?.progress || "Calculating";
 
                         return {
                           ...b,
@@ -590,7 +585,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                       );
                     resolve();
                   } else {
-                    setTimeout(pollChapterStatus, 10000);
+                    setTimeout(pollChapterStatus,5000);
                   }
                 } catch (error) {
                   totalChaptersProcessed++;
@@ -1161,7 +1156,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
               });
               resolve("Text-to-speech conversion completed successfully");
             } else {
-              setTimeout(pollTTSStatus, 10000);
+              setTimeout(pollTTSStatus, 5000);
             }
           } catch (error) {
             resolve(
