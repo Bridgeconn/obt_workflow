@@ -110,6 +110,7 @@ Alternatively, log out and log back in to refresh the `.bashrc` file.
    - `MAIL_FROM` (e.g., `MAIL_FROM=your_sendgrid_email`)
    - `API_TOKEN`(e.g.,`API_TOKEN`)
    - `BASE_URL`(e.g.,`/ai/api`)
+   - `STT_DEVICE`(e.g.,`devicename`)
 2. Ensure the database is configured and accessible.
 
 
@@ -156,6 +157,7 @@ Ensure `.env` file is created in the docker folder with following variables.
    MAIL_FROM=<sendgrid_registered_mail>
    API_TOKEN=API_TOKEN
    BASE_URL=BASE_URL
+   STT_DEVICE=<devicename>
 
    ```
 
