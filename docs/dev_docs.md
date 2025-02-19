@@ -92,6 +92,8 @@ source ~/.bashrc
    - `FRONTEND_URL` (e.g., `FRONTEND_URL=http://localhost:3000`)
    - `SENDGRID_API_KEY` (e.g., `SENDGRID_API_KEY=your_sendgrid_api_key`)
    - `MAIL_FROM` (e.g., `MAIL_FROM=your_sendgrid_email`)
+   - `API_TOKEN`(e.g.,`API_TOKEN`)
+   - `BASE_URL`(e.g.,`/ai/api`)
 2. Ensure the database is configured and accessible.
 
 #### **7. Run the App**
@@ -114,6 +116,10 @@ Ensure `.env` file is created in the docker folder with following variables.
    FRONTEND_URL=http://localhost
    SENDGRID_API_KEY=<sendgrid_api_key>
    MAIL_FROM=<sendgrid_registered_mail>
+   API_TOKEN=API_TOKEN
+   BASE_URL=BASE_URL
+   STT_DEVICE=<devicename>
+
    ```
 
 From the `docker` folder, execute:
