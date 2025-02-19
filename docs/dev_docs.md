@@ -118,7 +118,7 @@ Ensure `.env` file is created in the docker folder with following variables.
    MAIL_FROM=<sendgrid_registered_mail>
    API_TOKEN=API_TOKEN
    BASE_URL=BASE_URL
-   DEVICE=<devicename>
+   STT_DEVICE=<devicename>
 
    ```
 

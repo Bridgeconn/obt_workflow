@@ -49,6 +49,7 @@ services:
       - MAIL_FROM=${MAIL_FROM}
       - API_TOKEN=${API_TOKEN} 
       - BASE_URL=${BASE_URL}
+      - STT_DEVICE=${STT_DEVICE}
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
       - logs-vol:/app/logs
