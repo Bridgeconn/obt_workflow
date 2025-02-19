@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 import zipfile
 import os
 from database import SessionLocal, User,Verse,Chapter,Job
-# import logging
+import logging
 import requests
 import time
 import shutil
@@ -16,12 +16,18 @@ import librosa
 import soundfile as sf
 from dependency import logger, LOG_FOLDER
 import re
-
+import router
+import datetime
+import time
 
 
 load_dotenv()
 
-# logging.basicConfig(level=logging.DEBUG)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
 if not BASE_DIRECTORY:
@@ -505,7 +511,8 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
     """
     Background task to transcribe verses and update the database.
     """
-    logger.info(f"Inside transcribe_verses - Received type: {type(file_paths)}, value: {file_paths}")
+    start_time = time.time()
+    logger.info(f"[{start_time}] 🟢 Transcription process started at OBT Backend")
     try:
         # Retrieve the Verse entry based on the file path
         verses = db_session.query(Verse).filter(
@@ -533,6 +540,10 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
         db_session.add(job)
         db_session.commit()
         db_session.refresh(job)
+        logger.info(f"[{router.current_time()}] Processing {len(pending_file_paths)} files.")
+        ai_api_start_time = time.time()
+        logger.info(f"[{ai_api_start_time}] Calling STT AI API")
+        
         # logger.info(f"Inside transcribe_verses - Before calling call_stt_api: type={type(file_paths)}, value={file_paths}")
         result = call_stt_api(list(pending_file_paths), script_lang)  # Explicitly convert to a list
         if "error" in result:
@@ -540,6 +551,7 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             job.status = "failed"
             verse.stt = False
             verse.stt_msg = result.get("error", "Unknown error")
+            logger.error(f"[{router.current_time()}]  STT API error: {result.get('error', 'Unknown error')}")
         else:
             # Update the job with the AI job ID
             ai_jobid = result.get("data", {}).get("jobId")
@@ -547,11 +559,17 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             job.status = "in_progress"
             db_session.add(job)
             db_session.commit()
+            logger.info(f"[{router.current_time()}] 🔄 STT AI Job ID {ai_jobid} received. Monitoring job status...")
+
             # Poll AI job status until it's finished
             while True:
                 transcription_result = check_ai_job_status(ai_jobid)
+
                 job_status = transcription_result.get("data", {}).get("status")
+                logger.info(f"[{router.current_time()}] ⏳ AI Job {ai_jobid} Status: {job_status}")
                 if job_status == "job finished":
+                    ai_api_end_time = time.time()
+                    logger.info(f"[{router.current_time()}] Transcription process for chapter completed in {ai_api_end_time - ai_api_start_time:.2f} seconds at AI side")
                     # Extract transcription results
                     transcriptions = transcription_result["data"]["output"]["transcriptions"]
                     for transcription in transcriptions:
@@ -568,15 +586,11 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
 
                     job.status = "completed"
                     break
-                elif job_status == "job failed":
+                elif job_status in ["job failed", "Error"]:
                     job.status = "failed"
                     verse.stt = False
                     verse.stt_msg = "AI transcription failed"
-                    break
-                elif job_status == "Error":
-                    job.status = "failed"
-                    verse.stt = False
-                    verse.stt_msg = "AI transcription failed"
+                    logger.error(f"[{router.current_time()}]  AI Transcription failed for Job ID {ai_jobid}.")
                     break
                 # Wait for a few seconds before polling again
                 time.sleep(5)
@@ -584,12 +598,14 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
             db_session.add(job)
             db_session.add(verse)
             db_session.commit()
+            end_time = time.time()
+            logger.info(f"[{router.current_time()}] 🕒 Transcription process for chapter completed in {end_time - start_time:.2f} seconds at OBT Backend")
+
     except Exception as e:
         logger.error(f"Error in transcribe_verses: {str(e)}")
 
     finally:
         db_session.close()
-
 
 
 def check_ai_job_status(ai_jobid: str) -> dict:
@@ -599,7 +615,7 @@ def check_ai_job_status(ai_jobid: str) -> dict:
     job_status_url =  f"{BASE_URL}/model/job?job_id={ai_jobid}"
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
     try:
-        response = requests.get(job_status_url, headers=headers, timeout=30)
+        response = requests.get(job_status_url, headers=headers, timeout=120) #it will wait 120 seconds for response
 
         if response.status_code == 200:
             return response.json()
@@ -661,7 +677,7 @@ def is_model_served(lang: str, model_type: str) -> bool:
         response = requests.get(SERVED_MODELS_URL, headers=headers, timeout=10)
         if response.status_code != 200:
             logger.error(f" Error fetching served models: {response.status_code} - {response.text}")
-            return False
+            raise HTTPException(status_code=500, detail="Failed to fetch served models")
         
         served_models = response.json()
         served_model_names = {model["modelName"] for model in served_models}
@@ -698,7 +714,7 @@ def is_model_served(lang: str, model_type: str) -> bool:
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Request error checking served models: {str(e)}")
-        return False
+        raise HTTPException(status_code=500, detail="Failed to check served models")
 
 
 
@@ -780,6 +796,8 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
     """
     Generate speech for each verse and update the database, saving files in the appropriate output directory.
     """
+    start_time = time.time()
+    logger.info(f"[{router.current_time()}] 🟢 TTS conversion started at OBT Backend")
     db_session = SessionLocal()
     extracted_folder = None
     temp_audio_dirs = []
@@ -818,12 +836,16 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.refresh(job)
  
                 # Call AI API for text-to-speech
+                logger.info(f"[{router.current_time()}]  Calling TTS AI API for Verse ID {verse.verse_id}")
+                ai_api_start_time = time.time()
                 result = call_tts_api([verse.text], audio_lang,output_format)
+                
                 if "error" in result:
                     # Handle API error
                     job.status = "failed"
                     verse.tts = False
                     verse.tts_msg = result.get("error", "Unknown error")
+                    logger.error(f"[{router.current_time()}]  TTS API error: {result.get('error', 'Unknown error')}")
                 else:
                     # Update the job with the AI job ID
                     ai_jobid = result.get("data", {}).get("jobId")
@@ -831,6 +853,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                     job.status = "in_progress"
                     db_session.add(job)
                     db_session.commit()
+                    logger.info(f"[{router.current_time()}] 🔄 TTS AI Job ID {ai_jobid} received. Monitoring job status...")
  
                     # Poll AI job status until it's finished
                     while True:
@@ -838,6 +861,8 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                         job_status = job_result.get("data", {}).get("status")
  
                         if job_status == "job finished":
+                            ai_api_end_time = time.time()
+                            logger.info(f"[{router.current_time()}]  TTS Conversion for verse completed in {ai_api_end_time - ai_api_start_time:.2f} seconds at AI side")
                             # Download and extract the audio ZIP file
                             audio_zip_url = f"{BASE_URL}/assets?job_id={ai_jobid}"
                             extracted_folder = download_and_extract_audio_zip(audio_zip_url)
@@ -872,15 +897,11 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                 verse.tts_msg = "Failed to download or extract audio ZIP"
                                 job.status = "failed"
                             break
-                        elif job_status == "job failed": 
+                        elif job_status in ["job failed", "Error"]:
                             job.status = "failed"
                             verse.tts = False
                             verse.tts_msg = "AI TTS job failed"
-                            break
-                        elif job_status == "Error": 
-                            job.status = "failed"
-                            verse.tts = False
-                            verse.tts_msg = "AI TTS job failed"
+                            logger.error(f"[{router.current_time()}]  TTS AI conversion failed for Job ID {ai_jobid}.")
                             break
                         time.sleep(5)
  
@@ -888,6 +909,8 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.add(job)
                 db_session.add(verse)
                 db_session.commit()
+                end_time = time.time()
+                logger.info(f"[{router.current_time()}] 🕒 TTS conversion for verse completed in {end_time - start_time:.2f} seconds at OBT Backend")
  
             except Exception as e:
                 # Handle errors during TTS

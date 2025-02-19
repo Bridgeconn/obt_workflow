@@ -9,7 +9,7 @@ import os
 import re
 import json
 from database import User, Project, Verse, Chapter, Job, Book
-# import logging
+import logging
 from fastapi import BackgroundTasks
 import auth
 import dependency
@@ -24,10 +24,20 @@ from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
 from crud import call_stt_api, call_tts_api
 from utils import send_email
+import time
+
+def current_time():
+    return datetime.datetime.now().strftime("%B %d, %Y %I:%M:%S %p")
 
 load_dotenv()
 
-# logging.basicConfig(level=logging.INFO)
+# Configure logging level from .env
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("fastapi_app")
 
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
@@ -1182,6 +1192,9 @@ async def convert_to_text(
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
+    # start_time = time.time()
+    logger.info(f"[{current_time()}] Transcription API triggered for project {project_id}, book {book_code}, chapter {chapter_number}")
+
     project = (
         db.query(Project)
         .filter(
@@ -1234,6 +1247,7 @@ async def convert_to_text(
             status_code=400, 
             detail="The STT model is not currently available for this language."
         )
+    logger.info(f"[{current_time()}] Adding transcription task to background queue")
     background_tasks.add_task(crud.transcribe_verses, list(file_paths), script_lang, db)
     return {
         "message": "Transcription started for all verses in the chapter",
@@ -1468,6 +1482,7 @@ async def convert_to_speech(
     """
     API to convert text to speech for all verses in a chapter, using chapter_id.
     """
+    logger.info(f"[{current_time()}] 🟢 TTS API triggered for Chapter ID {chapter_id}")
     # Fetch the chapter and validate it
     chapter = db.query(Chapter).filter(Chapter.chapter_id == chapter_id).first()
     if not chapter:
@@ -1513,7 +1528,7 @@ async def convert_to_speech(
             detail="The TTS model is not currently available for this language."
         )
 
-
+    logger.info(f"[{current_time()}] ⏳ Adding TTS conversion task for Chapter {chapter.chapter} to background queue")
     # Start the text-to-speech generation task
     background_tasks.add_task(
         crud.generate_speech_for_verses,
