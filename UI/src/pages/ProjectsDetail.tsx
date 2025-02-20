@@ -401,7 +401,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
     if (
-      ["transcribed", "approved", "converted", "converting"].includes(
+      ["transcribed", "approved", "converted", "converting", "conversionError"].includes(
         chapter.status || ""
       )
     ) {
@@ -671,7 +671,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                     : chapter.status === "inProgress" ||
                                       chapter.status === "converting"
                                     ? "text-orange-700 border border-gray-100 bg-orange-200"
-                                    : chapter.status === "error"
+                                    : ["error", "conversionError"].includes(
+                                        chapter.status || ""
+                                    )
                                     ? "text-red-700 border border-red-600 bg-red-200"
                                     : "text-gray-700 border border-gray-300"
                                 }`}
@@ -684,7 +686,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                       !
                                     </span>
                                   )}
-                                {chapter.status === "error" && (
+                                {["error", "conversionError"].includes(
+                                        chapter.status || ""
+                                  ) && (
                                   <button
                                     className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
                                   >

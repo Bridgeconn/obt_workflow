@@ -389,7 +389,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           >
             Close
           </Button>
-          <Button onClick={handleApproveChapter}>
+          {/* disable the approve button during conversion */}
+          <Button onClick={handleApproveChapter} disabled = {isConvertingChapters[chapter.chapter_id]}>
             {approved ? "Unapprove" : "Approve"}
           </Button>
           <Button
