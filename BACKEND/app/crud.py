@@ -19,6 +19,7 @@ import re
 import router
 import datetime
 import time
+from language import language_codes, source_languages
 
 
 load_dotenv()
@@ -674,7 +675,7 @@ def is_model_served(lang: str, model_type: str) -> bool:
 
     try:
         headers = {"Authorization": f"Bearer {API_TOKEN}"}
-        response = requests.get(SERVED_MODELS_URL, headers=headers, timeout=10)
+        response = requests.get(SERVED_MODELS_URL, headers=headers, timeout=60) #it will wait 60 seconds for response
         if response.status_code != 200:
             logger.error(f" Error fetching served models: {response.status_code} - {response.text}")
             raise HTTPException(status_code=500, detail="Failed to fetch served models")
@@ -683,21 +684,15 @@ def is_model_served(lang: str, model_type: str) -> bool:
         served_model_names = {model["modelName"] for model in served_models}
         logger.info(f" Available models: {served_model_names}")
 
-        # Load language mappings
-        with open("language_codes.json", "r") as file:
-            language_mapping = json.load(file)
-        with open("source_languages.json", "r") as file:
-            source_language_mapping = json.load(file)
-
         # Determine the correct source language
         source_language = next(
-            (entry["source_language"] for entry in source_language_mapping if entry["language_name"] == lang),
+            (entry["script_language"] for entry in source_languages if entry["language_name"] == lang),
             lang  # Default to original language if no mapping is found
         )
         logger.info(f"Mapped '{lang}' to source language '{source_language}'")
 
         # Fetch the correct model mapping (STT/TTS)
-        model_mapping = language_mapping.get(source_language, {}).get(model_type, {})
+        model_mapping = language_codes.get(source_language, {}).get(model_type, {})
 
         if not model_mapping:
             logger.error(f"❌ No {model_type.upper()} model found for language: {source_language}")
@@ -723,7 +718,6 @@ def call_stt_api(file_paths: list[str], script_lang: str) -> dict:
      Calls the AI API to transcribe the given audio file.
     """
     # File path for the language mapping JSON
-    LANGUAGE_CODES_FILE = "language_codes.json"
     
     # AI API Base URL (model_name will be dynamic)
     TRANSCRIBE_API_URL = f"{BASE_URL}/model/audio/transcribe"
@@ -732,16 +726,11 @@ def call_stt_api(file_paths: list[str], script_lang: str) -> dict:
         logger.warning(f"Received string instead of list: {file_paths}")
         file_paths = [file_paths]
     # Load the language mapping
-    try:
-        with open(LANGUAGE_CODES_FILE, "r") as file:
-            language_mapping = json.load(file)
-    except Exception as e:
-        logger.error(f"Error loading language_codes.json: {str(e)}")
-        return {"error": "Failed to load language mapping file", "details": str(e)}
+  
  
     # Get the model_name and language_code dynamically
     try:
-        stt_mapping = language_mapping.get(script_lang, {}).get("stt", {})
+        stt_mapping = language_codes.get(script_lang, {}).get("stt", {})
         if not stt_mapping:
             logger.error(f"No STT model found for script_lang: {script_lang}")
             return {"error": f"No STT model found for script_lang: {script_lang}"}
@@ -1000,36 +989,17 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     """
     Call the AI API for text-to-speech.
     """
-    # File path for the language mapping JSON
-    LANGUAGE_CODES_FILE = "language_codes.json"
-    SOURCE_LANGUAGES_FILE = "source_languages.json"
     
     # AI API Base URL
     TTS_API_URL = f"{BASE_URL}/model/audio/generate"
     # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
  
-    # Load the language mapping
-    try:
-        with open(LANGUAGE_CODES_FILE, "r") as file:
-            language_mapping = json.load(file)
-    except Exception as e:
-        logger.error(f"Error loading language_codes.json: {str(e)}")
-        return {"error": "Failed to load language mapping file", "details": str(e)}
-    
-    # Load the source language mapping
-    try:
-        with open(SOURCE_LANGUAGES_FILE, "r") as file:
-            source_language_mapping = json.load(file)
-    except Exception as e:
-        logger.error(f"Error loading source_languages.json: {str(e)}")
-        return {"error": "Failed to load source language mapping file", "details": str(e)}
- 
     # Map audio_lang to source_language
     source_language = None
-    for item in source_language_mapping:
+    for item in source_languages:
         if item["language_name"] == audio_lang:
-            source_language = item["source_language"]
+            source_language = item["script_language"]
             break
  
     if not source_language:
@@ -1038,7 +1008,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
  
     # Get the model_name and language_code dynamically
     try:
-        tts_mapping = language_mapping.get(source_language, {}).get("tts", {})
+        tts_mapping = language_codes.get(source_language, {}).get("tts", {})
         if not tts_mapping:
             logger.error(f"No TTS model found for source_language: {source_language}")
             return {"error": f"No TTS model found for audio_lang: {source_language}"}

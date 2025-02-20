@@ -357,7 +357,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     setAudioLanguage(String(selectedAudioLanguage.id));
     const selectedScriptLanguage = major_languages.find(
       (language) =>
-        language.language_name === selectedAudioLanguage.source_language
+        language.language_name === selectedAudioLanguage.script_language
     );
     if (!selectedScriptLanguage) {
       console.error("Script language not found.");
@@ -369,7 +369,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     await refetch();
 
     checkServedModels(
-      selectedAudioLanguage.source_language,
+      selectedAudioLanguage.script_language,
       selectedScriptLanguage.major_language
     );
     const token = useAuthStore.getState().token;
