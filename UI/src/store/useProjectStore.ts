@@ -361,7 +361,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const allModifiedConverted =
                     modifiedVerses.length > 0 &&
                     modifiedVerses.every((verse) => verse.tts);
-                  
+
+                  const completed = verses.filter((verse) => verse.stt).length;
+                  const total = verses.length;
+
                   const isApproved = chapter.approved;
 
                   const isInProgress = useTranscriptionTrackingStore
@@ -386,7 +389,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         : "notTranscribed",
                     progress: allTranscribed
                       ? ""
-                      : isInProgress && "Processing",
+                      : isInProgress && `${completed} out of ${total} done`,
                     verses: verses,
                   };
                 } catch (error) {
@@ -511,7 +514,8 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const verses = data.data;
                   const allTranscribed =
                     verses.length > 0 && verses.every((verse) => verse.stt);
-
+                  const completed = verses.filter((verse) => verse.stt).length;
+                  const total = verses.length;
                   const hasTranscriptionError = verses.some(
                     (verse) =>
                       verse.stt_msg &&
@@ -534,7 +538,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                                 : "inProgress",
                               progress: allTranscribed
                                 ? ""
-                                : "Processing",
+                                : `${completed} out of ${total} done`,
                             };
                           }
                           return ch;

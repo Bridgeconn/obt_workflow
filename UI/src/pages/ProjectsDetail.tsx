@@ -25,7 +25,7 @@ import {
   Upload,
   X,
   Archive,
-  PackageOpen
+  PackageOpen,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -236,14 +236,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       }
 
       if (responseData.message === "Book added successfully") {
-        let succcessDescription = ""
-        if(responseData?.incompartible_verses.length > 0){
-          succcessDescription = `${responseData?.incompartible_verses.length} verse file(s) skipped due to file incompatibility`
-        } 
+        let succcessDescription = "";
+        if (responseData?.incompartible_verses.length > 0) {
+          succcessDescription = `${responseData?.incompartible_verses.length} verse file(s) skipped due to file incompatibility`;
+        }
         toast({
           title: `Book ${responseData.book} added successfully`,
           variant: "success",
-          description: succcessDescription
+          description: succcessDescription,
         });
       } else {
         setUploadedBookData(responseData);
@@ -401,9 +401,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
     if (
-      ["transcribed", "approved", "converted", "converting", "conversionError"].includes(
-        chapter.status || ""
-      )
+      [
+        "transcribed",
+        "approved",
+        "converted",
+        "converting",
+        "conversionError",
+      ].includes(chapter.status || "")
     ) {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
@@ -546,38 +550,40 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         <>
           {/* Project Title */}
           <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-10">
-          <div className="flex flex-col xl:flex-row w-full gap-8">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  queryClient.invalidateQueries({ queryKey: ["projects"] });
-                  navigate("/")
-                }}
-                className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
-                title="Back to Projects"
-              >
-                <ArrowLeft className="w-6 h-6" />
-              </button>
-              <h1 className="text-4xl font-bold text-purple-700 whitespace-nowrap overflow-hidden text-ellipsis">
-                {project?.name}
-              </h1>
-            </div>
-            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 flex-wrap">
-            {/* Audio Language */}
-            <LanguageSelect
-              onLanguageChange={handleLanguageChange}
-              selectedLanguageId={audioLanguage}
-            />
+            <div className="flex flex-col xl:flex-row w-full gap-8">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    queryClient.invalidateQueries({ queryKey: ["projects"] });
+                    navigate("/");
+                  }}
+                  className="p-1.5 rounded-full text-purple-600 hover:bg-purple-100 transition-colors"
+                  title="Back to Projects"
+                >
+                  <ArrowLeft className="w-6 h-6" />
+                </button>
+                <h1 className="text-4xl font-bold text-purple-700 whitespace-nowrap overflow-hidden text-ellipsis">
+                  {project?.name}
+                </h1>
+              </div>
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-4 flex-wrap">
+                {/* Audio Language */}
+                <LanguageSelect
+                  onLanguageChange={handleLanguageChange}
+                  selectedLanguageId={audioLanguage}
+                />
 
-            {/* Script Language */}
-            <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
-                Script : <label className="text-gray-800 font-medium">{matchedLanguage && (matchedLanguage.language_name)}</label>
-              </label>
-             
+                {/* Script Language */}
+                <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-full md:w-auto">
+                  <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
+                    Script :{" "}
+                    <label className="text-gray-800 font-medium">
+                      {matchedLanguage && matchedLanguage.language_name}
+                    </label>
+                  </label>
+                </div>
+              </div>
             </div>
-          </div>
-          </div>
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
               <input
@@ -588,7 +594,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 hidden
               />
               <Button
-              variant="outline"
+                variant="outline"
                 className="flex items-center gap-2"
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload a book"
@@ -597,7 +603,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 {/* Upload Book */}
               </Button>
               <Button
-                size= "icon"
+                size="icon"
                 variant="outline"
                 onClick={handleDownloadProject}
                 disabled={!project.books.some((book) => book.approved)}
@@ -605,13 +611,25 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               >
                 <Download size={20} />
               </Button>
-              <Button variant="outline" onClick={() => !archive ? setArchiveDialogOpen(true) : handleArchiveProject()} title={archive ? "Unarchive" : "Archive"}>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  !archive ? setArchiveDialogOpen(true) : handleArchiveProject()
+                }
+                title={archive ? "Unarchive" : "Archive"}
+              >
                 {archive ? <PackageOpen size={20} /> : <Archive size={20} />}
               </Button>
-              <Button variant="outline" onClick={handleCloseProject} title="Close Project" style={{ color: "red" }}><X size={20} /></Button>
+              <Button
+                variant="outline"
+                onClick={handleCloseProject}
+                title="Close Project"
+                style={{ color: "red" }}
+              >
+                <X size={20} />
+              </Button>
             </div>
           </div>
-          
 
           {/* Table Section */}
           <div
@@ -673,7 +691,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                     ? "text-orange-700 border border-gray-100 bg-orange-200"
                                     : ["error", "conversionError"].includes(
                                         chapter.status || ""
-                                    )
+                                      )
                                     ? "text-red-700 border border-red-600 bg-red-200"
                                     : "text-gray-700 border border-gray-300"
                                 }`}
@@ -687,11 +705,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                     </span>
                                   )}
                                 {["error", "conversionError"].includes(
-                                        chapter.status || ""
-                                  ) && (
-                                  <button
-                                    className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20"
-                                  >
+                                  chapter.status || ""
+                                ) && (
+                                  <button className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20">
                                     <RotateCcw className="w-3 h-3" />
                                   </button>
                                 )}
@@ -791,10 +807,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           <Button
                             className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                               book.status === "inProgress" ||
-                              book.status === "converting"
-                                ? "bg-gray-300 border border-gray-300 cursor-not-allowed hover:bg-gray-300"
-                                : !scriptLanguage || !audioLanguage
-                                ? "bg-gray-300 text-gray-500 opacity-70 cursor-not-allowed"
+                              book.status === "converting" ||
+                              !scriptLanguage ||
+                              !audioLanguage
+                                ? "opacity-50 cursor-not-allowed"
                                 : "hover:bg-gray-700"
                             }`}
                             onClick={() => {
@@ -816,19 +832,20 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           >
                             {book.status === "inProgress" ||
                             book.status === "converting" ? (
-                              <div className="flex items-center justify-center space-x-2">
-                                <span className="text-gray-800 font-medium">
-                                  {book.progress ||
-                                    (book.status === "converting"
-                                      ? "Converting"
-                                      : "Processing")}
-                                </span>
-                                <span className="flex space-x-1">
-                                  <span className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                                  <span className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                                  <span className="w-2 h-2 bg-black rounded-full animate-bounce"></span>
-                                </span>
-                              </div>
+                              <>
+                                {book.progress === "Calculating" ? (
+                                  <div className="flex items-center justify-center space-x-2">
+                                    <span>Calculating</span>
+                                    <span className="flex space-x-1">
+                                      <span className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                                      <span className="w-2 h-2 bg-black rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                                      <span className="w-2 h-2 bg-black rounded-full animate-bounce"></span>
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span>{book.progress}</span>
+                                )}
+                              </>
                             ) : book.status === "error" ? (
                               "Retry"
                             ) : (
@@ -870,7 +887,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 bookCode={uploadedBookData?.book}
                 addedChapters={uploadedBookData?.added_chapters}
                 skippedChapters={uploadedBookData?.skipped_chapters}
-                skippedVerses = {uploadedBookData?.incompartible_verses}
+                skippedVerses={uploadedBookData?.incompartible_verses}
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (

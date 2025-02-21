@@ -1254,7 +1254,7 @@ async def convert_to_text(
     test_file = file_paths[0]  # Pick the first file for testing
     logger.info(f"[{current_time()}] Testing transcription API with file: {test_file}")
  
-    test_result = crud.call_stt_api([test_file], script_lang)
+    test_result = crud.call_stt_api(test_file, script_lang)
  
     # Check if the response contains a valid job ID
     if "data" not in test_result or "jobId" not in test_result["data"]:
@@ -1264,7 +1264,7 @@ async def convert_to_text(
     logger.info(f"[{current_time()}] ✅ STT API test successful. Proceeding with transcription.")
  
     logger.info(f"[{current_time()}] Adding transcription task to background queue")
-    background_tasks.add_task(crud.transcribe_verses, list(file_paths), script_lang, db)
+    background_tasks.add_task(crud.transcribe_verses, file_paths, script_lang, db)
     return {
         "message": "Transcription started for all verses in the chapter",
         "project_id": project_id,
