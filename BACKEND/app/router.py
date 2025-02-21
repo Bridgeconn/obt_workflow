@@ -1235,7 +1235,7 @@ async def convert_to_text(
     
     for verse in verses:
         if verse.stt_msg != "Transcription successful":
-                logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
+                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
                 verse.stt_msg = ""
                 verse.stt = False# Resetting stt flag as well
                 db.add(verse)

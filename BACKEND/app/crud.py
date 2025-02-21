@@ -526,7 +526,7 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
  
         # for verse in verses:
             if verse.stt_msg != "Transcription successful":
-                logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
+                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
                 verse.stt_msg = ""
                 verse.stt = False# Resetting stt flag as well
                 db_session.add(verse)
@@ -534,7 +534,7 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
                 db_session.commit()  # Save the updates before calling STT API
             # Check if transcription is already successful
             if verse.stt_msg == "Transcription successful":
-                logger.debug(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
+                logger.info(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
                 continue
 
             # Create a job entry linked to the verse
@@ -797,7 +797,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
         
         for verse in verses:
             if verse.tts_msg != "Text-to-speech completed":
-                logger.debug(f"Resetting tts_msg for verse {verse.verse_id}.")
+                logger.info(f"Resetting tts_msg for verse {verse.verse_id}.")
                 verse.tts_msg = ""
                 verse.tts = False # Resetting tts flag as well
                 db_session.add(verse)
@@ -1051,7 +1051,7 @@ def validate_and_resample_wav(file_path: str) -> str:
     try:
         # Load the audio file with librosa
         audio_data, sample_rate = librosa.load(file_path, sr=None, mono=True)
-        logger.debug(f"Current sample rate: {sample_rate} Hz")
+        logger.info(f"Current sample rate: {sample_rate} Hz")
 
         # Resample only if not 48000 Hz
         if sample_rate != 48000:
