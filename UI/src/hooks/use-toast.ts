@@ -145,17 +145,35 @@ type Toast = Omit<ToasterToast, "id">
 function toast({ ...props }: Toast) {
   const id = genId()
 
+  const removeTrailingPeriod = (text: string | undefined) => {
+    if (typeof text === 'string' && text.endsWith('.')) {
+      return text.slice(0, -1);
+    }
+    return text;
+  };
+
+  const processedProps = {
+    ...props,
+    title: removeTrailingPeriod(props.title as string),
+    description: removeTrailingPeriod(props.description as string),
+  };
+
   const update = (props: ToasterToast) =>
     dispatch({
       type: "UPDATE_TOAST",
-      toast: { ...props, id },
+      toast: { 
+        ...props,
+        title: removeTrailingPeriod(props.title as string),
+        description: removeTrailingPeriod(props.description as string),
+        id 
+      },
     })
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
 
   dispatch({
     type: "ADD_TOAST",
     toast: {
-      ...props,
+      ...processedProps,
       id,
       open: true,
       onOpenChange: (open) => {

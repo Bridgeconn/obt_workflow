@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 import zipfile
 import os
 from database import SessionLocal, User,Verse,Chapter,Job
-# import logging
+import logging
 import requests
 import time
 import shutil
@@ -16,12 +16,19 @@ import librosa
 import soundfile as sf
 from dependency import logger, LOG_FOLDER
 import re
-
+import router
+import datetime
+import time
+from language import language_codes, source_languages
 
 
 load_dotenv()
 
-# logging.basicConfig(level=logging.DEBUG)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
 if not BASE_DIRECTORY:
@@ -505,91 +512,111 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
     """
     Background task to transcribe verses and update the database.
     """
-    logger.info(f"Inside transcribe_verses - Received type: {type(file_paths)}, value: {file_paths}")
+    chapter_start_time = time.time()
+    logger.info(f"[{ chapter_start_time}] 🟢 Transcription process started for chapter at OBT Backend")
     try:
-        # Retrieve the Verse entry based on the file path
-        verses = db_session.query(Verse).filter(
-            Verse.path.in_(file_paths),
-            (Verse.text == None) | (Verse.text == "") | (Verse.stt_msg != "Transcription successful")
-        ).all()
-        if not verses:
-            logger.info("No pending files for transcription. All are successfully transcribed.")
-            return  # Exit early if no files need transcription
-        # Get the paths of pending files only
-        pending_file_paths = [verse.path for verse in verses]
-        logger.info(f"Processing {len(pending_file_paths)} pending files: {pending_file_paths}")
-        # Reset all non-successful statuses before transcription
-        for verse in verses:
+       for file_path in file_paths:
+            # Retrieve the Verse entry based on the file path
+            verse_start_time = time.time()
+            logger.info(f"[{verse_start_time}] 🟢 Transcription process started for verse at OBT Backend")
+            verse = db_session.query(Verse).filter(Verse.path == file_path).first()
+            if not verse:
+                logger.error(f"Verse file not found for path: {file_path}")
+                continue
+ 
+        # for verse in verses:
             if verse.stt_msg != "Transcription successful":
-                logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
+                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
                 verse.stt_msg = ""
                 verse.stt = False# Resetting stt flag as well
                 db_session.add(verse)
 
-        db_session.commit()  # Save the updates before calling STT API
+                db_session.commit()  # Save the updates before calling STT API
+            # Check if transcription is already successful
+            if verse.stt_msg == "Transcription successful":
+                logger.info(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
+                continue
 
-        # Create a job entry linked to the verse
-        job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
-        db_session.add(job)
-        db_session.commit()
-        db_session.refresh(job)
-        # logger.info(f"Inside transcribe_verses - Before calling call_stt_api: type={type(file_paths)}, value={file_paths}")
-        result = call_stt_api(list(pending_file_paths), script_lang)  # Explicitly convert to a list
-        if "error" in result:
-            # Update job and verse statuses in case of an error
-            job.status = "failed"
-            verse.stt = False
-            verse.stt_msg = result.get("error", "Unknown error")
-        else:
-            # Update the job with the AI job ID
-            ai_jobid = result.get("data", {}).get("jobId")
-            job.ai_jobid = ai_jobid
-            job.status = "in_progress"
+            # Create a job entry linked to the verse
+            job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
             db_session.add(job)
             db_session.commit()
-            # Poll AI job status until it's finished
-            while True:
-                transcription_result = check_ai_job_status(ai_jobid)
-                job_status = transcription_result.get("data", {}).get("status")
-                if job_status == "job finished":
-                    # Extract transcription results
-                    transcriptions = transcription_result["data"]["output"]["transcriptions"]
-                    for transcription in transcriptions:
-                        audio_file = transcription["audioFile"]
-                        transcribed_text = transcription["transcribedText"]
+            db_session.refresh(job)
+            ai_api_start_time = time.time()
+            logger.info(f"[{ai_api_start_time}] Calling STT AI API")
 
-                        # Update the verse text and mark as successful
-                        for verse in verses:
-                            if os.path.basename(verse.path) == audio_file:
-                                verse.text = transcribed_text
-                                verse.stt = True
-                                verse.stt_msg = "Transcription successful"
-                                break
-
-                    job.status = "completed"
-                    break
-                elif job_status == "job failed":
+            try:
+                result = call_stt_api(file_path, script_lang)  # Explicitly convert to a list
+                if "error" in result:
+                    # Update job and verse statuses in case of an error
                     job.status = "failed"
                     verse.stt = False
-                    verse.stt_msg = "AI transcription failed"
-                    break
-                elif job_status == "Error":
-                    job.status = "failed"
-                    verse.stt = False
-                    verse.stt_msg = "AI transcription failed"
-                    break
-                # Wait for a few seconds before polling again
-                time.sleep(5)
-            # Save the updated job and verse statuses
-            db_session.add(job)
-            db_session.add(verse)
-            db_session.commit()
+                    verse.stt_msg = result.get("error", "Unknown error")
+                    logger.error(f"[{router.current_time()}]  STT API error: {result.get('error', 'Unknown error')}")
+                else:
+                    # Update the job with the AI job ID
+                    ai_jobid = result.get("data", {}).get("jobId")
+                    job.ai_jobid = ai_jobid
+                    job.status = "in_progress"
+                    db_session.add(job)
+                    db_session.commit()
+                    logger.info(f"[{router.current_time()}] 🔄 STT AI Job ID {ai_jobid} received. Monitoring job status...")
+
+                    # Poll AI job status until it's finished
+                    while True:
+                        transcription_result = check_ai_job_status(ai_jobid)
+
+                        job_status = transcription_result.get("data", {}).get("status")
+                        logger.info(f"[{router.current_time()}] ⏳ AI Job {ai_jobid} Status: {job_status}")
+                        if job_status == "job finished":
+                            ai_api_end_time = time.time()
+                            logger.info(f"[{router.current_time()}] Transcription process for verse completed in {ai_api_end_time - ai_api_start_time:.2f} seconds at AI side")
+                            # Extract transcription results
+                            transcriptions = transcription_result["data"]["output"]["transcriptions"]
+                            for transcription in transcriptions:
+                                audio_file = transcription["audioFile"]
+                                transcribed_text = transcription["transcribedText"]
+
+                                # Update the verse text and mark as successful
+                                if os.path.basename(file_path) == audio_file:
+                                    verse.text = transcribed_text
+                                    verse.stt = True
+                                    verse.stt_msg = "Transcription successful"
+                                    break
+
+                            job.status = "completed"
+                            break
+                        elif job_status in ["job failed", "Error"]:
+                            job.status = "failed"
+                            verse.stt = False
+                            verse.stt_msg = "AI transcription failed"
+                            logger.error(f"[{router.current_time()}]  AI Transcription failed for Job ID {ai_jobid}.")
+                            break
+                        # Wait for a few seconds before polling again
+                        time.sleep(5)
+                    # Save the updated job and verse statuses
+                    db_session.add(job)
+                    db_session.add(verse)
+                    db_session.commit()
+                    verse_end_time = time.time()
+                    logger.info(f"[{router.current_time()}] 🕒 Transcription process for verse completed in {verse_end_time - verse_start_time:.2f} seconds at OBT Backend")
+            except Exception as e:
+                # Handle errors during transcription
+                job.status = "failed"
+                verse.stt = False
+                verse.stt_msg = f"Error during transcription: {str(e)}"
+                db_session.add(job)
+                db_session.add(verse)
+                db_session.commit()
+                logger.error(f"Error during transcription for verse {verse.verse_id}: {str(e)}")
+    
     except Exception as e:
         logger.error(f"Error in transcribe_verses: {str(e)}")
-
+    
     finally:
         db_session.close()
-
+        chapter_end_time = time.time()
+        logger.info(f"[{router.current_time()}] 🕒 Transcription process for chapter completed in {chapter_end_time - chapter_start_time:.2f} seconds at OBT Backend")      
 
 
 def check_ai_job_status(ai_jobid: str) -> dict:
@@ -599,7 +626,7 @@ def check_ai_job_status(ai_jobid: str) -> dict:
     job_status_url =  f"{BASE_URL}/model/job?job_id={ai_jobid}"
     headers = {"Authorization": f"Bearer {API_TOKEN}"}
     try:
-        response = requests.get(job_status_url, headers=headers, timeout=30)
+        response = requests.get(job_status_url, headers=headers, timeout=120) #it will wait 120 seconds for response
 
         if response.status_code == 200:
             return response.json()
@@ -658,30 +685,24 @@ def is_model_served(lang: str, model_type: str) -> bool:
 
     try:
         headers = {"Authorization": f"Bearer {API_TOKEN}"}
-        response = requests.get(SERVED_MODELS_URL, headers=headers, timeout=10)
+        response = requests.get(SERVED_MODELS_URL, headers=headers, timeout=60) #it will wait 60 seconds for response
         if response.status_code != 200:
             logger.error(f" Error fetching served models: {response.status_code} - {response.text}")
-            return False
+            raise HTTPException(status_code=500, detail="Failed to fetch served models")
         
         served_models = response.json()
         served_model_names = {model["modelName"] for model in served_models}
         logger.info(f" Available models: {served_model_names}")
 
-        # Load language mappings
-        with open("language_codes.json", "r") as file:
-            language_mapping = json.load(file)
-        with open("source_languages.json", "r") as file:
-            source_language_mapping = json.load(file)
-
         # Determine the correct source language
         source_language = next(
-            (entry["source_language"] for entry in source_language_mapping if entry["language_name"] == lang),
+            (entry["script_language"] for entry in source_languages if entry["language_name"] == lang),
             lang  # Default to original language if no mapping is found
         )
         logger.info(f"Mapped '{lang}' to source language '{source_language}'")
 
         # Fetch the correct model mapping (STT/TTS)
-        model_mapping = language_mapping.get(source_language, {}).get(model_type, {})
+        model_mapping = language_codes.get(source_language, {}).get(model_type, {})
 
         if not model_mapping:
             logger.error(f"❌ No {model_type.upper()} model found for language: {source_language}")
@@ -698,34 +719,22 @@ def is_model_served(lang: str, model_type: str) -> bool:
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Request error checking served models: {str(e)}")
-        return False
+        raise HTTPException(status_code=500, detail="Failed to check served models")
 
 
 
-def call_stt_api(file_paths: list[str], script_lang: str) -> dict:
+def call_stt_api(file_path: str, script_lang: str) -> dict:
     """
      Calls the AI API to transcribe the given audio file.
     """
-    # File path for the language mapping JSON
-    LANGUAGE_CODES_FILE = "language_codes.json"
     
     # AI API Base URL (model_name will be dynamic)
     TRANSCRIBE_API_URL = f"{BASE_URL}/model/audio/transcribe"
-    device_type = os.getenv("STT_DEVICE", "cpu") 
-    if isinstance(file_paths, str):  # Ensure input is a list
-        logger.warning(f"Received string instead of list: {file_paths}")
-        file_paths = [file_paths]
-    # Load the language mapping
-    try:
-        with open(LANGUAGE_CODES_FILE, "r") as file:
-            language_mapping = json.load(file)
-    except Exception as e:
-        logger.error(f"Error loading language_codes.json: {str(e)}")
-        return {"error": "Failed to load language mapping file", "details": str(e)}
+    device_type = os.getenv("STT_DEVICE", "cpu")
  
     # Get the model_name and language_code dynamically
     try:
-        stt_mapping = language_mapping.get(script_lang, {}).get("stt", {})
+        stt_mapping = language_codes.get(script_lang, {}).get("stt", {})
         if not stt_mapping:
             logger.error(f"No STT model found for script_lang: {script_lang}")
             return {"error": f"No STT model found for script_lang: {script_lang}"}
@@ -741,34 +750,22 @@ def call_stt_api(file_paths: list[str], script_lang: str) -> dict:
  
     # Prepare API URL
     ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}"
-    valid_file_paths = [fp for fp in file_paths if os.path.exists(fp) and os.path.isfile(fp)]
-    if not valid_file_paths:
-        return {"error": "No valid audio files found for transcription."}
-    # Prepare the file and payload
-    # file_name = os.path.basename(file_paths)
+    file_name = os.path.basename(file_path)
     try:
-        # Open all files and prepare payload
-        file_objects = [open(fp, "rb") for fp in valid_file_paths]
-        files_payload = [("files", (os.path.basename(fp), f_obj, "audio/wav")) for fp, f_obj in zip(valid_file_paths, file_objects)]
-        data_payload = {"transcription_language": lang_code}
-        headers = {"Authorization": f"Bearer {API_TOKEN}"}
+        with open(file_path, "rb") as audio_file:
+            files_payload = {"files": (file_name, audio_file, "audio/wav")}
+            data_payload = {"transcription_language": lang_code}
+            headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
-        # Send batch request
-        response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
-        logger.info(f"AI API Response: {response.status_code} - {response.text}")
-
-        # Close files
-        for f_obj in file_objects:
-            f_obj.close()
- 
-        logger.info(f"AI API Response: {response.status_code} - {response.text}")
- 
-        # Handle API response
-        if response.status_code == 201:
-            return response.json()
-        else:
-            logger.error(f"AI API Error: {response.status_code} - {response.text}")
-            return {"error": "Failed to transcribe", "status_code": response.status_code}
+            # Send batch request
+            response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+            logger.info(f"AI API Response: {response.status_code} - {response.text}")  
+            # Handle API response
+            if response.status_code == 201:
+                return response.json()
+            else:
+                logger.error(f"AI API Error: {response.status_code} - {response.text}")
+                return {"error": "Failed to transcribe", "status_code": response.status_code}
     except Exception as e:
         logger.error(f"Error in call_stt_api: {str(e)}")
         return {"error": "Exception occurred", "details": str(e)}
@@ -780,6 +777,8 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
     """
     Generate speech for each verse and update the database, saving files in the appropriate output directory.
     """
+    start_time = time.time()
+    logger.info(f"[{router.current_time()}] 🟢 TTS conversion started at OBT Backend")
     db_session = SessionLocal()
     extracted_folder = None
     temp_audio_dirs = []
@@ -798,7 +797,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
         
         for verse in verses:
             if verse.tts_msg != "Text-to-speech completed":
-                logger.debug(f"Resetting tts_msg for verse {verse.verse_id}.")
+                logger.info(f"Resetting tts_msg for verse {verse.verse_id}.")
                 verse.tts_msg = ""
                 verse.tts = False # Resetting tts flag as well
                 db_session.add(verse)
@@ -818,12 +817,16 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.refresh(job)
  
                 # Call AI API for text-to-speech
+                logger.info(f"[{router.current_time()}]  Calling TTS AI API for Verse ID {verse.verse_id}")
+                ai_api_start_time = time.time()
                 result = call_tts_api([verse.text], audio_lang,output_format)
+                
                 if "error" in result:
                     # Handle API error
                     job.status = "failed"
                     verse.tts = False
                     verse.tts_msg = result.get("error", "Unknown error")
+                    logger.error(f"[{router.current_time()}]  TTS API error: {result.get('error', 'Unknown error')}")
                 else:
                     # Update the job with the AI job ID
                     ai_jobid = result.get("data", {}).get("jobId")
@@ -831,6 +834,7 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                     job.status = "in_progress"
                     db_session.add(job)
                     db_session.commit()
+                    logger.info(f"[{router.current_time()}] 🔄 TTS AI Job ID {ai_jobid} received. Monitoring job status...")
  
                     # Poll AI job status until it's finished
                     while True:
@@ -838,6 +842,8 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                         job_status = job_result.get("data", {}).get("status")
  
                         if job_status == "job finished":
+                            ai_api_end_time = time.time()
+                            logger.info(f"[{router.current_time()}]  TTS Conversion for verse completed in {ai_api_end_time - ai_api_start_time:.2f} seconds at AI side")
                             # Download and extract the audio ZIP file
                             audio_zip_url = f"{BASE_URL}/assets?job_id={ai_jobid}"
                             extracted_folder = download_and_extract_audio_zip(audio_zip_url)
@@ -872,15 +878,11 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                                 verse.tts_msg = "Failed to download or extract audio ZIP"
                                 job.status = "failed"
                             break
-                        elif job_status == "job failed": 
+                        elif job_status in ["job failed", "Error"]:
                             job.status = "failed"
                             verse.tts = False
                             verse.tts_msg = "AI TTS job failed"
-                            break
-                        elif job_status == "Error": 
-                            job.status = "failed"
-                            verse.tts = False
-                            verse.tts_msg = "AI TTS job failed"
+                            logger.error(f"[{router.current_time()}]  TTS AI conversion failed for Job ID {ai_jobid}.")
                             break
                         time.sleep(5)
  
@@ -888,6 +890,8 @@ def generate_speech_for_verses(project_id: int, book_code: str, verses, audio_la
                 db_session.add(job)
                 db_session.add(verse)
                 db_session.commit()
+                end_time = time.time()
+                logger.info(f"[{router.current_time()}] 🕒 TTS conversion for verse completed in {end_time - start_time:.2f} seconds at OBT Backend")
  
             except Exception as e:
                 # Handle errors during TTS
@@ -977,36 +981,17 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     """
     Call the AI API for text-to-speech.
     """
-    # File path for the language mapping JSON
-    LANGUAGE_CODES_FILE = "language_codes.json"
-    SOURCE_LANGUAGES_FILE = "source_languages.json"
     
     # AI API Base URL
     TTS_API_URL = f"{BASE_URL}/model/audio/generate"
     # API Token
     api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
  
-    # Load the language mapping
-    try:
-        with open(LANGUAGE_CODES_FILE, "r") as file:
-            language_mapping = json.load(file)
-    except Exception as e:
-        logger.error(f"Error loading language_codes.json: {str(e)}")
-        return {"error": "Failed to load language mapping file", "details": str(e)}
-    
-    # Load the source language mapping
-    try:
-        with open(SOURCE_LANGUAGES_FILE, "r") as file:
-            source_language_mapping = json.load(file)
-    except Exception as e:
-        logger.error(f"Error loading source_languages.json: {str(e)}")
-        return {"error": "Failed to load source language mapping file", "details": str(e)}
- 
     # Map audio_lang to source_language
     source_language = None
-    for item in source_language_mapping:
+    for item in source_languages:
         if item["language_name"] == audio_lang:
-            source_language = item["source_language"]
+            source_language = item["script_language"]
             break
  
     if not source_language:
@@ -1015,7 +1000,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
  
     # Get the model_name and language_code dynamically
     try:
-        tts_mapping = language_mapping.get(source_language, {}).get("tts", {})
+        tts_mapping = language_codes.get(source_language, {}).get("tts", {})
         if not tts_mapping:
             logger.error(f"No TTS model found for source_language: {source_language}")
             return {"error": f"No TTS model found for audio_lang: {source_language}"}
@@ -1066,7 +1051,7 @@ def validate_and_resample_wav(file_path: str) -> str:
     try:
         # Load the audio file with librosa
         audio_data, sample_rate = librosa.load(file_path, sr=None, mono=True)
-        logger.debug(f"Current sample rate: {sample_rate} Hz")
+        logger.info(f"Current sample rate: {sample_rate} Hz")
 
         # Resample only if not 48000 Hz
         if sample_rate != 48000:

@@ -361,7 +361,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const allModifiedConverted =
                     modifiedVerses.length > 0 &&
                     modifiedVerses.every((verse) => verse.tts);
-                  
+
+                  const completed = verses.filter((verse) => verse.stt).length;
+                  const total = verses.length;
+
                   const isApproved = chapter.approved;
 
                   const isInProgress = useTranscriptionTrackingStore
@@ -386,7 +389,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         : "notTranscribed",
                     progress: allTranscribed
                       ? ""
-                      : isInProgress && "Processing",
+                      : isInProgress && `${completed} out of ${total} done`,
                     verses: verses,
                   };
                 } catch (error) {
@@ -511,7 +514,8 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const verses = data.data;
                   const allTranscribed =
                     verses.length > 0 && verses.every((verse) => verse.stt);
-
+                  const completed = verses.filter((verse) => verse.stt).length;
+                  const total = verses.length;
                   const hasTranscriptionError = verses.some(
                     (verse) =>
                       verse.stt_msg &&
@@ -534,7 +538,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                                 : "inProgress",
                               progress: allTranscribed
                                 ? ""
-                                : "Processing",
+                                : `${completed} out of ${total} done`,
                             };
                           }
                           return ch;
@@ -990,7 +994,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       return {
                         ...ch,
                         status: hasConversionError
-                          ? "error"
+                          ? "conversionError"
                           : completedModifiedVerses.length ===
                             modifiedVerses.length
                           ? "converted"
@@ -1062,24 +1066,26 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       if (ch.chapter_id === chapter.chapter_id) {
                         return {
                           ...ch,
-                          status: "error",
+                          status: "conversionError",
                           progress: "Conversion failed",
                         };
                       }
                       return ch;
                     });
-                    const checkTranscribed = updatedChapters.length > 0 && updatedChapters.every((ch) =>
+                    const checkTranscribed = updatedChapters.length > 0 && updatedChapters.some((ch) =>
                       ["transcribed", "converted", "approved"].includes(
                         ch.status ?? ""
                       )
                     );
 
+                    const checkNotTranscribed = updatedChapters.length > 0 && updatedChapters.some((ch) =>
+                      ["notTranscribed"].includes(ch.status ?? "")
+                    );
+
                     return {
                       ...b,
                       chapters: updatedChapters,
-                      status: checkTranscribed
-                        ? "transcribed"
-                        : "notTranscribed",
+                      status: checkNotTranscribed ? "notTranscribed" : checkTranscribed ? "transcribed" : "error",
                       progress: "",
                     };
                   }
@@ -1174,6 +1180,8 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
     } catch (error) {
       return error instanceof Error
         ? error.message
+        : typeof error === "string"
+        ? error
         : "Error during conversion process";
     }
   },

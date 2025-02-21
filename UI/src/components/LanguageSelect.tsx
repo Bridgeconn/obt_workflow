@@ -31,12 +31,12 @@ const LanguageSelect: React.FC<LanguageSelectProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
 
   // Get unique source languages
-  const sourceLanguages = [...new Set(languages.map(lang => lang.source_language))];
+  const sourceLanguages = [...new Set(languages.map(lang => lang.script_language))];
 
   // Create groups
   const groupedLanguages = sourceLanguages.map(source => ({
     sourceLanguage: source,
-    languages: languages.filter(lang => lang.source_language === source)
+    languages: languages.filter(lang => lang.script_language === source)
   }));
 
   const selectedLanguage = value

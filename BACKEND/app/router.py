@@ -9,7 +9,7 @@ import os
 import re
 import json
 from database import User, Project, Verse, Chapter, Job, Book
-# import logging
+import logging
 from fastapi import BackgroundTasks
 import auth
 import dependency
@@ -24,10 +24,20 @@ from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
 from crud import call_stt_api, call_tts_api
 from utils import send_email
+import time
+
+def current_time():
+    return datetime.datetime.now().strftime("%B %d, %Y %I:%M:%S %p")
 
 load_dotenv()
 
-# logging.basicConfig(level=logging.INFO)
+# Configure logging level from .env
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("fastapi_app")
 
 
 BASE_DIRECTORY = os.getenv("BASE_DIRECTORY")
@@ -1182,6 +1192,9 @@ async def convert_to_text(
     db: Session = Depends(dependency.get_db),
     current_user: User = Depends(auth.get_current_user),
 ):
+    # start_time = time.time()
+    logger.info(f"[{current_time()}] Transcription API triggered for project {project_id}, book {book_code}, chapter {chapter_number}")
+ 
     project = (
         db.query(Project)
         .filter(
@@ -1199,7 +1212,7 @@ async def convert_to_text(
     )
     if not book:
         raise HTTPException(status_code=404, detail="Book not found for the project.")
-
+ 
     # Fetch the chapter associated with the book and chapter_number
     chapter = (
         db.query(Chapter)
@@ -1222,7 +1235,7 @@ async def convert_to_text(
     
     for verse in verses:
         if verse.stt_msg != "Transcription successful":
-                logger.debug(f"Resetting stt_msg for verse {verse.verse_id}.")
+                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
                 verse.stt_msg = ""
                 verse.stt = False# Resetting stt flag as well
                 db.add(verse)
@@ -1231,10 +1244,27 @@ async def convert_to_text(
     file_paths = [verse.path for verse in verses]
     if not crud.is_model_served(script_lang, "stt"):
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="The STT model is not currently available for this language."
         )
-    background_tasks.add_task(crud.transcribe_verses, list(file_paths), script_lang, db)
+    # ✅ **TEST STT API WITH ONE FILE BEFORE ADDING TO BACKGROUND TASK**
+    if not file_paths:
+        raise HTTPException(status_code=400, detail="No valid audio files found for transcription.")
+ 
+    test_file = file_paths[0]  # Pick the first file for testing
+    logger.info(f"[{current_time()}] Testing transcription API with file: {test_file}")
+ 
+    test_result = crud.call_stt_api(test_file, script_lang)
+ 
+    # Check if the response contains a valid job ID
+    if "data" not in test_result or "jobId" not in test_result["data"]:
+        logger.error(f"STT API test failed: {test_result}")
+        raise HTTPException(status_code=500, detail="STT API failed during testing. Not proceeding with transcription.")
+ 
+    logger.info(f"[{current_time()}] ✅ STT API test successful. Proceeding with transcription.")
+ 
+    logger.info(f"[{current_time()}] Adding transcription task to background queue")
+    background_tasks.add_task(crud.transcribe_verses, file_paths, script_lang, db)
     return {
         "message": "Transcription started for all verses in the chapter",
         "project_id": project_id,
@@ -1468,26 +1498,27 @@ async def convert_to_speech(
     """
     API to convert text to speech for all verses in a chapter, using chapter_id.
     """
+    logger.info(f"[{current_time()}] 🟢 TTS API triggered for Chapter ID {chapter_id}")
     # Fetch the chapter and validate it
     chapter = db.query(Chapter).filter(Chapter.chapter_id == chapter_id).first()
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found.")
-
+ 
     # Use back joins to fetch the book and project
     book = db.query(Book).filter(Book.book_id == chapter.book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found.")
-
+ 
     project = db.query(Project).filter(Project.project_id == book.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
-
+ 
     # Validate the user is the owner of the project
     if project.owner_id != current_user.user_id:
         raise HTTPException(
             status_code=403, detail="You do not have access to this project."
         )
-
+ 
     # Fetch modified verses for the chapter
     verses = (
         db.query(Verse)
@@ -1509,11 +1540,21 @@ async def convert_to_speech(
     audio_lang = project.audio_lang
     if not crud.is_model_served(audio_lang, "tts"):
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="The TTS model is not currently available for this language."
         )
-
-
+     # ✅ **TEST TTS API WITH ONE VERSE BEFORE ADDING TO BACKGROUND TASK**
+    test_verse = verses[0]  # Pick the first verse for testing
+    logger.info(f"[{current_time()}] Testing TTS API with verse ID {test_verse.verse_id}")
+ 
+    test_result = crud.call_tts_api([test_verse.text], audio_lang, output_format)
+ 
+    # Check if the response contains a valid job ID
+    if "data" not in test_result or "jobId" not in test_result["data"]:
+        logger.error(f"TTS API test failed: {test_result}")
+        raise HTTPException(status_code=500, detail="TTS API failed during testing. Not proceeding with speech conversion.")
+    logger.info(f"[{current_time()}] ✅ TTS API test successful. Proceeding with speech conversion.")
+    logger.info(f"[{current_time()}] ⏳ Adding TTS conversion task for Chapter {chapter.chapter} to background queue")
     # Start the text-to-speech generation task
     background_tasks.add_task(
         crud.generate_speech_for_verses,
@@ -1524,7 +1565,7 @@ async def convert_to_speech(
         db,
         output_format
     )
-
+ 
     return {
         "message": "Text-to-speech conversion started for the chapter",
         "project_id": project.project_id,
