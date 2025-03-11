@@ -508,107 +508,116 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
     db.commit()
     return added_chapters, skipped_chapters, incompartible_verses
 
-def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Session):
+def transcribe_verses(file_paths: list[str], script_lang: str, db_session: Session):
     """
-    Background task to transcribe verses and update the database.
+    Background task to transcribe verses with simplified concurrent processing.
     """
     chapter_start_time = time.time()
-    logger.info(f"[{ chapter_start_time}] 🟢 Transcription process started for chapter at OBT Backend")
+    logger.info(f"[{chapter_start_time}] 🟢 Transcription process started for chapter at OBT Backend")
+    
+    # Dictionary to store active jobs
+    active_jobs = {}  # Format: {ai_jobid: (verse, job, file_path)}
+    
     try:
-       for file_path in file_paths:
-            # Retrieve the Verse entry based on the file path
-            verse_start_time = time.time()
-            logger.info(f"[{verse_start_time}] 🟢 Transcription process started for verse at OBT Backend")
+        # Step 1: Submit all transcription jobs first
+        for file_path in file_paths:
+            
             verse = db_session.query(Verse).filter(Verse.path == file_path).first()
             if not verse:
                 logger.error(f"Verse file not found for path: {file_path}")
                 continue
- 
-        # for verse in verses:
-            if verse.stt_msg != "Transcription successful":
-                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
-                verse.stt_msg = ""
-                verse.stt = False# Resetting stt flag as well
-                db_session.add(verse)
-
-                db_session.commit()  # Save the updates before calling STT API
-            # Check if transcription is already successful
+            
+            # Skip if already transcribed successfully
             if verse.stt_msg == "Transcription successful":
                 logger.info(f"Skipping transcription for verse {verse.verse_id}: Already transcribed.")
                 continue
-
-            # Create a job entry linked to the verse
-            job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
-            db_session.add(job)
-            db_session.commit()
-            db_session.refresh(job)
-            ai_api_start_time = time.time()
-            logger.info(f"[{ai_api_start_time}] Calling STT AI API")
-
-            try:
-                result = call_stt_api(file_path, script_lang)  # Explicitly convert to a list
+            
+            # Reset verse status if needed
+            if verse.stt_msg != "Transcription successful":
+                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
+                verse.stt_msg = ""
+                verse.stt = False  # Resetting stt flag as well
+                db_session.add(verse)
+                db_session.commit()  # Save the updates before calling STT API
+                
+                # Create and save job
+                job = Job(verse_id=verse.verse_id, ai_jobid=None, status="pending")
+                db_session.add(job)
+                db_session.commit()
+                
+                # Submit to STT API
+                result = call_stt_api(file_path, script_lang)
+                
                 if "error" in result:
-                    # Update job and verse statuses in case of an error
                     job.status = "failed"
                     verse.stt = False
                     verse.stt_msg = result.get("error", "Unknown error")
-                    logger.error(f"[{router.current_time()}]  STT API error: {result.get('error', 'Unknown error')}")
-                else:
-                    # Update the job with the AI job ID
-                    ai_jobid = result.get("data", {}).get("jobId")
-                    job.ai_jobid = ai_jobid
-                    job.status = "in_progress"
-                    db_session.add(job)
-                    db_session.commit()
-                    logger.info(f"[{router.current_time()}] 🔄 STT AI Job ID {ai_jobid} received. Monitoring job status...")
-
-                    # Poll AI job status until it's finished
-                    while True:
-                        transcription_result = check_ai_job_status(ai_jobid)
-
-                        job_status = transcription_result.get("data", {}).get("status")
-                        logger.info(f"[{router.current_time()}] ⏳ AI Job {ai_jobid} Status: {job_status}")
-                        if job_status == "job finished":
-                            ai_api_end_time = time.time()
-                            logger.info(f"[{router.current_time()}] Transcription process for verse completed in {ai_api_end_time - ai_api_start_time:.2f} seconds at AI side")
-                            # Extract transcription results
-                            transcriptions = transcription_result["data"]["output"]["transcriptions"]
-                            for transcription in transcriptions:
-                                audio_file = transcription["audioFile"]
-                                transcribed_text = transcription["transcribedText"]
-
-                                # Update the verse text and mark as successful
-                                if os.path.basename(file_path) == audio_file:
-                                    verse.text = transcribed_text
-                                    verse.stt = True
-                                    verse.stt_msg = "Transcription successful"
-                                    break
-
-                            job.status = "completed"
-                            break
-                        elif job_status in ["job failed", "Error"]:
-                            job.status = "failed"
-                            verse.stt = False
-                            verse.stt_msg = "AI transcription failed"
-                            logger.error(f"[{router.current_time()}]  AI Transcription failed for Job ID {ai_jobid}.")
-                            break
-                        # Wait for a few seconds before polling again
-                        time.sleep(5)
-                    # Save the updated job and verse statuses
+                    logger.error(f"[{router.current_time()}] STT API error: {result.get('error', 'Unknown error')}")
                     db_session.add(job)
                     db_session.add(verse)
                     db_session.commit()
-                    verse_end_time = time.time()
-                    logger.info(f"[{router.current_time()}] 🕒 Transcription process for verse completed in {verse_end_time - verse_start_time:.2f} seconds at OBT Backend")
-            except Exception as e:
-                # Handle errors during transcription
-                job.status = "failed"
-                verse.stt = False
-                verse.stt_msg = f"Error during transcription: {str(e)}"
-                db_session.add(job)
-                db_session.add(verse)
-                db_session.commit()
-                logger.error(f"Error during transcription for verse {verse.verse_id}: {str(e)}")
+                else:
+                    ai_jobid = result.get("data", {}).get("jobId")
+                    job.ai_jobid = ai_jobid
+                    job.status = "in_progress"
+                    active_jobs[ai_jobid] = (verse, job, file_path)
+                    db_session.add(job)
+                    db_session.commit()
+                    logger.info(f"[{router.current_time()}] 🔄 STT AI Job ID {ai_jobid} received. Monitoring job status...")
+        
+        # Step 2: Monitor all jobs until completion
+        while active_jobs:
+            jobs_to_remove = []  # Store jobs to remove after iteration
+            
+            # Check status for all active jobs
+            for ai_jobid, (verse, job, file_path) in active_jobs.items():
+                result = check_ai_job_status(ai_jobid)
+                job_status = result.get("data", {}).get("status")
+                logger.info(f"[{router.current_time()}] ⏳ AI Job {ai_jobid} Status: {job_status}")
+                
+                if job_status == "job finished":
+                    
+                    # Process successful transcription
+                    transcription = result["data"]["output"]["transcriptions"][0]
+                    transcription_time = result["data"]["output"]["transcription_time"]
+
+                    audio_file = transcription["audioFile"]
+                    logger.info(f"[{router.current_time()}] 🎉 Verse id {verse.verse_id}, audio file {audio_file} finished in {transcription_time} seconds.")
+                    transcribed_text = transcription["transcribedText"]
+                    
+                    verse.text = transcribed_text
+                    verse.stt = True
+                    verse.stt_msg = "Transcription successful"
+                    job.status = "completed"
+                    
+                    # Update database immediately
+                    db_session.add(verse)
+                    db_session.add(job)
+                    db_session.commit()
+                    
+                    jobs_to_remove.append(ai_jobid)
+                    
+                
+                elif job_status in ["job failed", "Error"]:
+                    job.status = "failed"
+                    verse.stt = False
+                    verse.stt_msg = "AI transcription failed"
+                    
+                    # Update database immediately
+                    db_session.add(verse)
+                    db_session.add(job)
+                    db_session.commit()
+                    
+                    jobs_to_remove.append(ai_jobid)
+                    logger.error(f"[{router.current_time()}] AI Transcription failed for Job ID {ai_jobid}.")
+            
+            # Remove completed jobs from tracking
+            for ai_jobid in jobs_to_remove:
+                active_jobs.pop(ai_jobid)
+            
+            # Wait before next check if there are still active jobs
+            if active_jobs:
+                time.sleep(5)
     
     except Exception as e:
         logger.error(f"Error in transcribe_verses: {str(e)}")
@@ -616,7 +625,7 @@ def transcribe_verses(file_paths: list[str], script_lang: str,db_session: Sessio
     finally:
         db_session.close()
         chapter_end_time = time.time()
-        logger.info(f"[{router.current_time()}] 🕒 Transcription process for chapter completed in {chapter_end_time - chapter_start_time:.2f} seconds at OBT Backend")      
+        logger.info(f"[{router.current_time()}] 🕒 Transcription process for chapter completed in {chapter_end_time - chapter_start_time:.2f} seconds at OBT Backend")
 
 
 def check_ai_job_status(ai_jobid: str) -> dict:
