@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useChapterDetailsStore } from "@/store/useProjectStore";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +12,7 @@ import { PlayIcon, PauseIcon, Loader2 as LoadingIcon } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { Textarea } from "./ui/textarea";
 import { toast } from "@/hooks/use-toast";
+import { Slider } from "@/components/ui/slider";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -58,16 +59,11 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     [key: number]: string;
   }>({});
   const [editedVerses, setEditedVerses] = useState<Set<number>>(new Set());
+  const [fontSize, setFontSize] = useState<number>(16);
 
   const [isConvertingChapters, setIsConvertingChapters] = useState<{
     [chapterId: number]: boolean;
   }>({});
-  // const [chapterProgress, setChapterProgress] = useState<{
-  //   [chapterId: number]: {
-  //     total: number;
-  //     completed: number;
-  //   };
-  // }>({});
 
   const sortedVerses = useMemo(
     () => chapterVerses?.sort((a, b) => a.verse_number - b.verse_number),
@@ -84,7 +80,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     if (isOpen) {
       fetchChapterDetails(projectId, bookName, chapter.chapter);
     } else {
-      // clearChapterVerses(chapterKey);
       if (!isConvertingChapters[chapter.chapter_id]) {
         clearChapterVerses(chapterKey);
       }
@@ -190,8 +185,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
         projectId
       );
     }
-    // // Clear local modifications after update
-    // setVerseModifications({});
 
     await fetchChapterDetails(projectId, bookName, chapter.chapter);
   };
@@ -252,7 +245,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       ...prev,
       [chapter.chapter_id]: false,
     }));
-    // setIsConvertingVerse(new Set());
     setVerseModifications({});
     setEditedVerses(new Set());
 
@@ -311,6 +303,43 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     return `${remaining} verse(s) left`;
   };
 
+  const calculateLineHeight = (fontSize: number) => {
+    const multiplier = 1.4 + (fontSize - 12) * 0.01;
+    return `${Math.round(fontSize * multiplier)}px`;
+  };
+
+  const lineHeight = useMemo(() => calculateLineHeight(fontSize), [fontSize]);
+
+  const increaseFontSize = () => {
+    setFontSize((prev) => Math.min(prev + 2, 28));
+  };
+
+  const decreaseFontSize = () => {
+    setFontSize((prev) => Math.max(prev - 2, 12));
+  };
+
+  const handleFontSizeChange = (value: number[]) => {
+    setFontSize(value[0]);
+  };
+
+  const textareaRefs = useRef<{[key: number]: HTMLTextAreaElement | null}>({});
+
+  const handleTextareaResize = (e: React.ChangeEvent<HTMLTextAreaElement> | HTMLTextAreaElement) => {
+    const target = e instanceof HTMLTextAreaElement ? e : e.target;
+    target.style.height = 'auto';
+    target.style.height = `${target.scrollHeight}px`;
+  };
+
+  useEffect(() => {
+    if(sortedVerses) {
+      setTimeout(() => {
+        Object.values(textareaRefs.current).forEach(textarea => {
+          if (textarea) handleTextareaResize(textarea);
+        });
+      }, 0)
+    }
+  }, [sortedVerses, fontSize]);
+
   return (
     <Dialog
       open={isOpen}
@@ -325,13 +354,43 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
         onClose();
       }}
     >
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>
-            {bookName} - Chapter {chapter.chapter}
+      <DialogContent className="max-w-6xl h-[80vh]">
+        <DialogHeader className="mt-4">
+          <DialogTitle className="flex justify-between items-center">
+            <div>
+              {bookName} - Chapter {chapter.chapter}
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={decreaseFontSize}
+                  className="px-2 py-1 text-sm border rounded hover:bg-gray-100"
+                  title="Decrease font size"
+                >
+                  <span className="text-xs">A</span>
+                </button>
+                <div className="w-24">
+                  <Slider
+                    value={[fontSize]}
+                    min={12}
+                    max={28}
+                    step={1}
+                    onValueChange={handleFontSizeChange}
+                  />
+                </div>
+                <button
+                  onClick={increaseFontSize}
+                  className="px-2 py-1 text-sm border rounded hover:bg-gray-100"
+                  title="Increase font size"
+                >
+                  <span className="text-lg">A</span>
+                </button>
+                {/* <span className="text-xs text-gray-500">{fontSize}px</span> */}
+              </div>
+            </div>
           </DialogTitle>
         </DialogHeader>
-        <ScrollArea className="h-96 border rounded p-4">
+        <ScrollArea className="h-[calc(80vh-12rem)] overflow-y-auto border rounded p-4">
           {sortedVerses?.map((verse) => (
             <div
               key={verse.verse_id}
@@ -339,19 +398,22 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                 verseModifications[verse.verse_id] ? "bg-gray-100 rounded" : ""
               }`}
             >
-              <div className="w-16 text-right text-sm">{`Verse ${verse.verse_number}:`}</div>
+              <div className={`w-16 text-right text-sm ${verseModifications[verse.verse_id] || verse.modified ? "text-yellow-700" : ""}`}>{`Verse ${verse.verse_number}:`}</div>
               <Textarea
-                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y ${
+                className={`flex-1 min-h-[60px] w-full md:w-[500px] lg:w-[600px] resize-y whitespace-pre-wrap break-words overflow-auto md:overflow-hidden ${
                   verseModifications[verse.verse_id] || verse.modified
-                    ? "border-r-2 border-r-yellow-500 bg-yellow-50"
+                    ? "border-r-4 border-l-4 border-l-yellow-500 border-r-yellow-500 bg-yellow-100"
                     : ""
                 }`}
+                style={{ fontSize: `${fontSize}px`, lineHeight: lineHeight, wordBreak: "break-word", overflowWrap: "break-word", height: "auto" }}
                 defaultValue={verse.text}
-                onChange={(e) =>
-                  handleTextChange(verse.verse_id, e.target.value, verse.text)
-                }
+                onChange={(e) => {
+                  handleTextChange(verse.verse_id, e.target.value, verse.text);
+                  handleTextareaResize(e);
+                }}
+                ref={(el) => textareaRefs.current[verse.verse_id] = el}
                 onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                disabled={isConvertingChapters[chapter.chapter_id]} //disable the text area during conversion
+                disabled={isConvertingChapters[chapter.chapter_id]}
               />
               <div className="w-[50px]">
                 {verse.modified &&
@@ -359,9 +421,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                 !verse.tts ? (
                   <LoadingIcon className="animate-spin" />
                 ) : (
-                  (verse.modified ? verse.tts : verse.stt) &&
-                  !verseModifications[verse.verse_id] &&
-                  !editedVerses.has(verse.verse_id) && (
+                  (
                     <Button
                       size="icon"
                       variant="ghost"
@@ -389,8 +449,10 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           >
             Close
           </Button>
-          {/* disable the approve button during conversion */}
-          <Button onClick={handleApproveChapter} disabled = {isConvertingChapters[chapter.chapter_id]}>
+          <Button
+            onClick={handleApproveChapter}
+            disabled={isConvertingChapters[chapter.chapter_id]}
+          >
             {approved ? "Unapprove" : "Approve"}
           </Button>
           <Button
