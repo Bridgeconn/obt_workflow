@@ -143,7 +143,7 @@ const calculateBookStatus = (chapters: Chapter[]): string => {
   if (chapters.every(ch => ["approved", "converted"].includes(ch.status || ""))) return "converted";
   if (chapters.some(ch => ch.status === "converting")) return "converting";
   if (chapters.some(ch => ch.status === "inProgress" || ch.progress === "processing")) return "inProgress";
-  if (chapters.every(ch => ["transcribed", "approved", "converted"].includes(ch.status || ""))) return "transcribed";
+  if (chapters.every(ch => ["transcribed", "approved", "converted", "modified"].includes(ch.status || ""))) return "transcribed";
   if (chapters.some(ch => ["error", "transcriptionError", "conversionError"].includes(ch.status || ""))) {
     if(chapters.length === 1){
       if(chapters[0]?.progress?.includes("Conversion failed")) return "transcribed";
@@ -168,8 +168,9 @@ const updateChapterStatus = (
   const allTranscribed = verses.length > 0 && verses.every(verse => verse.stt);
   const modifiedVerses = verses.filter(verse => verse.modified);
   const allModifiedConverted = modifiedVerses.length > 0 && modifiedVerses.every(verse => verse.tts);
-  
+  const checkChapterOnlyModified = modifiedVerses.length >0 && !allModifiedConverted;
   if (allModifiedConverted) return "converted";
+  if (checkChapterOnlyModified) return "modified";
   if (allTranscribed) return "transcribed";
   if (isInProgress) return "inProgress";
   return "notTranscribed";
@@ -759,9 +760,9 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
             if (b.book === book && b.chapters?.length) {
               const updatedChapters = b.chapters.map((ch) => {
                 if (ch.chapter === chapter) {
-                  const newStatus =
-                    ch.status === "approved" ? "transcribed" : ch.status;
-                  return { ...ch, status: newStatus, approved: false };
+                  // const newStatus =
+                  //   ch.status === "approved" ? "transcribed" : ch.status;
+                  return { ...ch, status: "modified", approved: false };
                 }
                 return ch;
               });

@@ -418,7 +418,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
     if (
-      ["transcribed", "approved", "converted", "converting", "conversionError"].includes(
+      ["transcribed", "approved", "converted", "converting", "conversionError", "modified"].includes(
         chapter.status || ""
       )
     ) {
@@ -699,6 +699,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                     : chapter.status === "transcribed" ||
                                       chapter.status === "converted"
                                     ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
+                                    : chapter.status === "modified" 
+                                    ? "text-yellow-700 border border-yellow-600 bg-yellow-200 cursor-pointer"
                                     : chapter.status === "inProgress" ||
                                       chapter.status === "converting" ||
                                       chapter.progress !== ""
@@ -727,7 +729,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
                             return chapter.missing_verses?.length > 0 &&
                               chapter.status === "notTranscribed" &&
-                              book.status === "notTranscribed" ? (
+                              book.status === "notTranscribed" && book.progress !== "processing" ? (
                               <TooltipProvider key={chapter.chapter_id}>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -817,10 +819,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           <Button
                             className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                               book.status === "inProgress" ||
-                              book.status === "converting"
-                                ? "bg-gray-300 border border-gray-300 cursor-not-allowed hover:bg-gray-300"
-                                : !scriptLanguage || !audioLanguage
-                                ? "bg-gray-300 text-gray-500 opacity-70 cursor-not-allowed"
+                              book.status === "converting" || book.progress === "processing"
+                              || !scriptLanguage || !audioLanguage
+                                ? "opacity-50 cursor-not-allowed"
                                 : "hover:bg-gray-700"
                             }`}
                             onClick={() => {
@@ -841,11 +842,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               handleTranscribe(book.book_id);
                             }}
                           >
-                            {book.status === "inProgress" ||
-                            book.status === "converting" ||
-                            book.progress === "processing" ? (
+                            {(book.status === "inProgress" ||
+                            book.status === "converting" || book.progress === "processing") ? (
                               <>
-                                {["processing", ""].includes(book.progress || "") && book.status === "inProgress" ? (
+                                {["processing", ""].includes(book.progress || "") ? (
                                   <div className="flex items-center justify-center space-x-2">
                                     <span>Calculating</span>
                                     <span className="flex space-x-1">
