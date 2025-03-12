@@ -77,14 +77,29 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   );
 
   useEffect(() => {
-    if (isOpen) {
-      fetchChapterDetails(projectId, bookName, chapter.chapter);
-    } else {
-      if (!isConvertingChapters[chapter.chapter_id]) {
-        clearChapterVerses(chapterKey);
+    const loadData = async () => {
+      try {
+        if (isOpen) {
+          await fetchChapterDetails(projectId, bookName, chapter.chapter);
+        } else {
+          if (!isConvertingChapters[chapter.chapter_id]) {
+            clearChapterVerses(chapterKey);
+          }
+        }
+        setApproved(chapter.approved);
+      } catch (error) {
+        console.error("Error fetching chapter details:", error);
+        toast({
+          variant: "destructive",
+          title:
+            error instanceof Error
+              ? error.message
+              : "Error fetching chapter details",
+        });
       }
-    }
-    setApproved(chapter.approved);
+    };
+
+    loadData();
   }, [isOpen]);
 
   useEffect(() => {
@@ -163,30 +178,47 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     }
   };
 
-  const handleApproveChapter = () => {
+  const handleApproveChapter = async () => {
     const approve = approved ? false : true;
     setApproved(approve);
-    approveChapter(projectId, bookName, chapter.chapter, approve);
-    onClose();
+    try {
+      await approveChapter(projectId, bookName, chapter.chapter, approve);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error
+            ? error?.message
+            : "Error while approving chapter",
+      });
+    } finally {
+      onClose();
+    }
   };
 
   const handleVerseUpdate = async () => {
-    if (isConvertingChapters[chapter.chapter_id]) {
-      return;
+    try {
+      if (isConvertingChapters[chapter.chapter_id]) {
+        return;
+      }
+      const verseIds = Object.keys(verseModifications).map(Number);
+      for (const verseId of verseIds) {
+        const newText = verseModifications[verseId];
+        await updateVerseText(
+          verseId,
+          newText,
+          bookName,
+          chapter.chapter,
+          projectId
+        );
+      }
+      await fetchChapterDetails(projectId, bookName, chapter.chapter);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: error instanceof Error ? error?.message : "Error updating verse",
+      });
     }
-    const verseIds = Object.keys(verseModifications).map(Number);
-    for (const verseId of verseIds) {
-      const newText = verseModifications[verseId];
-      await updateVerseText(
-        verseId,
-        newText,
-        bookName,
-        chapter.chapter,
-        projectId
-      );
-    }
-
-    await fetchChapterDetails(projectId, bookName, chapter.chapter);
   };
 
   const handleConvertToSpeech = async () => {
