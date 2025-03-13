@@ -836,7 +836,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                               book.status === "inProgress" ||
                               book.status === "converting" ||
-                              book.status === "transcriptionError" ||
+                              (book.status === "transcriptionError" && book.progress === "Transcription failed") ||
                               book.progress === "processing" ||
                               !scriptLanguage ||
                               !audioLanguage
@@ -854,7 +854,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               if (
                                 book.status === "inProgress" ||
                                 book.status === "converting" ||
-                                book.status === "transcriptionError" ||
+                                (book.status === "transcriptionError" && book.progress === "Transcription failed") ||
                                 book.progress === "processing"
                               ) {
                                 return;
