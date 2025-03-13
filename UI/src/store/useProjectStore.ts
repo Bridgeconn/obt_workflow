@@ -146,12 +146,15 @@ const calculateBookStatus = (chapters: Chapter[]): string => {
   if (chapters.every(ch => ["transcribed", "approved", "converted", "modified"].includes(ch.status || ""))) return "transcribed";
   if (chapters.some(ch => ["error", "transcriptionError", "conversionError"].includes(ch.status || ""))) {
     if(chapters.length === 1){
-      if(chapters[0]?.progress?.includes("Conversion failed")) return "transcribed";
-      if(chapters[0]?.progress?.includes("Transcription failed")) return "error";
+      const progress = chapters[0]?.progress || "";
+      if (progress.includes("Conversion failed")) return "transcribed";
+      if (progress.includes("Transcription failed")) return "transcriptionError";
     }
-    if(chapters.some(ch => ["notTranscribed"].includes(ch.status || ""))) return "notTranscribed";
-    if(chapters.some(ch => ["transcribed"].includes(ch.status || ""))) return "transcribed";
-    if(chapters.some(ch => ["approved", "converted"].includes(ch.status || ""))) return "converted";
+    if(chapters.every(ch => ["transcribed", "approved", "modified", "converted", "transcriptionError"].includes(ch.status || ""))) return "transcriptionError";
+    if(chapters.every(ch => ["transcribed", "approved", "modified", "converted", "conversionError"].includes(ch.status || ""))) return "transcribed";
+    if(chapters.every(ch => ["notTranscribed", "transcribed", "approved", "modified", "converted", "conversionError", "transcriptionError"].includes(ch.status || "") && ["Transcription failed", ""].includes(ch.progress || ""))) return "transcriptionError";
+    if(chapters.every(ch => ["transcribed", "approved", "modified", "converted", "conversionError", "transcriptionError"].includes(ch.status || "") && ["Conversion failed", ""].includes(ch.progress || ""))) return "conversionError";
+
     return "error";
   }
   return "notTranscribed";
@@ -636,7 +639,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
           const updatedBooks = state.project.books.map((b) => {
             if (b.book_id === bookId && b?.chapters.length) {
-              const bookStatus = hasErrors ? "error" : "transcribed";
+              const bookStatus = hasErrors ? "error" : calculateBookStatus(b.chapters);
               return { ...b, status: bookStatus, progress: "" };
             }
             return b;
