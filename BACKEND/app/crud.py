@@ -20,7 +20,7 @@ import router
 import datetime
 import time
 from language import language_codes, source_languages
-from typing import Tuple
+from typing import Tuple,List
 import tempfile
 
 def current_time():
@@ -122,33 +122,29 @@ def get_script_lang(db: Session, project_id: int, current_user: User):
 
 
 
-def validate_zip_file(file: UploadFile):
-    """Ensure the uploaded file is a ZIP file."""
+async def process_uploaded_zip(file: UploadFile) -> Path:
+    """
+    Validate, save, and extract a ZIP file to a temporary directory.
+
+    """
+    # Validate ZIP file format
     if not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Uploaded file is not a ZIP file")
-
-
-async def save_temp_zip(file: UploadFile) -> Path:
-    """Save the uploaded ZIP file to a temporary location."""
+    # Save ZIP file to a temporary location
     temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
     temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
-
     with open(temp_zip_path, "wb") as buffer:
         buffer.write(await file.read())
-
-    return temp_zip_path
-
-
-def extract_zip(temp_zip_path: Path) -> Path:
-    """Extract the ZIP file to a temporary directory."""
+    # Extract the ZIP file
     temp_extract_path = BASE_DIR / "temp" / "extracted"
     temp_extract_path.mkdir(parents=True, exist_ok=True)
-
     with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
         zip_ref.extractall(temp_extract_path)
-
+    # Remove ZIP file after extraction
     os.remove(temp_zip_path)
     return temp_extract_path
+
+
 
 
 def read_metadata(temp_extract_path: Path) -> dict:
@@ -287,12 +283,15 @@ def fetch_projects_for_role(db: Session, current_user: User, project_id: int = N
     return projects
 
 
+
+
 def check_book_approval(db: Session, book: Book) -> bool:
     """
     Check if all chapters in a book are approved.
     """
     chapters = db.query(Chapter).filter(Chapter.book_id == book.book_id).all()
     return bool(chapters) and all(chapter.approved for chapter in chapters)
+
 
 
 def get_chapters_for_book(db: Session, book_id: int) -> list:
@@ -351,90 +350,126 @@ def check_book_approval(db: Session, book: Book) -> bool:
 
 
 
-def process_project_files(input_path, output_path, db, project):
+def get_verse_statuses(db: Session, chapter_id: int):
     """
-    Process the files in the extracted project directory and populate the database.
+    Retrieve the status of all verses in a chapter.
+
+    Args:
+        db (Session): Database session
+        chapter_id (int): The ID of the chapter
+
+    Returns:
+        list[dict]: List of dictionaries containing verse status information
     """
-    incompartible_verses = []
-    try:
-        # Locate the project directory within `input_path`
-       # Normalize the project directory structure
-        extracted_items = list(input_path.iterdir())
-        if len(extracted_items) == 1 and extracted_items[0].is_dir():
-            # Case: Single folder encapsulating everything
-            project_input_path = extracted_items[0]
-            next_folder = extracted_items[0]
-            if(next_folder.name == input_path.name):
-                logger.info(f"Duplicate folder detected: {next_folder}")
-                for sub_item in next_folder.iterdir():
+    verses = get_verses(db, chapter_id)
+    
+    return [
+        {
+            "verse_id": verse.verse_id,
+            "verse_number": verse.verse,
+            "stt": verse.stt,
+            "stt_msg": verse.stt_msg,
+            "text": verse.text,
+            "tts": verse.tts,
+            "tts_path": verse.tts_path,
+            "modified": verse.modified,
+            "size": verse.size,
+            "format": verse.format,
+            "path": verse.path,
+            "name": verse.name,
+            "tts_msg": verse.tts_msg,
+        }
+        for verse in verses
+    ]
+
+
+def normalize_project_structure(input_path):
+    """
+    Normalize the project directory structure within input_path.
+    """
+    extracted_items = list(input_path.iterdir())
+    if len(extracted_items) == 1 and extracted_items[0].is_dir():
+        project_input_path = extracted_items[0]
+        next_folder = extracted_items[0]
+        
+        if next_folder.name == input_path.name:
+            logger.info(f"Duplicate folder detected: {next_folder}")
+            for sub_item in next_folder.iterdir():
+                target_path = input_path / sub_item.name
+                if target_path.exists():
+                    logger.warning(f"Conflict while moving {sub_item} to {target_path}, skipping.")
+                else:
+                    shutil.move(str(sub_item), str(target_path))
+            next_folder.rmdir()
+            logger.info(f"Resolved duplicate folder: {next_folder}")
+            project_input_path = input_path
+        else:
+            logger.info("No duplicate folder found.")
+            if re.match(r".+\(\d+\)$", project_input_path.name) or any(char.isalpha() for char in project_input_path.name):
+                logger.info(f"Flattening top-level count folder: {project_input_path}")
+                for sub_item in project_input_path.iterdir():
                     target_path = input_path / sub_item.name
                     if target_path.exists():
                         logger.warning(f"Conflict while moving {sub_item} to {target_path}, skipping.")
                     else:
                         shutil.move(str(sub_item), str(target_path))
-                next_folder.rmdir()
-                logger.info(f"Resolved duplicate folder: {next_folder}")
-                project_input_path = input_path
-            else:
-                logger.info("No duplicate folder found.")
-                # Check if project_input_path itself is a count folder (e.g., ONDMTT2(1))
-                if re.match(r".+\(\d+\)$", project_input_path.name) or any(char.isalpha() for char in project_input_path.name):
-                    logger.info(f"Flattening top-level count folder: {project_input_path}")
+                        logger.info(f"Moved {sub_item} to {target_path}")
+                project_input_path.rmdir()
+                logger.info(f"Removed count folder: {project_input_path}")
+                project_input_path = input_path  
     
-                    # Move all contents from the count folder to its parent directory
-                    for sub_item in project_input_path.iterdir():
-                        target_path = input_path / sub_item.name
-                        if target_path.exists():
-                            logger.warning(f"Conflict while moving {sub_item} to {target_path}, skipping.")
-                        else:
-                            shutil.move(str(sub_item), str(target_path))
-                            logger.info(f"Moved {sub_item} to {target_path}")
+    elif any((input_path / item).exists() for item in ["audio", "text-1", "metadata.json"]):
+        project_input_path = input_path
+    else:
+        logger.error("Unexpected folder structure in the input path.")
+        raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
     
-                    # Update project_input_path to its parent directory
-                    project_input_path.rmdir()
-                    logger.info(f"Removed count folder: {project_input_path}")
-                    project_input_path = input_path  
-                
+    if not project_input_path or not project_input_path.is_dir():
+        logger.error("Project directory not found under input path.")
+        raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
+    
+    return project_input_path
 
-        elif any((input_path / item).exists() for item in ["audio", "text-1", "metadata.json"]):
-            # Case: Direct structure with `audio`, `text-1`, and `metadata.json`
-            project_input_path = input_path
-        else:
-            logger.error("Unexpected folder structure in the input path.")
-            raise HTTPException(
-                status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file"
-            )
-        if not project_input_path or not project_input_path.is_dir():
-            logger.error("Project directory not found under input path.")
-            raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
-        # Locate versification.json
-        versification_path= "versification.json"
-        if not versification_path:
-            logger.error("versification.json not found .")
-            raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
-        # Read versification.json
-        with open(versification_path, "r", encoding="utf-8") as versification_file:
-            versification_data = json.load(versification_file)
-        max_verses = versification_data.get("maxVerses", {})
-        # Dynamically locate the `ingredients` folder
-        ingredients_path = None
-        for root, dirs, files in os.walk(project_input_path):
-            if "audio" in dirs and "ingredients" in os.listdir(os.path.join(root, "audio")):
-                ingredients_path = Path(root) / "audio" / "ingredients"
-                break
-            elif "text" in dirs and "ingredients" in os.listdir(os.path.join(root, "text")):
-                ingredients_path = Path(root) / "text" / "ingredients"
-                break
-            elif "ingredients" in dirs:
-                ingredients_path = Path(root) / "ingredients"
-                break
-        if not ingredients_path:
-            logger.error("Ingredients folder not found. Checked all possible locations.")
-            raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
-        logger.info(f"Ingredients folder found at: {ingredients_path}")
-        has_valid_books =False
-        # Process books, chapters, and verses in `ingredients`
-        for book_dir in ingredients_path.iterdir():
+def locate_versification_and_ingredients(project_input_path):
+    """
+    Locate versification.json and the ingredients folder.
+    """
+    versification_path= "versification.json"
+    if not versification_path:
+        logger.error("versification.json not found .")
+        raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
+    # Read versification.json
+    with open(versification_path, "r", encoding="utf-8") as versification_file:
+        versification_data = json.load(versification_file)
+    max_verses = versification_data.get("maxVerses", {})
+    # Dynamically locate the `ingredients` folder
+    ingredients_path = None
+    for root, dirs, files in os.walk(project_input_path):
+        if "audio" in dirs and "ingredients" in os.listdir(os.path.join(root, "audio")):
+            ingredients_path = Path(root) / "audio" / "ingredients"
+            break
+        elif "text" in dirs and "ingredients" in os.listdir(os.path.join(root, "text")):
+            ingredients_path = Path(root) / "text" / "ingredients"
+            break
+        elif "ingredients" in dirs:
+            ingredients_path = Path(root) / "ingredients"
+            break
+    if not ingredients_path:
+        logger.error("Ingredients folder not found. Checked all possible locations.")
+        raise HTTPException(status_code=400, detail="Please upload Scribe's - Scripture Burrito validated zip file")
+    logger.info(f"Ingredients folder found at: {ingredients_path}")
+    return max_verses, ingredients_path
+
+
+
+def process_books_and_verses(ingredients_path, max_verses, db, project):
+    """
+    Process books, chapters, and verses from the ingredients folder and populate the database.
+    """
+    incompartible_verses = []
+    has_valid_books = False
+    
+    for book_dir in ingredients_path.iterdir():
             if book_dir.is_dir():
                 book_name = book_dir.name
                 book_max_verses = max_verses.get(book_name, [])
@@ -576,32 +611,324 @@ def process_project_files(input_path, output_path, db, project):
                             )
                             db.add(verse)
 
+    db.commit()
+    print("incompartible_verses after processing:", incompartible_verses)
+        # If no valid books or chapters were found, delete the project and its folder structure
+    if not has_valid_books:
+        logger.error("No valid books or chapters found in the project. Rolling back project creation.")
+
+        # Delete the project from the database
+        db.delete(project)
         db.commit()
-        print("incompartible_verses after processing:", incompartible_verses)
-         # If no valid books or chapters were found, delete the project and its folder structure
-        if not has_valid_books:
-            logger.error("No valid books or chapters found in the project. Rolling back project creation.")
-            # Delete the project from the database
-            db.delete(project)
-            db.commit()
-            # Remove the project folder structure
-            project_base_path = BASE_DIR / str(project.project_id)
-            if project_base_path.exists():
-                shutil.rmtree(project_base_path)
-                logger.info(f"Deleted project folder: {project_base_path}")
- 
-            raise HTTPException(status_code=400, detail="No valid books or chapters found in the project")
+        project_base_path = BASE_DIR / str(project.project_id)
+        if project_base_path.exists():
+            shutil.rmtree(project_base_path)
+            logger.info(f"Deleted project folder: {project_base_path}")
+        raise HTTPException(status_code=400, detail="No valid books or chapters found in the project")
     
+
+    return {"status": "success", "incompartible_verses": incompartible_verses}
+
+
+def process_project_files(input_path, output_path, db, project):
+    """
+    Process the files in the extracted project directory and populate the database.
+    """
+    try:
+        project_input_path = normalize_project_structure(input_path)
+        max_verses, ingredients_path = locate_versification_and_ingredients(project_input_path)
+        return process_books_and_verses(ingredients_path, max_verses, db, project)
     
     except HTTPException as http_exc:
-    # If it's already an HTTPException, re-raise it without modification
         raise http_exc
     except Exception as e:
         logger.error(f"Error while processing project files: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-    
-    return {"status": "success", "incompartible_verses": incompartible_verses}
 
+
+
+
+
+def process_verse_files(chapter_dir, chapter_number):
+    """
+    Process verse files: validate filenames, determine priority, and remove duplicates.
+    """
+    verse_files = {}
+    incompartible_verses = []
+
+    for verse_file in chapter_dir.iterdir():
+        if not verse_file.is_file():
+            continue  # Skip directories
+        
+        verse_filename = verse_file.stem
+        if not VALID_VERSE_PATTERN.match(verse_filename):
+            logger.info(f"Skipping invalid verse file: {verse_file.name}")
+            print("Skipping invalid verse file:", verse_file.name)
+            incompartible_verses.append(verse_filename)
+            continue
+        try:
+            # Split the filename to extract components
+            parts = verse_file.stem.split("_")
+            
+            # Ensure first part matches chapter number
+            if not (parts[0].isdigit() and int(parts[0]) == chapter_number):
+                continue
+                
+            # Extract verse number
+            if len(parts) >= 2 and parts[1].isdigit():
+                verse_number = int(parts[1])
+            else:
+                logger.warning(f"Skipping malformed verse file: {verse_file.name}")
+                continue
+                
+                    
+            # Determine file priority
+            if len(parts) == 2:  # Basic format like 1_1.mp3
+                priority = 2
+            elif "default" in parts:  # Contains 'default'
+                priority = 1
+            else:  # Any other format (takes)
+                priority = 0
+                
+            # Add or replace based on priority
+            if verse_number not in verse_files:
+                # First file for this verse number
+                verse_files[verse_number] = {
+                    'file': verse_file,
+                    'priority': priority
+                }
+            elif priority > verse_files[verse_number]['priority']:
+                # New file has higher priority
+                logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['file']}")
+                os.remove(verse_files[verse_number]['file'])
+                verse_files[verse_number] = {
+                    'file': verse_file,
+                    'priority': priority
+                }
+            else:
+                # Keep existing file, remove the current one
+                logger.info(f"Removing duplicate verse file: {verse_file}")
+                os.remove(verse_file)
+
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Invalid file name format: {verse_file.name}. Error: {str(e)}")
+            continue
+
+    return verse_files, incompartible_verses
+
+def setup_project_folders(project, book_entry):
+    """
+    Set up the necessary project folders for storing book data.
+    """
+    base_name = project.name.split("(")[0].strip()
+    project_root_path = BASE_DIR / str(project.project_id) / "input" / base_name
+ 
+    ingredients_path = None
+    if (project_root_path / "ingredients").exists():
+        ingredients_path = project_root_path / "ingredients"
+    elif (project_root_path / "audio" / "ingredients").exists():
+        ingredients_path = project_root_path / "audio" / "ingredients"
+    else:
+        ingredients_path = project_root_path / "ingredients"
+        ingredients_path.mkdir(parents=True, exist_ok=True)
+ 
+    target_book_path = ingredients_path / book_entry.book
+    target_book_path.mkdir(parents=True, exist_ok=True)
+    return  target_book_path 
+
+
+def add_verses_to_db(target_chapter_path, chapter_entry, db):
+    """
+    Add verses to the database from the processed chapter files.
+    """
+    for verse_file in target_chapter_path.iterdir():
+        try: 
+            if not verse_file.is_file():
+                continue
+            if not VALID_VERSE_PATTERN.match(verse_file.stem):
+                logger.info(f"Skipping invalid verse file during database insert: {verse_file.name}")
+                continue
+            verse_number = int(verse_file.stem.split("_")[1])     
+            verse = Verse(
+                chapter_id=chapter_entry.chapter_id,
+                verse=verse_number,
+                name=verse_file.name,
+                path=str(verse_file),
+                size=verse_file.stat().st_size,
+                format=verse_file.suffix.lstrip("."),
+                stt=False,
+                text="",
+            )
+            db.add(verse)
+        except (ValueError, IndexError):
+            logger.warning(f"Invalid file: {verse_file.name}")
+
+    db.commit()
+
+
+def process_chapters(book_folder, project, book_entry, db,book_name):
+    """
+    Process chapters: add new chapters and skip existing ones.
+    """
+    target_book_path = setup_project_folders(project, book_entry)   
+    # Fetch existing chapters
+    existing_chapters = {
+        chapter.chapter for chapter in db.query(Chapter).filter(Chapter.book_id == book_entry.book_id)
+    }
+    versification_data = load_versification()
+    max_verses_data = versification_data.get("maxVerses", {})
+    valid_books = set(max_verses_data.keys())
+    # Validate the book name
+    if book_name not in valid_books:
+        logger.error(f"Invalid book code: {book_name}.")
+        raise HTTPException(status_code=400, detail=f"Invalid book code: {book_name}")
+    max_chapters = len(max_verses_data[book_name])
+    max_verses_per_chapter = {
+        chapter_num + 1: int(verses)
+        for chapter_num, verses in enumerate(max_verses_data[book_name])
+    }
+    added_chapters = []
+    # Process chapters in the book folder
+    skipped_chapters = []   
+    incompartible_verses = []   
+    for chapter_dir in book_folder.iterdir():
+        if chapter_dir.is_dir() and chapter_dir.name.isdigit():
+            chapter_number = int(chapter_dir.name)
+            # Check if the chapter exceeds the maximum allowed chapters
+            if chapter_number > max_chapters:
+                logger.error(f"Invalid chapter {chapter_number}: Exceeds maximum allowed chapters ({max_chapters})")
+                shutil.rmtree(chapter_dir)  # Remove the invalid chapter folder
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{book_name} should have {max_chapters} chapter(s) but found chapter {chapter_number}. "
+                    "Please upload the ZIP file with proper chapter count"
+                )          
+            if chapter_number in existing_chapters:
+                logger.info(f"Skipping existing chapter: {chapter_number}")
+                skipped_chapters.append(chapter_number)
+                continue           
+            # Call the separate function to process verses and remove duplicates
+            verse_files, incompartible_verses = process_verse_files(chapter_dir, chapter_number) 
+            # Finalize verse files after prioritization
+            selected_files = {verse: data['file'] for verse, data in verse_files.items()}         
+            # Get available verses after duplicate removal
+            available_verses = set(selected_files.keys())           
+            # If no verses are found, delete the empty chapter folder
+            if not available_verses:
+                logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
+                shutil.rmtree(chapter_dir)
+                continue         
+            max_verses_in_chapter = max_verses_per_chapter.get(chapter_number, 0)
+            # Determine missing verses
+            expected_verses = set(range(1, max_verses_in_chapter + 1))
+            missing_verses = list(expected_verses - available_verses)           
+            if available_verses and max(available_verses) > max_verses_in_chapter:
+                logger.error(
+                    f"Invalid chapter {chapter_number}: Exceeds maximum allowed verses or has no valid verses."
+                )
+                shutil.rmtree(chapter_dir)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{book_name}: Chapter {chapter_number} should have {max_verses_in_chapter} verses "
+                    f"but {max(available_verses)} verses found. "
+                    "Please upload the ZIP file with correct verse count",
+                )
+            # Move the new chapter folder
+            target_chapter_path = target_book_path / chapter_dir.name
+            shutil.move(str(chapter_dir), str(target_chapter_path))
+            logger.info(f"Added new chapter: {chapter_number}")
+            added_chapters.append(chapter_number)
+            # Add the chapter and its verses to the database
+            chapter_entry = Chapter(book_id=book_entry.book_id, 
+                                chapter=chapter_number, 
+                                approved=False, 
+                                missing_verses=missing_verses if missing_verses else None
+                            )
+            db.add(chapter_entry)
+            db.commit()
+            db.refresh(chapter_entry)
+            add_verses_to_db(target_chapter_path, chapter_entry, db)
+ 
+    # If no chapters were added or skipped, raise an error   
+    if(not added_chapters and not skipped_chapters):
+        raise HTTPException(
+            status_code=400,
+            detail=f"No verse data found. Please upload valid ZIP file",
+        ) 
+    db.commit()
+    return added_chapters, skipped_chapters, incompartible_verses
+
+
+
+
+async def extract_and_validate_zip(file: UploadFile):
+    """
+    Extracts and validates the structure of a ZIP file.
+
+    Returns:
+        dict: {
+            "temp_extract_path": Path,
+            "book_folder": Path
+        }
+    """
+    temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
+    temp_extract_path = BASE_DIR / "temp" / "extracted_book"
+
+    # Create temporary directories
+    temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_extract_path.mkdir(parents=True, exist_ok=True)
+
+    # Save the uploaded ZIP file
+    with open(temp_zip_path, "wb") as buffer:
+        buffer.write(await file.read())
+
+    # Extract the ZIP file
+    try:
+        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+            zip_ref.extractall(temp_extract_path)
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
+
+    # Remove the ZIP file after extraction
+    temp_zip_path.unlink()
+
+    # Verify and normalize the extracted structure
+    extracted_items = list(temp_extract_path.iterdir())
+
+    if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].name.isdigit():
+        # Case: Direct single chapter folder in the ZIP root
+        logger.info(f"Detected single chapter folder directly in ZIP root: {extracted_items[0]}")
+        book_folder = temp_extract_path
+
+    elif len(extracted_items) == 1 and extracted_items[0].is_dir():
+        # Case: Single folder encapsulating everything
+        primary_folder = extracted_items[0]
+        inner_items = list(primary_folder.iterdir())
+        print(f"Primary folder contents: {[item.name for item in inner_items]}")
+        if all(item.is_dir() and item.name.isdigit() for item in inner_items):
+            # Encapsulating folder directly contains chapter folders
+            logger.info(f"Detected encapsulating folder with chapters: {primary_folder}")
+            book_folder = primary_folder
+        elif len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name.isdigit():
+            # Encapsulating folder contains a single chapter folder
+            logger.info(f"Detected single chapter folder inside book folder: {inner_items[0]}")
+            book_folder = primary_folder
+        else:
+            logger.error("Unexpected structure inside primary folder.")
+            raise HTTPException(status_code=400, detail="Invalid book folder structure")
+
+    elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):
+        # Case: Multiple chapter folders in the root of the ZIP
+        logger.info("Detected multiple chapter folders directly in the ZIP root.")
+        book_folder = temp_extract_path
+    else:
+        logger.error("Unexpected structure in the extracted ZIP file.")
+        raise HTTPException(status_code=400, detail="Invalid book folder structure")
+
+    return {
+        "temp_extract_path": temp_extract_path,
+        "book_folder": book_folder
+    }
 
 
 async def process_book_zip(project_id: int, file: UploadFile, db: Session, current_user: dict):
@@ -620,53 +947,17 @@ async def process_book_zip(project_id: int, file: UploadFile, db: Session, curre
     # Ensure the uploaded file is a ZIP file
     if not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="Uploaded file is not a ZIP file")
-    # Paths for temporary storage
-    temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
-    temp_extract_path = BASE_DIR / "temp" / "extracted_book"
-    # Create temporary directories
-    temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_extract_path.mkdir(parents=True, exist_ok=True)
-    # Save the uploaded ZIP file
-    with open(temp_zip_path, "wb") as buffer:
-        buffer.write(await file.read())
-    # Extract the ZIP file
-    try:
-        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
-            zip_ref.extractall(temp_extract_path)
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
-    # Remove the ZIP file after extraction
-    temp_zip_path.unlink()
-    # Verify and normalize the extracted structure
-    extracted_items = list(temp_extract_path.iterdir())
-    if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].name.isdigit():
-        # Case: Direct single chapter folder in the ZIP root
-        logger.info(f"Detected single chapter folder directly in ZIP root: {extracted_items[0]}")
-        book_folder = temp_extract_path
-    elif len(extracted_items) == 1 and extracted_items[0].is_dir():
-        # Case: Single folder encapsulating everything
-        primary_folder = extracted_items[0]
-        inner_items = list(primary_folder.iterdir())
-        print(f"Primary folder contents: {[item.name for item in inner_items]}")
-        if all(item.is_dir() and item.name.isdigit() for item in inner_items):
-            # Encapsulating folder directly contains chapter folders
-            logger.info(f"Detected encapsulating folder with chapters: {primary_folder}")
-            book_folder = primary_folder
-        elif len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name.isdigit():
-            # Encapsulating folder contains a single chapter folder
-            logger.info(f"Detected single chapter folder inside book folder: {inner_items[0]}")
-            book_folder = primary_folder
-        else:
-            logger.error("Unexpected structure inside primary folder.")
-            raise HTTPException(status_code=400, detail="Invalid book folder structure")
-    elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):
-        # Case: Multiple chapter folders in the root of the ZIP
-        logger.info("Detected multiple chapter folders directly in the ZIP root.")
-        book_folder = temp_extract_path
-    else:
-        logger.error("Unexpected structure in the extracted ZIP file.")
-        raise HTTPException(status_code=400, detail="Invalid book folder structure")
-    return book, temp_extract_path, book_folder, project, versification_data
+    # Extract and validate ZIP file structure
+    zip_data = await extract_and_validate_zip(file)
+    
+    return {
+    "book": book,
+    "temp_extract_path":zip_data["temp_extract_path"],
+    "book_folder":  zip_data["book_folder"],
+    "project": project,
+    "versification_data": versification_data
+}
+
 
 
 def save_book_to_project(
@@ -725,6 +1016,15 @@ def save_book_to_project(
         shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise HTTPException(status_code=400, detail="Book folder already exists in ingredients")
     shutil.move(str(book_folder), str(target_book_path)) 
+    return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book, "incompartible_verses": incompartible_verses}
+
+    
+
+
+def validate_and_process_chapters(target_book_path, book_entry, book, versification_data, db):
+    """
+    Validate and process book chapters and verses. Remove invalid chapters.
+    """
     max_verses_data = versification_data.get("maxVerses", {})   
     # Get maximum chapters for the book
     max_chapters = len(max_verses_data[book])
@@ -885,12 +1185,8 @@ def save_book_to_project(
             detail=f"No verse data found in book: {book}",
         )
     db.commit()
-    # Clean up the temporary extraction folder
-    if temp_extract_path:
-        shutil.rmtree(temp_extract_path, ignore_errors=True)
-    return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book, "incompartible_verses": incompartible_verses}
-
-    
+  
+    return incompartible_verses
 
 
 def get_chapter_book_project(db: Session, chapter_id: int, current_user: User):
@@ -944,6 +1240,38 @@ def validate_tts_model(audio_lang: str):
             status_code=400,
             detail="The TTS model is not currently available for this language."
         )
+
+def test_stt_api(file_paths: List[str], script_lang: str):
+    """
+    Test the STT API with one file before processing all files.
+
+    Args:
+        file_paths (List[str]): List of file paths to transcribe.
+        script_lang (str): The script language for transcription.
+
+    Raises:
+        HTTPException: If no valid files are found or the STT API fails.
+
+    Returns:
+        None: If the test is successful, the function completes silently.
+    """
+    if not file_paths:
+        raise HTTPException(status_code=400, detail="No valid audio files found for transcription.")
+    
+    test_file = file_paths[0]  # Pick the first file for testing
+    logger.info(f"[{current_time()}] Testing transcription API with file: {test_file}")
+    
+    test_result = call_stt_api(test_file, script_lang)
+
+    if "data" not in test_result or "jobId" not in test_result["data"]:
+        logger.error(f"STT API test failed: {test_result}")
+        raise HTTPException(
+            status_code=500,
+            detail="STT API failed during testing. Not proceeding with transcription."
+        )
+
+    logger.info(f"[{current_time()}] STT API test successful. Proceeding with transcription.")
+
 
 
 
@@ -1377,11 +1705,86 @@ def is_model_served(lang: str, model_type: str) -> bool:
                 return True
 
         logger.warning(f"⚠ No matching {model_type.upper()} model found in served models for '{source_language}'.")
-        return False
+        raise HTTPException(
+            status_code=400,
+            detail=f"The {model_type.upper()} model is not currently available for this language: {source_language}"
+        )
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Request error checking served models: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to check served models")
+
+
+def fetch_and_validate_verse(verse_id: int, db: Session, current_user: User) -> dict:
+    """
+    Fetch the verse and validate the associated chapter, book, and project.
+    Ensures the user has the necessary permissions.
+
+    Returns:
+        dict: Contains 'verse', 'chapter', 'book', and 'project' objects.
+    """
+    verse_record = db.query(Verse).filter(Verse.verse_id == verse_id).first()
+    if not verse_record:
+        raise HTTPException(status_code=404, detail="Verse not found.")
+
+    chapter = db.query(Chapter).filter(Chapter.chapter_id == verse_record.chapter_id).first()
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found for the verse.")
+
+    book = db.query(Book).filter(Book.book_id == chapter.book_id).first()
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found for the chapter.")
+
+    project = db.query(Project).filter(Project.project_id == book.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found for the book.")
+
+    # Validate the user is the owner of the project
+    if project.owner_id != current_user.user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this project.")
+
+    return {
+        "verse": verse_record,
+        "chapter": chapter,
+        "book": book,
+        "project": project,
+    }
+
+
+def update_verse_content(verse: Verse, verse_text: str):
+    """
+    Updates the verse text, marks it as modified, and resets TTS if applicable.
+    """
+    verse.text = verse_text
+    verse.modified = True
+
+    # Reset TTS-related fields if TTS was previously generated
+    if verse.tts:
+        delete_tts_file(verse.tts_path)
+        verse.tts = False
+        verse.tts_msg = ""
+        verse.tts_path = ""
+
+
+def delete_tts_file(tts_path: str):
+    """
+    Deletes the existing TTS file if it exists.
+    """
+    if tts_path and os.path.exists(tts_path):
+        try:
+            os.remove(tts_path)
+            logger.info(f"Deleted TTS file at path: {tts_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete TTS file at path {tts_path}: {str(e)}")
+
+
+def mark_chapter_unapproved(chapter: Chapter, db: Session):
+    """
+    Marks the chapter as not approved and updates the database.
+    """
+    chapter.approved = False
+    db.add(chapter)
+
 
 
 
@@ -1702,16 +2105,37 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
         return {"error": str(e)}
 
 
-def generate_usfm_content(book, short_title, abbr, long_title, chapter_map, versification_data, db):
+def fetch_book_metadata(book: str, book_metadata: dict) -> dict:
+    """
+    Fetch book metadata (short title, abbreviation, and long title).
+
+    Returns:
+        dict: Contains short_title, abbr, and long_title.
+    """
+    if book not in book_metadata:
+        raise HTTPException(status_code=404, detail=f"Metadata not found for book {book}.")
+
+    return {
+        "short_title": book_metadata[book]["short"]["en"],
+        "abbr": book_metadata[book]["abbr"]["en"],
+        "long_title": book_metadata[book]["long"]["en"],
+    }
+
+def generate_usfm_content(book, book_info, chapter_map, versification_data, db):
     """
     Generate USFM formatted content with book metadata and verses.
     """
     usfm_text = (
         f"\\id {book}\n\\usfm 3.0\n\\ide UTF-8\n"
-        f"\\h {short_title}\n\\toc1 {abbr}\n\\toc2 {short_title}\n\\toc3 {long_title}\n\\mt {abbr}\n"
+        f"\\h {book_info['short_title']}\n\\toc1 {book_info['abbr']}\n\\toc2 {book_info['short_title']}\n"
+        f"\\toc3 {book_info['long_title']}\n\\mt {book_info['abbr']}\n"
     )
 
     max_verses = versification_data.get("maxVerses", {}).get(book, [])
+    if not max_verses:
+        raise HTTPException(
+            status_code=404, detail=f"Versification data not found for book '{book}'."
+        )
     for chapter_number, num_verses in enumerate(max_verses, start=1):
         try:
             num_verses = int(num_verses)

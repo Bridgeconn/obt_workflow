@@ -18,6 +18,7 @@ from pydantic import EmailStr
 from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
 from utils import send_email
+import json
 
 
 def current_time():
@@ -311,6 +312,8 @@ async def get_all_users(
 
 
 
+
+
 @router.put("/user/", tags=["User"])
 async def update_user(
     user_id: int,
@@ -354,12 +357,8 @@ async def upload_zip(
     Upload a ZIP file, create a project entry, and store the files in the appropriate folder structure.
     """
     try:
-        # Ensure the uploaded file is a ZIP file
-        crud.validate_zip_file(file)
-        # Save the ZIP file temporarily
-        temp_zip_path = await crud.save_temp_zip(file)
-        # Extract the ZIP file to a temporary directory
-        temp_extract_path = crud.extract_zip(temp_zip_path)
+        # Process the uploaded ZIP file (validate, save, extract)
+        temp_extract_path = await crud.process_uploaded_zip(file)
         # Locate metadata.json and read its content
         metadata_content = crud.read_metadata(temp_extract_path)
         # Generate a unique project name
@@ -404,22 +403,22 @@ async def add_new_book_zip(
     - file: The uploaded ZIP file containing the book structure.
     """
     temp_extract_path = None
-    try:      
+    try:
         # Step 1: Process the ZIP file (Extract, Validate)
-        book, temp_extract_path, book_folder, project, versification_data = await crud.process_book_zip(
+        book_data  = await crud.process_book_zip(
             project_id, file, db, current_user
         )
         # Step 2: Save book data to project (Move, Validate, Store in DB)
-        return crud.save_book_to_project(
-            project, book, book_folder, temp_extract_path, versification_data, db
-        )
+        return crud.save_book_to_project(**book_data, db=db)
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")
+         # Cleanup temporary extraction folder
         if temp_extract_path:
             shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
+         # Cleanup temporary extraction folder
         if temp_extract_path:
             shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
@@ -573,21 +572,9 @@ async def convert_to_text(
                 db.commit()
         
     file_paths = [verse.path for verse in verses]
-    if not crud.is_model_served(script_lang, "stt"):
-        raise HTTPException(
-            status_code=400,
-            detail="The STT model is not currently available for this language."
-        )
-    # **TEST STT API WITH ONE FILE BEFORE ADDING TO BACKGROUND TASK**
-    if not file_paths:
-        raise HTTPException(status_code=400, detail="No valid audio files found for transcription.")
-    test_file = file_paths[0]  # Pick the first file for testing
-    logger.info(f"[{current_time()}] Testing transcription API with file: {test_file}")
-    test_result = crud.call_stt_api(test_file, script_lang)
-    # Check if the response contains a valid job ID
-    if "data" not in test_result or "jobId" not in test_result["data"]:
-        logger.error(f"STT API test failed: {test_result}")
-        raise HTTPException(status_code=500, detail="STT API failed during testing. Not proceeding with transcription.")
+    crud.is_model_served(script_lang, "stt")
+    # Call the separate function to test STT API
+    crud.test_stt_api(file_paths, script_lang)
     logger.info(f"[{current_time()}] STT API test successful. Proceeding with transcription.")
     logger.info(f"[{current_time()}] Adding transcription task to background queue")
     background_tasks.add_task(crud.transcribe_verses, file_paths, script_lang, db)
@@ -641,27 +628,8 @@ async def get_chapter_status(
     project = crud.get_project(project_id, db, current_user)
     book=crud.get_book(db, project_id, book)
     chapter = crud.get_chapter(db ,book.book_id,chapter)
-    # Retrieve all verses for the chapter
-    verses = crud.get_verses(db,chapter.chapter_id)
-    # Prepare the response with verse statuses
-    verse_statuses = [
-        {
-            "verse_id": verse.verse_id,
-            "verse_number": verse.verse,
-            "stt": verse.stt,
-            "stt_msg": verse.stt_msg,
-            "text": verse.text,
-            "tts": verse.tts,
-            "tts_path": verse.tts_path,
-            "modified": verse.modified,
-            "size": verse.size,
-            "format": verse.format,
-            "path": verse.path,
-            "name": verse.name,
-            "tts_msg": verse.tts_msg,
-        }
-        for verse in verses
-    ]
+    # Retrieve verse statuses
+    verse_statuses = crud.get_verse_statuses(db, chapter.chapter_id)
     return {
         "message": "Chapter status retrieved successfully",
         "chapter_info": {
@@ -721,25 +689,32 @@ async def update_verse_text(
     verse_record = db.query(Verse).filter(Verse.verse_id == verse_id).first()
     if not verse_record:
         raise HTTPException(status_code=404, detail="Verse not found.")
+ 
+    # Use back joins to fetch the book and project
     chapter = (
         db.query(Chapter).filter(Chapter.chapter_id == verse_record.chapter_id).first()
     )
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found for the verse.")
+ 
     book = db.query(Book).filter(Book.book_id == chapter.book_id).first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found for the chapter.")
+ 
     project = db.query(Project).filter(Project.project_id == book.project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found for the book.")
+ 
     # Validate the user is the owner of the project
     if project.owner_id != current_user.user_id:
         raise HTTPException(
             status_code=403, detail="You do not have access to this project."
         )
+ 
     # Update the text and mark it as modified
     verse_record.text = verse_text
     verse_record.modified = True
+ 
     # Check and reset TTS status if necessary
     if verse_record.tts:
         # Delete the TTS file if it exists
@@ -748,15 +723,18 @@ async def update_verse_text(
                 os.remove(verse_record.tts_path)
                 logger.info(f"Deleted TTS file at path: {verse_record.tts_path}")
             except Exception as e:
-                logger.warning(f"Failed to delete TTS file at path {verse_record.tts_path}: {str(e)}")   
+                logger.warning(f"Failed to delete TTS file at path {verse_record.tts_path}: {str(e)}")
+    
     # Reset TTS-related fields
         verse_record.tts = False
         verse_record.tts_msg = ""
         verse_record.tts_path = ""
+ 
     # Mark the chapter as not approved
     chapter.approved = False
     db.add(chapter)
     db.commit()
+ 
     return {
         "message": "Verse text updated successfully.",
         "verse_id": verse_id,
@@ -881,29 +859,17 @@ async def generate_usfm(
             status_code=400, detail="Project directory not found under input path"
         )
     # # Locate versification.json  
-    versification_data = crud.load_versification()
-    max_verses = versification_data.get("maxVerses", {}).get(book, [])
-    if not max_verses:
-        raise HTTPException(
-            status_code=404, detail=f"Versification data not found for book '{book}'."
-        )
+    versification_data = crud.load_versification()   
     book_metadata = crud.load_metadata()
+    book_info = crud.fetch_book_metadata(book, book_metadata)
 
     # Validate if the book exists in metadata
-    if book not in book_metadata:
-        raise HTTPException(
-            status_code=404, detail=f"Metadata not found for book {book}."
-        )
-    # Fetch metadata for the book
-    short_title = book_metadata[book]["short"]["en"]
-    abbr = book_metadata[book]["abbr"]["en"]
-    long_title = book_metadata[book]["long"]["en"]
     
     # Fetch chapters and verses
     chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
     chapter_map = {chapter.chapter: chapter for chapter in chapters}
     # Generate USFM content
-    usfm_text = crud.generate_usfm_content(book, short_title, abbr, long_title, chapter_map, versification_data, db)
+    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db)
     return crud.save_and_return_usfm_file(project, book, usfm_text)
 
 
