@@ -1588,7 +1588,7 @@ async def stream_audio(
     if not verse_entry:
         raise HTTPException(status_code=404, detail="Verse not found")
     # Determine the file path
-    file_path = verse_entry.tts_path if verse_entry.modified else verse_entry.path
+    file_path = verse_entry.tts_path or verse_entry.path
 
     # Ensure the file exists
     if not os.path.exists(file_path):
