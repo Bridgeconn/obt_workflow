@@ -1076,56 +1076,9 @@ def save_book_to_project(
                 else 0
             )
             # Process verses, tracking and removing duplicates
-            verse_files = {}
-            process_verse_files(chapter_dir,chapter_number)
-            # for verse_file in chapter_dir.iterdir():
-            #     if not verse_file.is_file():
-            #         continue  # Skip directories
-            #     verse_filename = verse_file.stem
-            #     if not VALID_VERSE_PATTERN.match(verse_filename):
-            #         logger.info(f"Skipping invalid verse file: {verse_file.name}")
-            #         print("Skipping invalid verse file:", verse_file.name)
-            #         incompartible_verses.append(verse_filename)
-            #         continue
-            #     try:
-            #         parts = verse_file.stem.split("_")                   
-            #         # Ensure first part matches chapter number
-            #         if not (parts[0].isdigit() and int(parts[0]) == chapter_number):
-            #             continue                
-            #         # Extract verse number
-            #         if len(parts) >= 2 and parts[1].isdigit():
-            #             verse_number = int(parts[1])
-            #         else:
-            #             logger.warning(f"Skipping malformed verse file: {verse_file.name}")
-            #             continue                       
-            #         # Determine file priority
-            #         if len(parts) == 2:  # Basic format like 1_1.mp3
-            #             priority = 2
-            #         elif "default" in parts:  # Contains 'default'
-            #             priority = 1
-            #         else:  # Any other format (takes)
-            #             priority = 0                          
-            #         # Add or replace based on priority
-            #         if verse_number not in verse_files:
-            #             verse_files[verse_number] = {
-            #                 'file': verse_file,
-            #                 'priority': priority
-            #             }
-            #         elif priority > verse_files[verse_number]['priority']:
-            #             logger.info(f"Removing lower priority verse file: {verse_files[verse_number]['file']}")
-            #             os.remove(verse_files[verse_number]['file'])
-            #             verse_files[verse_number] = {
-            #                 'file': verse_file,
-            #                 'priority': priority
-            #             }
-            #         else:
-            #             logger.info(f"Removing duplicate verse file: {verse_file}")
-            #             os.remove(verse_file)                      
-            #     except (ValueError, IndexError):
-            #         logger.warning(f"Invalid file name format: {verse_file.name}")
-            #         continue
+            verse_files, incompartible_verses = process_verse_files(chapter_dir, chapter_number)
             # Finalize verse files after prioritization
-            selected_files = {verse: data['file'] for verse, data in verse_files.items()}          
+            selected_files = {verse: data['file'] for verse, data in verse_files.items()}         
             # Get available verses after duplicate removal
             available_verses = set(selected_files.keys())
             # Determine missing verses
