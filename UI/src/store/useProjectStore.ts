@@ -98,10 +98,10 @@ const TRANSCRIPTION_TIMEOUT = 24 * 60 * 60 * 1000;
 const ACTIVITY_TIMEOUT = 10 * 1000;
 
 interface ChapterStatusResponse {
-  message: string;
+  detail: string;
   chapter_info: {
     project_id: number;
-    book_code: string;
+    book: string;
     chapter_id: number;
     chapter_number: number;
   };
@@ -155,6 +155,7 @@ const calculateBookStatus = (chapters: Chapter[]): string => {
     if(chapters.every(ch => ["transcribed", "approved", "modified", "converted", "transcriptionError"].includes(ch.status || "") && ch.progress === "")) return "error";
     if(chapters.every(ch => ["transcribed", "approved", "modified", "converted", "conversionError"].includes(ch.status || ""))) return "transcribed";
     if(chapters.every(ch => ["transcribed", "approved", "modified", "converted", "conversionError", "transcriptionError"].includes(ch.status || "") && ["Conversion failed", ""].includes(ch.progress || ""))) return "conversionError";
+    if(chapters.some(ch => ch.progress === "Failed to fetch chapter status")) return "apiError";
 
     return "error";
   }
@@ -366,10 +367,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         }
 
         useTranscriptionTrackingStore.getState().clearStaleTranscriptions();
-
+        const projectData = data.projects[0]
         // Fetch detailed status for each book and chapter
         const updatedBooks = await Promise.all(
-          data.project.books.map(async (book: Book) => {
+          projectData.books.map(async (book: Book) => {
             if (!book.chapters || book.chapters.length === 0) {
               return {
                 ...book,
@@ -384,7 +385,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
               sortedChapters.map(async (chapter) => {
                 try {
                   const chapterStatusResponse = await fetch(
-                    `${BASE_URL}/project/${data.project.project_id}/${book.book}/${chapter.chapter}`,
+                    `${BASE_URL}/project/${projectData.project_id}/${book.book}/${chapter.chapter}`,
                     {
                       method: "GET",
                       headers: {
@@ -397,7 +398,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                     await chapterStatusResponse.json();
 
                   if(!chapterStatusResponse.ok){
-                    throw new Error(chapterStatusData.message || "Failed to fetch chapter status");
+                    throw new Error(chapterStatusData.detail || "Failed to fetch chapter status");
                   }
 
                   const verses = chapterStatusData.data;
@@ -451,7 +452,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         );
         set({
           project: {
-            ...data.project,
+            ...projectData,
             books: updatedBooks,
           },
           isLoading: false,
@@ -535,7 +536,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
           try {
             const transcribeResponse = await fetch(
-              `${BASE_URL}/project/chapter/stt?project_id=${currentProject.project_id}&book_code=${book.book}&chapter_number=${chapter.chapter}`,
+              `${BASE_URL}/project/chapter/stt?project_id=${currentProject.project_id}&book=${book.book}&chapter=${chapter.chapter}`,
               {
                 method: "POST",
                 headers: {
