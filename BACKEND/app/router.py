@@ -460,7 +460,8 @@ async def get_user_projects(
     """
     # Fetch projects based on user role
     projects = crud.fetch_projects_for_role(db, current_user)
-
+    # Sort manually since fetch_projects_for_role returns a list
+    projects = sorted(projects, key=lambda project: project.created_date, reverse=True)
     return {
         "message": "Projects retrieved successfully",
         "projects": [crud.get_project_summary(db, project, current_user) for project in projects],

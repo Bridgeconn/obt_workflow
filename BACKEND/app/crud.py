@@ -22,6 +22,8 @@ import time
 from language import language_codes, source_languages
 from typing import Tuple,List
 import tempfile
+from typing import Optional
+
 
 def current_time():
     return datetime.datetime.now().strftime("%B %d, %Y %I:%M:%S %p")
@@ -255,7 +257,7 @@ def get_project_response(db: Session, project: Project) -> dict:
     }
 
 
-def fetch_projects_for_role(db: Session, current_user: User, project_id: int = None) -> list:
+def fetch_projects_for_role(db: Session, current_user: User, project_id: Optional[int]  = None):
     """
     Fetch projects based on the user's role:
     - Admin/AI: Get all projects (or a specific project if project_id is provided).
