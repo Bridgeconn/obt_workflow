@@ -392,15 +392,6 @@ const AudioPlayer = ({
             >
               {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
             </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8"
-              title="Record (feature coming soon)"
-              disabled={true}
-            >
-              <Mic size={16} />
-            </Button>
             <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
