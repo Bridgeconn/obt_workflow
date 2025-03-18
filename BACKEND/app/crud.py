@@ -1755,28 +1755,6 @@ def download_and_extract_audio_zip(audio_zip_url: str) -> str:
         logger.error(f"Failed to download audio ZIP file: {response.status_code} - {response.text}")
         return None
 
-
-
-def find_audio_file(folder_path: str, verse_name: str) -> str:
-    """
-    Match the verse with an audio file in the extracted folder. 
-    If files are generic (e.g., 'audio_0.wav'), use order to map.
-    """
-    for root, dirs, files in os.walk(folder_path):
-        logger.info(f"Searching in folder: {root}, Files: {files}")
-        # If there is a single audio file, assume it's for the current verse
-        if len(files) == 1:
-            return os.path.join(root, files[0])
-        # If multiple files exist, attempt exact or approximate matches
-        for file in files:
-            if file == verse_name:
-                return os.path.join(root, file)  # Exact match
-            elif file.startswith("audio_") and file.endswith(".wav"):
-                # Handle generic audio files (map based on verse order)
-                return os.path.join(root, file)
-    logger.error(f"Audio file not found for verse: {verse_name} in folder: {folder_path}")
-    return None
-
 def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     """
     Call the AI API for text-to-speech.
