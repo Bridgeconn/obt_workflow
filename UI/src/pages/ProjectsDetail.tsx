@@ -108,11 +108,28 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    clearProjectState();
+    const loadProject = async () => {
+      try {
+        clearProjectState();
+        setLoading(true);
+        await fetchProjectDetails(projectId);
+      } catch (error) {
+        toast({
+          variant: "destructive",
+          title:
+            error instanceof Error
+              ? error.message
+              : "Failed to load project details",
+        });
+        // Navigate back to projects list on error
+        queryClient.invalidateQueries({ queryKey: ["projects"] });
+        navigate("/");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    setLoading(true);
-
-    fetchProjectDetails(projectId);
+    loadProject();
   }, [projectId, fetchProjectDetails, clearProjectState]);
 
   useEffect(() => {
@@ -363,7 +380,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       console.error("Script language not found.");
       return;
     }
-    setScriptLanguage(String(selectedScriptLanguage?.id));
 
     //fetch the served models
     await refetch();
@@ -396,6 +412,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       );
     } catch (error) {
       console.log("error", error);
+    } finally {
+      setScriptLanguage(String(selectedScriptLanguage?.id));
     }
   };
 
@@ -407,6 +425,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         "converted",
         "converting",
         "conversionError",
+        "modified",
       ].includes(chapter.status || "")
     ) {
       setSelectedChapter({ ...chapter, bookName: book.book });
@@ -686,12 +705,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                     : chapter.status === "transcribed" ||
                                       chapter.status === "converted"
                                     ? "text-green-700 border border-green-600 bg-green-200 cursor-pointer"
+                                    : chapter.status === "modified"
+                                    ? "text-yellow-700 border border-yellow-600 bg-yellow-200 cursor-pointer"
                                     : chapter.status === "inProgress" ||
-                                      chapter.status === "converting"
+                                      chapter.status === "converting" ||
+                                      chapter.progress === "processing"
                                     ? "text-orange-700 border border-gray-100 bg-orange-200"
-                                    : ["error", "conversionError"].includes(
-                                        chapter.status || ""
-                                      )
+                                    : [
+                                        "error",
+                                        "conversionError",
+                                        "transcriptionError",
+                                      ].includes(chapter.status || "")
                                     ? "text-red-700 border border-red-600 bg-red-200"
                                     : "text-gray-700 border border-gray-300"
                                 }`}
@@ -699,14 +723,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               >
                                 {chapter.missing_verses?.length > 0 &&
                                   chapter.status === "notTranscribed" &&
-                                  book.status === "notTranscribed" && (
+                                  book.status === "notTranscribed" &&
+                                  book.progress !== "processing" && (
                                     <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
                                       !
                                     </span>
                                   )}
-                                {["error", "conversionError"].includes(
-                                  chapter.status || ""
-                                ) && (
+                                {[
+                                  "error",
+                                  "conversionError",
+                                  "transcriptionError",
+                                ].includes(chapter.status || "") && (
                                   <button className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-full shadow-md transition-colors z-20">
                                     <RotateCcw className="w-3 h-3" />
                                   </button>
@@ -717,7 +744,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
                             return chapter.missing_verses?.length > 0 &&
                               chapter.status === "notTranscribed" &&
-                              book.status === "notTranscribed" ? (
+                              book.status === "notTranscribed" &&
+                              book.progress !== "processing" ? (
                               <TooltipProvider key={chapter.chapter_id}>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -808,6 +836,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                               book.status === "inProgress" ||
                               book.status === "converting" ||
+                              (book.status === "transcriptionError" && book.progress === "Transcription failed") ||
+                              book.progress === "processing" ||
                               !scriptLanguage ||
                               !audioLanguage
                                 ? "opacity-50 cursor-not-allowed"
@@ -823,7 +853,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               }
                               if (
                                 book.status === "inProgress" ||
-                                book.status === "converting"
+                                book.status === "converting" ||
+                                (book.status === "transcriptionError" && book.progress === "Transcription failed") ||
+                                book.progress === "processing"
                               ) {
                                 return;
                               }
@@ -831,9 +863,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             }}
                           >
                             {book.status === "inProgress" ||
-                            book.status === "converting" ? (
+                            book.status === "converting" ||
+                            book.progress === "processing" ? (
                               <>
-                                {book.progress === "Calculating" ? (
+                                {book.progress === "processing" ||
+                                book.progress === "" ? (
                                   <div className="flex items-center justify-center space-x-2">
                                     <span>Calculating</span>
                                     <span className="flex space-x-1">
@@ -846,10 +880,22 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                   <span>{book.progress}</span>
                                 )}
                               </>
-                            ) : book.status === "error" ? (
+                            ) : (book.status === "error" &&
+                                book.progress === "Transcription failed") ||
+                              ([
+                                "error",
+                                "transcriptionError",
+                                "conversionError",
+                              ].includes(book.status || "") &&
+                                ["Conversion failed", ""].includes(
+                                  book.progress || ""
+                                )) ? (
                               "Retry"
-                            ) : (
+                            ) : book.status === "notTranscribed" &&
+                              book.progress === "" ? (
                               "Convert to Text"
+                            ) : (
+                              "error"
                             )}
                           </Button>
                         )}
