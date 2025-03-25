@@ -1178,7 +1178,7 @@ def get_modified_verses(db: Session, chapter_id: int) -> list:
     """
     Fetch all modified verses for the given chapter.
     """
-    return db.query(Verse).filter(Verse.chapter_id == chapter_id, Verse.modified == True).all()
+    return db.query(Verse).filter(Verse.chapter_id == chapter_id, Verse.modified == True ,Verse.tts == False).all()
 
 
 
