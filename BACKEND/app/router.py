@@ -412,15 +412,8 @@ async def add_new_book_zip(
         return crud.save_book_to_project(**book_data, db=db)
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")
-         # Cleanup temporary extraction folder
-        if temp_extract_path:
-            shutil.rmtree(temp_extract_path, ignore_errors=True)
-        raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-         # Cleanup temporary extraction folder
-        if temp_extract_path:
-            shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
 
  

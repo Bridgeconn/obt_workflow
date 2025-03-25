@@ -867,63 +867,89 @@ async def extract_and_validate_zip(file: UploadFile):
     """
     temp_zip_path = BASE_DIR / "temp" / file.filename.replace(" ", "_")
     temp_extract_path = BASE_DIR / "temp" / "extracted_book"
-
-    # Create temporary directories
-    temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_extract_path.mkdir(parents=True, exist_ok=True)
-
-    # Save the uploaded ZIP file
-    with open(temp_zip_path, "wb") as buffer:
-        buffer.write(await file.read())
-
-    # Extract the ZIP file
+    logger.debug(f"Temp ZIP path: {temp_zip_path}")
+    logger.debug(f"Temp extract path: {temp_extract_path}")
     try:
-        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
-            zip_ref.extractall(temp_extract_path)
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
+        # Create temporary directories
+        temp_zip_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_extract_path.mkdir(parents=True, exist_ok=True)
+        logger.debug("Temporary directories created.")
 
-    # Remove the ZIP file after extraction
-    temp_zip_path.unlink()
+        # Save the uploaded ZIP file
+        with open(temp_zip_path, "wb") as buffer:
+            buffer.write(await file.read())
+            logger.debug(f"Saved uploaded file to {temp_zip_path}")
 
-    # Verify and normalize the extracted structure
-    extracted_items = list(temp_extract_path.iterdir())
 
-    if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].name.isdigit():
-        # Case: Direct single chapter folder in the ZIP root
-        logger.info(f"Detected single chapter folder directly in ZIP root: {extracted_items[0]}")
-        book_folder = temp_extract_path
+        # Extract the ZIP file
+        try:
+            with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+                logger.debug(f"ZIP file content: {zip_ref.namelist()}")
+                zip_ref.extractall(temp_extract_path)
+                logger.debug(f"ZIP file extracted to {temp_extract_path}")
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
 
-    elif len(extracted_items) == 1 and extracted_items[0].is_dir():
-        # Case: Single folder encapsulating everything
-        primary_folder = extracted_items[0]
-        inner_items = list(primary_folder.iterdir())
-        print(f"Primary folder contents: {[item.name for item in inner_items]}")
-        if all(item.is_dir() and item.name.isdigit() for item in inner_items):
-            # Encapsulating folder directly contains chapter folders
-            logger.info(f"Detected encapsulating folder with chapters: {primary_folder}")
-            book_folder = primary_folder
-        elif len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name.isdigit():
-            # Encapsulating folder contains a single chapter folder
-            logger.info(f"Detected single chapter folder inside book folder: {inner_items[0]}")
-            book_folder = primary_folder
-        else:
-            logger.error("Unexpected structure inside primary folder.")
-            raise HTTPException(status_code=400, detail="Invalid book folder structure")
+        # Remove the ZIP file after extraction
+        temp_zip_path.unlink()
+        logger.debug(f"Deleted temporary ZIP file: {temp_zip_path}")
 
-    elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):
+        # Verify and normalize the extracted structure
+        extracted_items = list(temp_extract_path.iterdir())
+        logger.debug(f"Extracted items in root: {[item.name for item in extracted_items]}")
+
+        for item in extracted_items:
+            logger.debug(f"{item.name} - is_dir: {item.is_dir()}")
+        # Case 1: Direct single chapter folder in the ZIP root
+        if len(extracted_items) == 1 and extracted_items[0].is_dir() and extracted_items[0].name.isdigit():       
+            logger.info(f"Detected single chapter folder directly in ZIP root: {extracted_items[0]}")
+            book_folder = temp_extract_path
+        
+        # Case 2: Single folder encapsulating everything
+        elif len(extracted_items) == 1 and extracted_items[0].is_dir():       
+            primary_folder = extracted_items[0]
+            inner_items = list(primary_folder.iterdir())
+            logger.debug(f"Primary folder name: {primary_folder.name}")
+            logger.debug(f"Primary folder contents: {[item.name for item in inner_items]}")
+            for inner_item in inner_items:
+                logger.debug(f"{inner_item.name} - is_dir: {inner_item.is_dir()}")
+
+            if all(item.is_dir() and item.name.isdigit() for item in inner_items):
+                # Encapsulating folder directly contains chapter folders
+                logger.info(f"Detected encapsulating folder with chapters: {primary_folder}")
+                book_folder = primary_folder
+            elif len(inner_items) == 1 and inner_items[0].is_dir() and inner_items[0].name.isdigit():
+                # Encapsulating folder contains a single chapter folder
+                logger.info(f"Detected single chapter folder inside book folder: {inner_items[0]}")
+                book_folder = primary_folder
+            else:
+                logger.error("Unexpected structure inside primary folder.")
+                raise HTTPException(status_code=400, detail="Invalid book folder structure")
+        
         # Case: Multiple chapter folders in the root of the ZIP
-        logger.info("Detected multiple chapter folders directly in the ZIP root.")
-        book_folder = temp_extract_path
-    else:
-        logger.error("Unexpected structure in the extracted ZIP file.")
-        raise HTTPException(status_code=400, detail="Invalid book folder structure")
+        elif all(item.is_dir() and item.name.isdigit() for item in extracted_items):       
+            logger.info("Detected multiple chapter folders directly in the ZIP root.")
+            book_folder = temp_extract_path
+        else:
+            logger.error("Unexpected structure in the extracted ZIP file.")
+            raise HTTPException(status_code=400, detail="Invalid book folder structure")
+        
+        logger.debug(f"Book folder resolved: {book_folder}")
+        return {
+            "temp_extract_path": temp_extract_path,
+            "book_folder": book_folder
+        }
 
-    return {
-        "temp_extract_path": temp_extract_path,
-        "book_folder": book_folder
-    }
+    except HTTPException:
+        # Clean up before re-raising known HTTP errors
+        logger.debug(f"Cleaning up temp path due to HTTPException: {temp_extract_path}")
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        raise
 
+    except Exception as e:
+        logger.error(f"Unexpected error during ZIP processing: {e}")
+        shutil.rmtree(temp_extract_path, ignore_errors=True)
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while extracting the ZIP file.")
 
 async def process_book_zip(project_id: int, file: UploadFile, db: Session, current_user: dict):
     """
