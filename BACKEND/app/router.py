@@ -402,7 +402,6 @@ async def add_new_book_zip(
     - project_id: The ID of the project to which the book is added.
     - file: The uploaded ZIP file containing the book structure.
     """
-    temp_extract_path = None
     try:
         # Step 1: Process the ZIP file (Extract, Validate)
         book_data  = await crud.process_book_zip(
@@ -412,6 +411,7 @@ async def add_new_book_zip(
         return crud.save_book_to_project(**book_data, db=db)
     except HTTPException as http_exc:
         logger.error(f"HTTP Exception: {http_exc.detail}")
+        raise
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
