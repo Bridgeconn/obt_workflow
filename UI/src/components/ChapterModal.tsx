@@ -8,10 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Loader2 as LoadingIcon,
-  Music2,
-} from "lucide-react";
+import { Loader2 as LoadingIcon, PlayIcon } from "lucide-react";
 import { Textarea } from "./ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { Slider } from "@/components/ui/slider";
@@ -64,19 +61,22 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     convertToSpeech,
     clearChapterVerses,
   } = useChapterDetailsStore();
-  
+
   const chapterKey = `${projectId}-${bookName}-${chapter.chapter}`;
   const chapterVerses = useChapterDetailsStore(
     (state) => state.chapterVerses[chapterKey]
   );
-  
+
   const [fontSize, setFontSize] = useState(16);
   const [currentVerse, setCurrentVerse] = useState<Verse | null>(null);
   const [approved, setApproved] = useState(chapter.approved);
-  const [isConvertingChapters, setIsConvertingChapters] = useState<Record<number, boolean>>({});
-  
-  const [verseModifications, setVerseModifications] = useState<Record<number, string>>({});
-  const [editedVerses, setEditedVerses] = useState<Set<number>>(new Set());
+  const [isConvertingChapters, setIsConvertingChapters] = useState<
+    Record<number, boolean>
+  >({});
+
+  const [verseModifications, setVerseModifications] = useState<
+    Record<number, string>
+  >({});
   const textareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
   const sortedVerses = useMemo(
@@ -85,7 +85,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   );
 
   const completedVersesCount = useMemo(
-    () => sortedVerses?.filter(verse => verse.modified && verse.tts).length || 0,
+    () =>
+      sortedVerses?.filter((verse) => verse.modified && verse.tts).length || 0,
     [sortedVerses]
   );
 
@@ -95,10 +96,17 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   );
 
   useEffect(() => {
+    if (!isOpen) {
+      setCurrentVerse(null);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     const loadData = async () => {
       try {
         if (isOpen) {
           await fetchChapterDetails(projectId, bookName, chapter.chapter);
+          setCurrentVerse(null);
         } else if (!isConvertingChapters[chapter.chapter_id]) {
           clearChapterVerses(chapterKey);
         }
@@ -106,7 +114,10 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       } catch (error) {
         toast({
           variant: "destructive",
-          title: error instanceof Error ? error.message : "Error fetching chapter details",
+          title:
+            error instanceof Error
+              ? error.message
+              : "Error fetching chapter details",
         });
       }
     };
@@ -117,12 +128,21 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   useEffect(() => {
     if (sortedVerses) {
       setTimeout(() => {
-        Object.values(textareaRefs.current).forEach(textarea => {
+        Object.values(textareaRefs.current).forEach((textarea) => {
           if (textarea) handleTextareaResize(textarea);
         });
       }, 0);
     }
   }, [sortedVerses, fontSize]);
+
+  useEffect(() => {
+    if (currentVerse && isConvertingChapters[chapter.chapter_id]) {
+      //check if this verse is being modified or converted
+      if (verseModifications[currentVerse.verse_id]) {
+        setCurrentVerse(null);
+      }
+    }
+  }, [isConvertingChapters, currentVerse, verseModifications]);
 
   const handleTextareaResize = (
     e: React.ChangeEvent<HTMLTextAreaElement> | HTMLTextAreaElement
@@ -135,7 +155,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const handleVerseUpdate = async () => {
     try {
       if (isConvertingChapters[chapter.chapter_id]) return;
-      
+
       const verseIds = Object.keys(verseModifications).map(Number);
       for (const verseId of verseIds) {
         await updateVerseText(
@@ -146,7 +166,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
           projectId
         );
       }
-      
+      setVerseModifications({});
       await fetchChapterDetails(projectId, bookName, chapter.chapter);
     } catch (error) {
       toast({
@@ -164,25 +184,24 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     const hasChanged = newText.trim() !== originalText.trim();
 
     if (hasChanged) {
-      setVerseModifications(prev => ({ ...prev, [verseId]: newText }));
-      setEditedVerses(prev => new Set(prev).add(verseId));
+      setVerseModifications((prev) => ({ ...prev, [verseId]: newText }));
       setApproved(false);
     } else {
-      setVerseModifications(prev => {
+      setVerseModifications((prev) => {
         const updated = { ...prev };
         delete updated[verseId];
-        return updated;
-      });
-      
-      setEditedVerses(prev => {
-        const updated = new Set(prev);
-        updated.delete(verseId);
         return updated;
       });
     }
   };
 
   const handleApproveChapter = async () => {
+    if (
+      !isConvertingChapters[chapter.chapter_id] &&
+      Object.keys(verseModifications).length > 0
+    ) {
+      await handleVerseUpdate();
+    }
     const approve = !approved;
     setApproved(approve);
     try {
@@ -190,9 +209,13 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     } catch (error) {
       toast({
         variant: "destructive",
-        title: error instanceof Error ? error.message : "Error while approving chapter",
+        title:
+          error instanceof Error
+            ? error.message
+            : "Error while approving chapter",
       });
     } finally {
+      setCurrentVerse(null);
       onClose();
     }
   };
@@ -200,50 +223,75 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const handleConvertToSpeech = async () => {
     if (isConvertingChapters[chapter.chapter_id]) return;
 
-    setIsConvertingChapters(prev => ({ ...prev, [chapter.chapter_id]: true }));
+    setIsConvertingChapters((prev) => ({
+      ...prev,
+      [chapter.chapter_id]: true,
+    }));
+
+    if (currentVerse && verseModifications[currentVerse.verse_id]) {
+      setCurrentVerse(null);
+    }
+
     await handleVerseUpdate();
 
     // Get latest chapter details
     await fetchChapterDetails(projectId, bookName, chapter.chapter);
 
-    const modifiedVerses = sortedVerses
-      ?.filter(verse => verse.modified || verseModifications[verse.verse_id] || editedVerses.has(verse.verse_id))
-      .map(verse => verse.verse_id) || [];
+    const modifiedVerses =
+      sortedVerses
+        ?.filter(
+          (verse) => verse.modified || verseModifications[verse.verse_id]
+        )
+        .map((verse) => verse.verse_id) || [];
 
     if (modifiedVerses.length === 0) {
       toast({
         variant: "destructive",
         title: "Edit verse text before converting to speech",
       });
-      setIsConvertingChapters(prev => ({ ...prev, [chapter.chapter_id]: false }));
+      setIsConvertingChapters((prev) => ({
+        ...prev,
+        [chapter.chapter_id]: false,
+      }));
       return;
     }
 
+    
+
     const resultMsg = await convertToSpeech(projectId, bookName, chapter);
 
-    if (resultMsg.includes("Text-to-speech conversion completed successfully")) {
+    if (
+      resultMsg.includes("Text-to-speech conversion completed successfully")
+    ) {
       toast({ variant: "success", title: resultMsg });
+      if(approved){
+        setApproved(false);
+        await approveChapter(projectId, bookName, chapter.chapter, false);
+      }
     } else {
       toast({ variant: "destructive", title: resultMsg });
     }
 
-    setIsConvertingChapters(prev => ({ ...prev, [chapter.chapter_id]: false }));
+    setIsConvertingChapters((prev) => ({
+      ...prev,
+      [chapter.chapter_id]: false,
+    }));
     setVerseModifications({});
-    setEditedVerses(new Set());
 
     await fetchChapterDetails(projectId, bookName, chapter.chapter);
   };
 
   const handleFontSizeChange = (value: number[]) => setFontSize(value[0]);
-  const increaseFontSize = () => setFontSize(prev => Math.min(prev + 2, 28));
-  const decreaseFontSize = () => setFontSize(prev => Math.max(prev - 2, 12));
+  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 28));
+  const decreaseFontSize = () => setFontSize((prev) => Math.max(prev - 2, 12));
 
   const checkProgress = () => {
     if (!isConvertingChapters[chapter.chapter_id]) return null;
-    
-    const totalModified = sortedVerses?.filter(
-      verse => verse.modified || verseModifications[verse.verse_id] || editedVerses.has(verse.verse_id)
-    ).length || 0;
+
+    const totalModified =
+      sortedVerses?.filter(
+        (verse) => verse.modified || verseModifications[verse.verse_id]
+      ).length || 0;
 
     const remaining = totalModified - completedVersesCount;
     return `${remaining} verse(s) left`;
@@ -251,8 +299,10 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
   const handleCloseModal = () => {
     // Save changes if needed
-    if (!isConvertingChapters[chapter.chapter_id] && 
-        Object.keys(verseModifications).length > 0) {
+    if (
+      !isConvertingChapters[chapter.chapter_id] &&
+      Object.keys(verseModifications).length > 0
+    ) {
       handleVerseUpdate();
     }
     // Reset verse state
@@ -261,10 +311,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   };
 
   return (
-    <Dialog
-      open={isOpen}
-      onOpenChange={open => !open && handleCloseModal()}
-    >
+    <Dialog open={isOpen} onOpenChange={(open) => !open && handleCloseModal()}>
       <DialogContent className="max-w-6xl h-[80vh] flex flex-col">
         <DialogHeader className="mt-4">
           <DialogTitle className="flex justify-between items-center">
@@ -306,7 +353,9 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
               <div
                 key={verse.verse_id}
                 className={`flex items-center space-x-4 p-2 ${
-                  verseModifications[verse.verse_id] ? "bg-gray-100 rounded" : ""
+                  verseModifications[verse.verse_id]
+                    ? "bg-gray-100 rounded"
+                    : ""
                 }`}
               >
                 <div
@@ -331,7 +380,11 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                   }}
                   defaultValue={verse.text}
                   onChange={(e) => {
-                    handleTextChange(verse.verse_id, e.target.value, verse.text);
+                    handleTextChange(
+                      verse.verse_id,
+                      e.target.value,
+                      verse.text
+                    );
                     handleTextareaResize(e);
                   }}
                   ref={(el) => (textareaRefs.current[verse.verse_id] = el)}
@@ -347,9 +400,13 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                     <Button
                       size="icon"
                       variant="ghost"
-                      onClick={() => setCurrentVerse(
-                        currentVerse?.verse_id === verse.verse_id ? null : verse
-                      )}
+                      onClick={() =>
+                        setCurrentVerse(
+                          currentVerse?.verse_id === verse.verse_id
+                            ? null
+                            : verse
+                        )
+                      }
                       title={
                         !(verse.tts || verse.stt)
                           ? "Audio not available"
@@ -360,15 +417,15 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                       disabled={!(verse.tts || verse.stt)}
                       className="relative"
                     >
-
                       {currentVerse?.verse_id === verse.verse_id && (
                         <span className="absolute inset-0 rounded-full bg-indigo-300 opacity-70 animate-pulse"></span>
                       )}
-                      <Music2
+                      <PlayIcon
                         className={`${
                           currentVerse?.verse_id === verse.verse_id
                             ? "text-indigo-600"
-                            : verseModifications[verse.verse_id] || verse.modified
+                            : verseModifications[verse.verse_id] ||
+                              verse.modified
                             ? "text-yellow-600"
                             : ""
                         } 
@@ -385,18 +442,15 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
           {/* Audio Player */}
           {currentVerse && (
-            <AudioPlayer 
-              verse={currentVerse} 
-              onClose={() => setCurrentVerse(null)} 
+            <AudioPlayer
+              verse={currentVerse}
+              onClose={() => setCurrentVerse(null)}
             />
           )}
 
           {/* Bottom Action Buttons */}
           <div className="flex justify-end space-x-4 mt-auto pt-2">
-            <Button
-              variant="outline"
-              onClick={handleCloseModal}
-            >
+            <Button variant="outline" onClick={handleCloseModal}>
               Close
             </Button>
             <Button
