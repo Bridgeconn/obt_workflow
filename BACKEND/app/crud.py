@@ -767,7 +767,7 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
     target_book_path = setup_project_folders(project, book_entry)   
     # Fetch existing chapters
     existing_chapters = {
-        chapter.chapter for chapter in db.query(Chapter).filter(Chapter.book_id == book_entry.book_id)
+        chapter.chapter: chapter for chapter in db.query(Chapter).filter(Chapter.book_id == book_entry.book_id)
     }
     versification_data = load_versification()
     max_verses_data = versification_data.get("maxVerses", {})
@@ -784,7 +784,11 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
     added_chapters = []
     # Process chapters in the book folder
     skipped_chapters = []   
-    incompartible_verses = []   
+    incompatible_chapters_verses = []
+    added_verses = []
+    modified_verses = []
+    modified_chapters = []
+     
     for chapter_dir in book_folder.iterdir():
         if chapter_dir.is_dir() and chapter_dir.name.isdigit():
             chapter_number = int(chapter_dir.name)
@@ -797,26 +801,33 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                     detail=f"{book_name} should have {max_chapters} chapter(s) but found chapter {chapter_number}. "
                     "Please upload the ZIP file with proper chapter count"
                 )          
-            if chapter_number in existing_chapters:
-                logger.info(f"Skipping existing chapter: {chapter_number}")
-                skipped_chapters.append(chapter_number)
-                continue           
+            # if chapter_number in existing_chapters:
+            #     logger.info(f"Skipping existing chapter: {chapter_number}")
+            #     skipped_chapters.append(chapter_number)
+            #     continue
+               
             # Call the separate function to process verses and remove duplicates
-            verse_files, incompartible_verses = process_verse_files(chapter_dir, chapter_number) 
-            # Finalize verse files after prioritization
-            selected_files = {verse: data['file'] for verse, data in verse_files.items()}         
+            verse_files, incompatible_verses = process_verse_files(chapter_dir, chapter_number)
+            incompatible_chapters_verses.extend(incompatible_verses)
+            
+           
             # Get available verses after duplicate removal
-            available_verses = set(selected_files.keys())           
+            available_verses = {verse: data['file'] for verse, data in verse_files.items()}          
+                     
             # If no verses are found, delete the empty chapter folder
             if not available_verses:
                 logger.info(f"Empty chapter detected: {chapter_dir}, deleting it.")
                 shutil.rmtree(chapter_dir)
-                continue         
+                continue
+                 
             max_verses_in_chapter = max_verses_per_chapter.get(chapter_number, 0)
+            
             # Determine missing verses
             expected_verses = set(range(1, max_verses_in_chapter + 1))
-            missing_verses = list(expected_verses - available_verses)           
-            if available_verses and max(available_verses) > max_verses_in_chapter:
+            missing_verses = list(expected_verses - set(available_verses.keys()))
+                      
+            # Check if verses exceed the maximum allowed
+            if available_verses and max(available_verses.keys()) > max_verses_in_chapter:
                 logger.error(
                     f"Invalid chapter {chapter_number}: Exceeds maximum allowed verses or has no valid verses."
                 )
@@ -824,33 +835,133 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                 raise HTTPException(
                     status_code=400,
                     detail=f"{book_name}: Chapter {chapter_number} should have {max_verses_in_chapter} verses "
-                    f"but {max(available_verses)} verses found. "
+                    f"but {max(available_verses.keys())} verses found. "
                     "Please upload the ZIP file with correct verse count",
                 )
-            # Move the new chapter folder
-            target_chapter_path = target_book_path / chapter_dir.name
-            shutil.move(str(chapter_dir), str(target_chapter_path))
-            logger.info(f"Added new chapter: {chapter_number}")
-            added_chapters.append(chapter_number)
-            # Add the chapter and its verses to the database
-            chapter_entry = Chapter(book_id=book_entry.book_id, 
+                
+            # Handle existing chapter
+            if chapter_number in existing_chapters:
+                chapter_entry = existing_chapters[chapter_number]
+                chapter_modified = False
+                
+                #fetch existing verses for this chapter
+                existing_verses = {
+                    verse.verse: verse 
+                    for verse in db.query(Verse).filter(Verse.chapter_id == chapter_entry.chapter_id)
+                }
+                
+                chapter_verses_modified = []
+                chapter_verses_added = []
+                skipped_verse_count = 0
+                
+                # Target path for this chapter
+                target_chapter_path = target_book_path / str(chapter_number)
+                if not target_chapter_path.exists():
+                    target_chapter_path.mkdir(parents=True, exist_ok=True)
+                
+                 # Process each verse file
+                for verse_number, verse_file in available_verses.items():
+                    verse_file_size = verse_file.stat().st_size
+                    verse_file_name = verse_file.name
+                    
+                    # Check if verse exists in database
+                    if verse_number in existing_verses:
+                        existing_verse = existing_verses[verse_number]
+                        
+                        # Compare file size to detect modifications
+                        if existing_verse.size != verse_file_size:
+                            logger.info(f"Verse {verse_number} in chapter {chapter_number} has been modified")
+                            target_verse_path = target_chapter_path / verse_file_name
+                            # Update the existing verse record
+                            existing_verse.size = verse_file_size
+                            existing_verse.name = verse_file_name
+                            existing_verse.text = ""
+                            existing_verse.tts = False
+                            existing_verse.stt = False
+                            existing_verse.modified = False
+                            existing_verse.format = verse_file.suffix.lstrip('.')
+                            existing_verse.stt_msg = ""
+                            existing_verse.tts_msg = ""
+                            existing_verse.tts_path = ""
+                            
+                            # Replace the file in target path
+                            target_verse_path = target_chapter_path / verse_file_name
+                            if target_verse_path.exists():
+                                os.remove(target_verse_path)
+                            shutil.copy2(str(verse_file), str(target_verse_path))
+                            
+                            # Add to tracking lists
+                            chapter_verses_modified.append(verse_number)
+                            chapter_modified = True
+                        else:
+                            # Skip if file size matches (no changes)
+                            skipped_verse_count += 1
+                    else:
+                        # New verse found, create new record
+                        target_verse_path = target_chapter_path / verse_file_name
+                        shutil.copy2(str(verse_file), str(target_verse_path))
+                        
+                        # Create new verse entry
+                        new_verse = Verse(
+                            chapter_id=chapter_entry.chapter_id,
+                            verse=verse_number,
+                            name=verse_file_name,
+                            path=str(target_verse_path),
+                            size=verse_file_size,
+                            format=verse_file.suffix.lstrip('.'),
+                            stt=False,
+                            text="",
+                            modified=False
+                        )
+                        db.add(new_verse)
+                        
+                        # Add to tracking lists
+                        chapter_verses_added.append(verse_number)
+                        chapter_modified = True
+                        
+                # Add to the main tracking lists
+                if chapter_modified:
+                    modified_chapters.append(chapter_number)
+                    modified_verses.extend([f"{chapter_number}_{v}" for v in chapter_verses_modified])
+                    # Add newly added verses to existing chapters to the added_verses list
+                    added_verses.extend([f"{chapter_number}_{v}" for v in chapter_verses_added])
+                else:
+                    # Only add to skipped if all verses were unchanged
+                    if skipped_verse_count == len(available_verses):
+                        skipped_chapters.append(chapter_number)
+                
+                # Update missing verses if needed
+                if missing_verses:
+                    chapter_entry.missing_verses = missing_verses
+                    db.commit()
+                    
+            else:
+                # This is a new chapter - create it
+                # Move the chapter folder to target path
+                target_chapter_path = target_book_path / chapter_dir.name
+                shutil.move(str(chapter_dir), str(target_chapter_path))
+                logger.info(f"Added new chapter: {chapter_number}")
+                added_chapters.append(chapter_number)
+
+                # Add the chapter and its verses to the database
+                chapter_entry = Chapter(book_id=book_entry.book_id, 
                                 chapter=chapter_number, 
                                 approved=False, 
                                 missing_verses=missing_verses if missing_verses else None
                             )
-            db.add(chapter_entry)
-            db.commit()
-            db.refresh(chapter_entry)
-            add_verses_to_db(target_chapter_path, chapter_entry, db)
+                db.add(chapter_entry)
+                db.commit()
+                db.refresh(chapter_entry)
+                add_verses_to_db(target_chapter_path, chapter_entry, db)
  
     # If no chapters were added or skipped, raise an error   
-    if(not added_chapters and not skipped_chapters):
+    if not added_chapters and not modified_chapters and not skipped_chapters:
         raise HTTPException(
             status_code=400,
             detail=f"No verse data found. Please upload valid ZIP file",
         ) 
     db.commit()
-    return added_chapters, skipped_chapters, incompartible_verses
+    return added_chapters, skipped_chapters, modified_chapters, added_verses, modified_verses, incompatible_chapters_verses 
 
 
 
@@ -999,14 +1110,17 @@ def save_book_to_project(
     )
     if existing_book:
         # Perform chapter-level checks for the existing book
-        added_chapters, skipped_chapters, incompartible_verses = process_chapters(book_folder, project, existing_book, db,book)
+        added_chapters, skipped_chapters, modified_chapters, added_verses, modified_verses, incompatible_verses = process_chapters(book_folder, project, existing_book, db,book)
         shutil.rmtree(temp_extract_path, ignore_errors=True)
         return {
             "message": "Book already exists. Additional chapters processed.",
             "book": book,
             "added_chapters": added_chapters,
             "skipped_chapters": skipped_chapters,
-            "incompartible_verses": incompartible_verses
+            "modified_chapters" : modified_chapters,
+            "added_verses" : added_verses,
+            "modified_verses" : modified_verses, 
+            "incompartible_verses" : incompatible_verses
         }
     else:
         # Add a new book and process chapters
