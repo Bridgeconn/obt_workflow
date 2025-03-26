@@ -228,10 +228,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       [chapter.chapter_id]: true,
     }));
 
-    if (currentVerse && verseModifications[currentVerse.verse_id]) {
-      setCurrentVerse(null);
-    }
-
     await handleVerseUpdate();
 
     // Get latest chapter details
@@ -240,7 +236,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     const modifiedVerses =
       sortedVerses
         ?.filter(
-          (verse) => verse.modified || verseModifications[verse.verse_id]
+          (verse) => (verse.modified && !verse.tts) || verseModifications[verse.verse_id]
         )
         .map((verse) => verse.verse_id) || [];
 
@@ -256,6 +252,9 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       return;
     }
 
+    if (currentVerse && (verseModifications[currentVerse.verse_id] || modifiedVerses.includes(currentVerse.verse_id))) {
+      setCurrentVerse(null);
+    }
     
 
     const resultMsg = await convertToSpeech(projectId, bookName, chapter);
