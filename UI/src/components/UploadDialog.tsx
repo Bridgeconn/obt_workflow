@@ -113,7 +113,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
                   <p className="text-sm">
                     <label className="text-blue-500 font-bold">Note :</label>{" "}
                     {modifiedVerses.length} verse(s) modified in{" "}
-                    {modifiedVerses.length === 1
+                    {modifiedChapters && modifiedChapters.length === 1
                       ? "this chapter"
                       : "these chapters"}
                     .
@@ -123,7 +123,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
                   <p className="text-sm">
                     <label className="text-green-500 font-bold">Note :</label>{" "}
                     {addedVerses.length} new verse(s) added to{" "}
-                    {addedVerses.length === 1
+                    {modifiedChapters && modifiedChapters.length === 1
                       ? "this chapter"
                       : "these chapters"}
                     .
