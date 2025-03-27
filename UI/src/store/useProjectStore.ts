@@ -172,8 +172,8 @@ const updateChapterStatus = (
   
   const allTranscribed = verses.length > 0 && verses.every(verse => verse.stt);
   const modifiedVerses = verses.filter(verse => verse.modified);
-  const allModifiedConverted = modifiedVerses.length > 0 && modifiedVerses.every(verse => verse.tts);
-  const checkChapterOnlyModified = modifiedVerses.length >0 && !allModifiedConverted;
+  const allModifiedConverted = modifiedVerses.length > 0 && allTranscribed && modifiedVerses.every(verse => verse.tts && verse.stt);
+  const checkChapterOnlyModified = modifiedVerses.length > 0 && allTranscribed && !allModifiedConverted;
   if (allModifiedConverted) return "converted";
   if (checkChapterOnlyModified) return "modified";
   if (allTranscribed) return "transcribed";

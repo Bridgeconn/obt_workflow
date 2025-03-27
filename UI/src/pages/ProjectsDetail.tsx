@@ -100,6 +100,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     book: string;
     added_chapters: number[];
     skipped_chapters: number[];
+    modified_chapters: number[] | null;
+    added_verses : string[] | null;
+    modified_verses : string[] | null;
     incompartible_verses: string[] | null;
   } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
@@ -229,6 +232,29 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   }, [projectId, loading]);
 
   const handleFileUpload = async (file: File) => {
+    const bookName = file.name.replace('.zip', '').toUpperCase();
+
+    // Check if the book is currently being processed
+    const isBookProcessing = project?.books.some(book => 
+      book.book === bookName && (
+        book.status === 'inProgress' || 
+        book.status === 'converting' || 
+        book.progress === 'processing' ||
+        book.chapters.some(chapter => 
+          chapter.status === 'inProgress' || 
+          chapter.status === 'converting'
+        )
+      )
+    );
+
+    if (isBookProcessing) {
+      toast({
+        variant: "destructive",
+        title: `Book ${bookName} is currently being processed. Please try again later.`,
+      });
+      return;
+    }
+    
     const token = useAuthStore.getState().token;
     const formData = new FormData();
     formData.append("file", file);
@@ -933,7 +959,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 bookCode={uploadedBookData?.book}
                 addedChapters={uploadedBookData?.added_chapters}
                 skippedChapters={uploadedBookData?.skipped_chapters}
+                modifiedChapters={uploadedBookData?.modified_chapters}
+                addedVerses = {uploadedBookData?.added_verses}
+                modifiedVerses = {uploadedBookData?.modified_verses}
                 skippedVerses={uploadedBookData?.incompartible_verses}
+
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (

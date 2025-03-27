@@ -16,6 +16,9 @@ interface UploadDialogProps {
   bookCode: string;
   addedChapters: number[] | null;
   skippedChapters: number[] | null;
+  modifiedChapters: number[] | null;
+  addedVerses: string[] | null;
+  modifiedVerses: string[] | null;
   skippedVerses: string[] | null;
 }
 
@@ -25,6 +28,9 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   bookCode,
   addedChapters,
   skippedChapters,
+  modifiedChapters,
+  addedVerses,
+  modifiedVerses,
   skippedVerses,
 }) => {
   const getBookName = (code: string): string => {
@@ -45,8 +51,6 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
             </div>
           </DialogTitle>
         </DialogHeader>
-
-        
 
         <ScrollArea className="pr-4 max-h-[400px]">
           <div className="py-4 space-y-6">
@@ -72,15 +76,64 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
                 <div className="flex items-center gap-2">No chapters added</div>
               )}
               {skippedVerses && skippedVerses?.length > 0 && (
-              <p className="text-sm"><label className="text-orange-500 font-bold">Warning :</label> {skippedVerses?.length} verse file(s) skipped due to file incompatibility</p>
+                <p className="text-sm">
+                  <label className="text-orange-500 font-bold">Warning :</label>{" "}
+                  {skippedVerses?.length} verse file(s) skipped due to file
+                  incompatibility
+                </p>
               )}
             </div>
 
-            {addedChapters && skippedChapters && (
-              <div className="border-t border-gray-200 my-4"></div>
-            )}
+            {/* Modified Chapters Section */}
+            <div className="border-t border-gray-200 my-4"></div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">
+                  Chapters Modified
+                </Badge>
+              </div>
+              {modifiedChapters && modifiedChapters.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {modifiedChapters.map((chapter) => (
+                    <span
+                      key={chapter}
+                      className="w-8 h-8 flex items-center justify-center rounded-full border"
+                    >
+                      {chapter}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  No chapters modified
+                </div>
+              )}
+              <div className="space-y-2 text-sm mt-2">
+                {modifiedVerses && modifiedVerses.length > 0 && (
+                  <p className="text-sm">
+                    <label className="text-blue-500 font-bold">Note :</label>{" "}
+                    {modifiedVerses.length} verse(s) modified in{" "}
+                    {modifiedChapters && modifiedChapters.length === 1
+                      ? "this chapter"
+                      : "these chapters"}
+                    .
+                  </p>
+                )}
+                {addedVerses && addedVerses.length > 0 && (
+                  <p className="text-sm">
+                    <label className="text-green-500 font-bold">Note :</label>{" "}
+                    {addedVerses.length} new verse(s) added to{" "}
+                    {modifiedChapters && modifiedChapters.length === 1
+                      ? "this chapter"
+                      : "these chapters"}
+                    .
+                  </p>
+                )}
+              </div>
+            </div>
 
             {/* Skipped Chapters Section */}
+            <div className="border-t border-gray-200 my-4"></div>
             {skippedChapters && skippedChapters.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
