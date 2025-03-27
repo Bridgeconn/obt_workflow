@@ -925,6 +925,7 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                     modified_verses.extend([f"{chapter_number}_{v}" for v in chapter_verses_modified])
                     # Add newly added verses to existing chapters to the added_verses list
                     added_verses.extend([f"{chapter_number}_{v}" for v in chapter_verses_added])
+                    chapter_entry.approved = False
                 else:
                     # Only add to skipped if all verses were unchanged
                     if skipped_verse_count == len(available_verses):
