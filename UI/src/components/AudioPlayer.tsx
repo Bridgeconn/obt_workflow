@@ -4,7 +4,6 @@ import { Slider } from "@/components/ui/slider";
 import {
   PlayIcon,
   PauseIcon,
-  Mic,
   X,
   Volume2,
   VolumeX,

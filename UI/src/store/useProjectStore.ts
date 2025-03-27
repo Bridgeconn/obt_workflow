@@ -139,7 +139,7 @@ interface ChapterDetailsState {
 // Utility function to calculate book status based on chapters
 const calculateBookStatus = (chapters: Chapter[]): string => {
   console.log("chapters for book status", chapters);
-  if (chapters.every(ch => ch.status === "approved")) return "approved";
+  if (chapters.every(ch => ch.status === "approved" || ch.approved)) return "approved";
   if (chapters.every(ch => ["approved", "converted"].includes(ch.status || ""))) return "converted";
   if (chapters.some(ch => ch.status === "converting")) return "converting";
   if (chapters.some(ch => ch.status === "inProgress" || ch.progress === "processing")) return "inProgress";
@@ -816,7 +816,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
           const checkModifiedConverted =
             modifiedVerses.length > 0 &&
             modifiedVerses.every((verse) => verse.tts);
-  
+          const checkChapterOnlyModified = modifiedVerses.length >0 && !checkModifiedConverted;
           useProjectDetailsStore.getState().setProject((prevProject) => {
             if (!prevProject) return null;
   
@@ -828,6 +828,7 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
                       ? "approved"
                       : checkModifiedConverted
                       ? "converted"
+                      : checkChapterOnlyModified ? "modified" 
                       : checkTranscribed
                       ? "transcribed"
                       : ch.status;
