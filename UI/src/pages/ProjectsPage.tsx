@@ -573,6 +573,7 @@ const ProjectsPage: React.FC = () => {
                             });
                           }
                         }}
+                        title={`Project id: ${row.original.id}`}
                         className="cursor-pointer hover:bg-gray-100"
                       >
                         {row.getVisibleCells().map((cell) => (

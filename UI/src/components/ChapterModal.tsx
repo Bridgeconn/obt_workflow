@@ -483,14 +483,33 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCloseModal()}>
       <DialogContent className="max-w-6xl h-[80vh] flex flex-col">
         <DialogHeader className="mt-4">
-          <DialogTitle className="flex justify-between items-center">
+          <DialogTitle className="flex justify-between items-center gap-4 flex-wrap">
             <div className="flex items-center">
               {bookName} - Chapter {chapter.chapter}
               {hasPendingConversion && (
-                  <div className="ml-3 flex items-center text-red-600 text-sm">
+                <div className="ml-6 flex items-center gap-4 py-2 px-4 border-2 rounded">
+                  <div className="flex items-center text-red-600 text-sm">
                     <AlertCircle size={16} className="mr-1" />
                     <span>Unsaved changes</span>
                   </div>
+                  <Button
+                  variant="outline"
+                   onClick={handleVerseUpdate}
+                   disabled={
+                     isSyncingChanges || isConvertingChapters[chapter.chapter_id]
+                   }
+                   className="h-8"
+                 >
+                   {isSyncingChanges ? (
+                     <>
+                       <LoadingIcon className="mr-2 h-4 w-4 animate-spin" />
+                       Saving...
+                     </>
+                   ) : (
+                     "Save Changes"
+                   )}
+                 </Button>
+                </div>
               )}
             </div>
             <div className="flex items-center space-x-2">
@@ -634,23 +653,6 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
             <Button variant="outline" onClick={handleCloseModal}>
               Close
             </Button>
-            {hasPendingConversion && (
-              <Button
-                onClick={handleVerseUpdate}
-                disabled={
-                  isSyncingChanges || isConvertingChapters[chapter.chapter_id]
-                }
-              >
-                {isSyncingChanges ? (
-                  <>
-                    <LoadingIcon className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  "Save Changes"
-                )}
-              </Button>
-            )}
             <Button
               onClick={handleApproveChapter}
               disabled={
