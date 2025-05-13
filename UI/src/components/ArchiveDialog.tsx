@@ -16,7 +16,7 @@ const ArchiveDialog: React.FC<ArchiveDialogProps> = ({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[600px]">
         <div className="py-4 space-y-6">
-          <h2>Do you want to archive this project ?</h2>
+          <h2>Do you want to delete this project ?</h2>
         </div>
 
         <DialogFooter className="mt-4 flex flex-col md:flex-row gap-2">

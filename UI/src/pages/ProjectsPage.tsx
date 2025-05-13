@@ -21,8 +21,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label"
 import useAuthStore from "@/store/useAuthStore";
-import useProjectsStore from "@/store/useProjectsStore";
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DebouncedInput } from "@/components/DebouncedInput";
@@ -116,19 +117,19 @@ const fetchProjects = async (): Promise<Project[]> => {
   return projects.map((project: ProjectResponse) => {
     // Format the date for display
     const date = new Date(project.created_date);
-    const displayDate = date.toLocaleDateString('en-US', { 
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+    const displayDate = date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
-    
-    const fullDateTime = date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+
+    const fullDateTime = date.toLocaleString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
     });
 
     return {
@@ -142,8 +143,8 @@ const fetchProjects = async (): Promise<Project[]> => {
       archive: project.archive,
       createdDate: {
         display: displayDate,
-        full: fullDateTime
-      }
+        full: fullDateTime,
+      },
     };
   });
 };
@@ -184,7 +185,6 @@ const uploadProject = async (
   });
 };
 
-
 const downloadProject = async (projectId: string, name: string) => {
   const response = await fetch(
     `${BASE_URL}/download-processed-project-zip/?project_id=${projectId}`,
@@ -222,7 +222,7 @@ const downloadProject = async (projectId: string, name: string) => {
 const ProjectsPage: React.FC = () => {
   const [globalFilter, setGlobalFilter] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
-  const { isActive, setActive } = useProjectsStore();
+  const [isActive, setActive] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
   const [pagination, setPagination] = useState({
     pageIndex: 0,
@@ -235,6 +235,8 @@ const ProjectsPage: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  const isAdmin = user?.role === "Admin";
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["projects", user?.username],
@@ -256,21 +258,21 @@ const ProjectsPage: React.FC = () => {
     onSuccess: (data: UploadProjectResponse) => {
       const { message, result } = data;
       const incompartible_verses = result?.incompartible_verses || [];
-  
+
       let successDescription = ""; // Default to empty description
-  
+
       // If there are incompatible verses, include them in the description
       if (incompartible_verses.length > 0) {
-        successDescription = `${incompartible_verses.length} verse file(s) skipped due to file incompatibility`
+        successDescription = `${incompartible_verses.length} verse file(s) skipped due to file incompatibility`;
       }
-  
+
       // Show the success toast, only including the description if there are incompatible verses
       toast({
         variant: "success",
         title: message,
         description: successDescription,
       });
-  
+
       // Reset progress and invalidate queries
       setUploadProgress(0);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -283,7 +285,6 @@ const ProjectsPage: React.FC = () => {
       setUploadProgress(0);
     },
   });
-  
 
   const downloadMutation = useMutation({
     mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
@@ -363,10 +364,7 @@ const ProjectsPage: React.FC = () => {
     columnHelper.accessor("createdDate", {
       header: "Created Date",
       cell: (info) => (
-        <div 
-          className="truncate text-center" 
-          title={info.getValue().full}
-        >
+        <div className="truncate text-center" title={info.getValue().full}>
           {info.getValue().display}
         </div>
       ),
@@ -434,7 +432,6 @@ const ProjectsPage: React.FC = () => {
   };
 
   const uploadFile = (file: File) => {
-
     uploadMutation.mutate(file);
 
     // Reset file input to allow re-uploading the same file
@@ -448,12 +445,18 @@ const ProjectsPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4">
         <h1 className="text-3xl font-bold">Projects</h1>
         <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-4 md:justify-start">
-          <Button onClick={() => setActive(true)} disabled={isActive}>
-            Active
-          </Button>
-          <Button onClick={() => setActive(false)} disabled={!isActive}>
-            Archived
-          </Button>
+          {isAdmin && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="archive-mode"
+                checked={isActive}
+                onCheckedChange={setActive}
+              />
+              <Label htmlFor="archive-mode" className="font-medium">
+                {isActive ? "Active" : "Deleted"}
+              </Label>
+            </div>
+          )}
           <DebouncedInput
             value={globalFilter ?? ""}
             placeholder="Search Projects"
@@ -524,7 +527,12 @@ const ProjectsPage: React.FC = () => {
                           key={header.id}
                           style={{ width: `${header.column.getSize()}px` }}
                           className={`text-primary bg-gray-100 ${
-                            ["books", "approved", "actions", "createdDate"].includes(header.id)
+                            [
+                              "books",
+                              "approved",
+                              "actions",
+                              "createdDate",
+                            ].includes(header.id)
                               ? "text-center"
                               : "text-left justify-start"
                           }`}
@@ -565,6 +573,7 @@ const ProjectsPage: React.FC = () => {
                             });
                           }
                         }}
+                        title={`Project id: ${row.original.id}`}
                         className="cursor-pointer hover:bg-gray-100"
                       >
                         {row.getVisibleCells().map((cell) => (
@@ -576,7 +585,7 @@ const ProjectsPage: React.FC = () => {
                                 "books",
                                 "approved",
                                 "actions",
-                                "createdDate"
+                                "createdDate",
                               ].includes(cell.column.id)
                                 ? "center"
                                 : "start",
