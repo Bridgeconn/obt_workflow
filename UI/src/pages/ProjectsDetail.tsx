@@ -661,7 +661,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 onClick={() =>
                   !archive ? setArchiveDialogOpen(true) : handleArchiveProject()
                 }
-                title={archive ? "Unarchive" : "Archive"}
+                title={archive ? "Restore" : "Delete"}
               >
                 {archive ? <PackageOpen size={20} /> : <Archive size={20} />}
               </Button>

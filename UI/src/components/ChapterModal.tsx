@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2 as LoadingIcon, PlayIcon } from "lucide-react";
+import { AlertCircle, Loader2 as LoadingIcon, PlayIcon } from "lucide-react";
 import { Textarea } from "./ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { Slider } from "@/components/ui/slider";
@@ -47,6 +47,89 @@ interface ChapterModalProps {
   chapter: Chapter;
 }
 
+// Define types for the parameters
+type ProjectId = number;
+type BookName = string;
+type ChapterNum = number;
+type VerseId = number;
+type VerseText = string;
+
+//function to generate storage key
+const getStorageKey = (
+  projectId: ProjectId,
+  bookName: BookName,
+  chapterNum: ChapterNum
+): string => {
+  return `verse-${projectId}-${bookName}-${chapterNum}`;
+};
+
+//Get stored verses as a typed object
+const getStoredVerses = (key: string): Record<VerseId, VerseText> => {
+  return JSON.parse(localStorage.getItem(key) || "{}");
+};
+
+//Save a verse to localStorage
+const saveVerseToLocalStorage = (
+  projectId: ProjectId,
+  bookName: BookName,
+  chapterNum: ChapterNum,
+  verseId: VerseId,
+  text: VerseText
+): void => {
+  const storageKey = getStorageKey(projectId, bookName, chapterNum);
+  const storedVerses = getStoredVerses(storageKey);
+
+  storedVerses[verseId] = text;
+  localStorage.setItem(storageKey, JSON.stringify(storedVerses));
+};
+
+//Load verses from localStorage
+const loadVersesFromLocalStorage = (
+  projectId: ProjectId,
+  bookName: BookName,
+  chapterNum: ChapterNum
+): Record<VerseId, VerseText> => {
+  const storageKey = getStorageKey(projectId, bookName, chapterNum);
+  return getStoredVerses(storageKey);
+};
+
+//Remove a verse from localStorage
+const removeVerseFromLocalStorage = (
+  projectId: ProjectId,
+  bookName: BookName,
+  chapterNum: ChapterNum,
+  verseId: VerseId
+): void => {
+  const storageKey = getStorageKey(projectId, bookName, chapterNum);
+  const storedVerses = getStoredVerses(storageKey);
+
+  if (storedVerses[verseId]) {
+    delete storedVerses[verseId];
+    localStorage.setItem(storageKey, JSON.stringify(storedVerses));
+  }
+};
+
+//Clear all stored verses for a chapter
+const clearStoredVersesForChapter = (
+  projectId: ProjectId,
+  bookName: BookName,
+  chapterNum: ChapterNum
+): void => {
+  const storageKey = getStorageKey(projectId, bookName, chapterNum);
+  localStorage.removeItem(storageKey);
+};
+
+//Check if there are pending changes
+const hasPendingChanges = (
+  projectId: ProjectId,
+  bookName: BookName,
+  chapterNum: ChapterNum
+): boolean => {
+  const storageKey = getStorageKey(projectId, bookName, chapterNum);
+  const storedVerses = getStoredVerses(storageKey);
+  return Object.keys(storedVerses).length > 0;
+};
+
 const ChapterModal: React.FC<ChapterModalProps> = ({
   isOpen,
   onClose,
@@ -73,7 +156,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   const [isConvertingChapters, setIsConvertingChapters] = useState<
     Record<number, boolean>
   >({});
-
+  const [isSyncingChanges, setIsSyncingChanges] = useState(false);
+  const [hasPendingConversion, setHasPendingConversion] = useState(false);
   const [verseModifications, setVerseModifications] = useState<
     Record<number, string>
   >({});
@@ -94,6 +178,25 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     () => `${Math.round(fontSize * (1.4 + (fontSize - 12) * 0.01))}px`,
     [fontSize]
   );
+  useEffect(() => {
+    if (isOpen && projectId && bookName && chapter) {
+      setVerseModifications({});
+
+      //load any stored modifications for this chapter
+      const storedModifications = loadVersesFromLocalStorage(
+        projectId,
+        bookName,
+        chapter.chapter
+      );
+
+      if (Object.keys(storedModifications).length > 0) {
+        setVerseModifications(storedModifications);
+        setHasPendingConversion(true);
+      } else {
+        setHasPendingConversion(false);
+      }
+    }
+  }, [isOpen, projectId, bookName, chapter]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -156,23 +259,57 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     try {
       if (isConvertingChapters[chapter.chapter_id]) return;
 
+      setIsSyncingChanges(true);
+
       const verseIds = Object.keys(verseModifications).map(Number);
+      const successfulUpdates: number[] = [];
       for (const verseId of verseIds) {
-        await updateVerseText(
-          verseId,
-          verseModifications[verseId],
-          bookName,
-          chapter.chapter,
-          projectId
-        );
+        try {
+          await updateVerseText(
+            verseId,
+            verseModifications[verseId],
+            bookName,
+            chapter.chapter,
+            projectId
+          );
+
+          successfulUpdates.push(verseId);
+
+          //Remove from localStorage after successful update
+          removeVerseFromLocalStorage(
+            projectId,
+            bookName,
+            chapter.chapter,
+            verseId
+          );
+        } catch (error) {
+          console.error(`Failed to update verse ${verseId}:`, error);
+        }
       }
-      setVerseModifications({});
+
+      if (successfulUpdates.length > 0) {
+        setVerseModifications((prev) => {
+          const updated = { ...prev };
+          for (const verseId of successfulUpdates) {
+            delete updated[verseId];
+          }
+          return updated;
+        });
+      }
+      const pendingConversions = hasPendingChanges(
+        projectId,
+        bookName,
+        chapter.chapter
+      );
+      setHasPendingConversion(pendingConversions);
       await fetchChapterDetails(projectId, bookName, chapter.chapter);
     } catch (error) {
       toast({
         variant: "destructive",
         title: error instanceof Error ? error.message : "Error updating verse",
       });
+    } finally {
+      setIsSyncingChanges(false);
     }
   };
 
@@ -185,6 +322,14 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
     if (hasChanged) {
       setVerseModifications((prev) => ({ ...prev, [verseId]: newText }));
+      saveVerseToLocalStorage(
+        projectId,
+        bookName,
+        chapter.chapter,
+        verseId,
+        newText
+      );
+      setHasPendingConversion(true);
       setApproved(false);
     } else {
       setVerseModifications((prev) => {
@@ -192,6 +337,18 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
         delete updated[verseId];
         return updated;
       });
+      removeVerseFromLocalStorage(
+        projectId,
+        bookName,
+        chapter.chapter,
+        verseId
+      );
+      const pendingConversion = hasPendingChanges(
+        projectId,
+        bookName,
+        chapter.chapter
+      );
+      setHasPendingConversion(pendingConversion);
     }
   };
 
@@ -206,6 +363,10 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     setApproved(approve);
     try {
       await approveChapter(projectId, bookName, chapter.chapter, approve);
+
+      if (approve && !hasPendingConversion) {
+        clearStoredVersesForChapter(projectId, bookName, chapter.chapter);
+      }
     } catch (error) {
       toast({
         variant: "destructive",
@@ -236,7 +397,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     const modifiedVerses =
       sortedVerses
         ?.filter(
-          (verse) => (verse.modified && !verse.tts) || verseModifications[verse.verse_id]
+          (verse) =>
+            (verse.modified && !verse.tts) || verseModifications[verse.verse_id]
         )
         .map((verse) => verse.verse_id) || [];
 
@@ -252,10 +414,13 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       return;
     }
 
-    if (currentVerse && (verseModifications[currentVerse.verse_id] || modifiedVerses.includes(currentVerse.verse_id))) {
+    if (
+      currentVerse &&
+      (verseModifications[currentVerse.verse_id] ||
+        modifiedVerses.includes(currentVerse.verse_id))
+    ) {
       setCurrentVerse(null);
     }
-    
 
     const resultMsg = await convertToSpeech(projectId, bookName, chapter);
 
@@ -263,7 +428,11 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       resultMsg.includes("Text-to-speech conversion completed successfully")
     ) {
       toast({ variant: "success", title: resultMsg });
-      if(approved){
+
+      clearStoredVersesForChapter(projectId, bookName, chapter.chapter);
+      setHasPendingConversion(false);
+
+      if (approved) {
         setApproved(false);
         await approveChapter(projectId, bookName, chapter.chapter, false);
       }
@@ -300,6 +469,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     // Save changes if needed
     if (
       !isConvertingChapters[chapter.chapter_id] &&
+      !isSyncingChanges &&
       Object.keys(verseModifications).length > 0
     ) {
       handleVerseUpdate();
@@ -313,9 +483,34 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCloseModal()}>
       <DialogContent className="max-w-6xl h-[80vh] flex flex-col">
         <DialogHeader className="mt-4">
-          <DialogTitle className="flex justify-between items-center">
-            <div>
+          <DialogTitle className="flex justify-between items-center gap-4 flex-wrap">
+            <div className="flex items-center">
               {bookName} - Chapter {chapter.chapter}
+              {hasPendingConversion && (
+                <div className="ml-6 flex items-center gap-4 py-2 px-4 border-2 rounded">
+                  <div className="flex items-center text-red-600 text-sm">
+                    <AlertCircle size={16} className="mr-1" />
+                    <span>Unsaved changes</span>
+                  </div>
+                  <Button
+                  variant="outline"
+                   onClick={handleVerseUpdate}
+                   disabled={
+                     isSyncingChanges || isConvertingChapters[chapter.chapter_id]
+                   }
+                   className="h-8"
+                 >
+                   {isSyncingChanges ? (
+                     <>
+                       <LoadingIcon className="mr-2 h-4 w-4 animate-spin" />
+                       Saving...
+                     </>
+                   ) : (
+                     "Save Changes"
+                   )}
+                 </Button>
+                </div>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               <button
@@ -377,7 +572,11 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                     overflowWrap: "break-word",
                     height: "auto",
                   }}
-                  defaultValue={verse.text}
+                  defaultValue={
+                    verseModifications[verse.verse_id] !== undefined
+                      ? verseModifications[verse.verse_id]
+                      : verse.text
+                  }
                   onChange={(e) => {
                     handleTextChange(
                       verse.verse_id,
@@ -388,7 +587,9 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                   }}
                   ref={(el) => (textareaRefs.current[verse.verse_id] = el)}
                   onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}
-                  disabled={isConvertingChapters[chapter.chapter_id]}
+                  disabled={
+                    isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+                  }
                 />
                 <div className="w-[50px]">
                   {verse.modified &&
@@ -454,13 +655,17 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
             </Button>
             <Button
               onClick={handleApproveChapter}
-              disabled={isConvertingChapters[chapter.chapter_id]}
+              disabled={
+                isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+              }
             >
               {approved ? "Unapprove" : "Approve"}
             </Button>
             <Button
               onClick={handleConvertToSpeech}
-              disabled={isConvertingChapters[chapter.chapter_id]}
+              disabled={
+                isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+              }
             >
               {isConvertingChapters[chapter.chapter_id]
                 ? checkProgress()
