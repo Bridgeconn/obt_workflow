@@ -19,7 +19,7 @@ app = FastAPI(version="1.0.9")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","https://obt-workflow.vercel.app","https://dev-obt-workflow.vercel.app","https://obt.vachanengine.org"], 
+    allow_origins=["http://localhost:5173","https://obt-workflow.vercel.app","https://dev-obt-workflow.vercel.app","https://obt.vachanengine.org","https://demo-obt-workflow-bcs-ui.vercel.app","https://demo-obt.vachanengine.org"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
