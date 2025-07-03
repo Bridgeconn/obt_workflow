@@ -78,6 +78,7 @@ const typedModelLanguages = model_languages as ModelLanguages;
 const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const {
     project,
+    isLoading,
     fetchProjectDetails,
     clearProjectState,
     transcribeBook,
@@ -109,6 +110,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedChapters, setSelectedChapters] = useState<SelectedChapter[]>([]);
+  const [selectedBook, setSelectedBook] = useState('');
 
   useEffect(() => {
     const loadProject = async () => {
@@ -136,7 +139,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   }, [projectId, fetchProjectDetails, clearProjectState]);
 
   useEffect(() => {
-    console.log("project", project);
+    // console.log("project", project);
     let selectedAudioLanguage = null;
     let selectedScriptLanguage = null;
     if (project && project.project_id === projectId) {
@@ -153,6 +156,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         setScriptLanguage(String(selectedScriptLanguage?.id));
       }
       setLoading(false);
+      if(!isLoading){
+        setSelectedChapters([]);
+        setSelectedBook('');
+      }
     }
   }, [project, projectId]);
 
@@ -272,7 +279,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       );
 
       const responseData = await response.json();
-      console.log("response data", responseData);
+      // console.log("response data", responseData);
 
       if (!response.ok) {
         throw new Error(responseData.detail || "Failed to upload book");
@@ -327,9 +334,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   };
 
-  const handleTranscribe = async (bookId: number) => {
+  const handleTranscribe = async (bookId: number, selectedChapters:any) => {
+    if (selectedChapters.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Please select at least one chapter to transcribe",
+      });
+      return;
+    }
     try {
-      await transcribeBook(bookId, queryClient);
+      await transcribeBook(bookId, selectedChapters, queryClient);
     } catch (error) {
       toast({
         variant: "destructive",
@@ -443,6 +457,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   };
 
+
   const openChapterModal = (chapter: Chapter, book: Book) => {
     if (
       [
@@ -456,6 +471,36 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     ) {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
+    } else {
+      // Toggle chapter selection in the array
+      const chapterWithBookName = { ...chapter, bookName: book.book };
+      const isChapterSelected = selectedChapters.some(
+        (c: any) => c.chapter_id === chapter.chapter_id
+      );
+      if (selectedBook === "" || book.book === selectedBook) {
+        if (isChapterSelected) {
+          setSelectedChapters((prev) => {
+            const updatedChapters = prev.filter(
+              (c) => c.chapter_id !== chapter.chapter_id
+            );
+            if (updatedChapters.length === 0) {
+              setSelectedBook(""); // Reset selectedBook when all chapters are deselected
+            }
+            return updatedChapters;
+          });
+        } else {
+          setSelectedChapters((prev) => [...prev, chapterWithBookName]);
+          if (selectedChapters.length === 0 && selectedBook === "") {
+            setSelectedBook(book.book);
+          }
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: `Cannot select chapters from different books at the same time`,
+        });
+        return;
+      }
     }
   };
 
@@ -678,7 +723,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
           {/* Table Section */}
           <div
-            className=" relative overflow-x-auto shadow-lg rounded-lg h-[420px] border-2"
+            className=" relative overflow-x-auto shadow-lg rounded-lg min-h-[680px] border-2"
             onDragOver={handleDragOver}
             onDragEnter={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -722,10 +767,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       <TableCell className="text-center relative">
                         <div className="flex justify-center items-center gap-2 flex-wrap">
                           {book.chapters.map((chapter) => {
+                            const isSelected = selectedChapters.some(
+                              (c:any) => c.chapter_id === chapter.chapter_id
+                            );
                             const chapterContent = (
                               <div
                                 key={chapter.chapter_id}
-                                className={`relative w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${
+                                className={`relative w-9 h-9 flex items-center cursor-pointer justify-center rounded-full text-lg  font-medium ${
                                   chapter.status === "approved"
                                     ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
                                     : chapter.status === "transcribed" ||
@@ -744,7 +792,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                       ].includes(chapter.status || "")
                                     ? "text-red-700 border border-red-600 bg-red-200"
                                     : "text-gray-700 border border-gray-300"
-                                }`}
+                                }
+                                ${chapter.status === "transcribed"?"text-green-700 border border-green-600 bg-green-200" : isSelected ? "bg-red-300  text-white border-red-600" : ""}
+                                `}
                                 onClick={() => openChapterModal(chapter, book)}
                               >
                                 {chapter.missing_verses?.length > 0 &&
@@ -885,7 +935,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               ) {
                                 return;
                               }
-                              handleTranscribe(book.book_id);
+                              handleTranscribe(book.book_id, selectedChapters);
                             }}
                           >
                             {book.status === "inProgress" ||

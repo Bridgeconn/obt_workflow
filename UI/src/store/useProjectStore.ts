@@ -11,7 +11,7 @@ interface ProjectDetailsState {
   setProject: (updater: (project: Project | null) => Project | null) => void;
   fetchProjectDetails: (projectId: number) => void;
   clearProjectState: () => void;
-  transcribeBook: (bookId: number, queryClient?: QueryClient) => Promise<void>;
+  transcribeBook: (bookId: number, selectedChapters: any, queryClient?: QueryClient) => Promise<void>;
   archiveProject: (projectId: number, archive: boolean) => Promise<void>;
 }
 
@@ -466,7 +466,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
 
     clearProjectState: () => set({ project: null }),
 
-    transcribeBook: async (bookId: number, queryClient?: QueryClient) => {
+    transcribeBook: async (bookId: number, selectedChapters: Chapter[], queryClient?: QueryClient) => {
       const token = useAuthStore.getState().token;
       const currentProject = get().project;
 
@@ -524,7 +524,8 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         };
 
         // Sequential chapter transcription
-        for (const chapter of book.chapters) {
+        // for (const chapter of book.chapters) {  --> removing for now for adding chapter wise convertion
+        for (const chapter of selectedChapters) {
           // Set progress for current chapter
           useTranscriptionTrackingStore
             .getState()
