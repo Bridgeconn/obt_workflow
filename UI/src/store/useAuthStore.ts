@@ -122,6 +122,7 @@ const useAuthStore = create<AuthState>()(
             queryClient.clear();
             queryClient.removeQueries({ queryKey: ["projects"] });
           }
+          sessionStorage.removeItem('ConvertingBook');
         } catch (error) {
           set({ error: "Failed to log out" });
           throw error;

@@ -663,6 +663,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         set({ error: "Error transcribing book", isLoading: false });
         throw error;
       }
+      sessionStorage.removeItem('ConvertingBook');
     },
 
     archiveProject: async (projectId, archive) => {

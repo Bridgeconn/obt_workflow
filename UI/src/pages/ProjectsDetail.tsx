@@ -459,6 +459,15 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
+    const isConvertProcessing = sessionStorage.getItem("ConvertingBook");
+    if (isConvertProcessing) {
+      const convertProcessingObj = JSON.parse(isConvertProcessing);
+      toast({
+        variant: "destructive",
+        title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until the conversion is complete.`,
+      });
+      return;
+    }
     if (
       [
         "transcribed",
@@ -935,6 +944,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               ) {
                                 return;
                               }
+                              sessionStorage.setItem('ConvertingBook', JSON.stringify({ "projectName": project?.name, "status": "Converting"  }));
                               handleTranscribe(book.book_id, selectedChapters);
                             }}
                           >
