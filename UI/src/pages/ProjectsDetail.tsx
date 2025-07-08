@@ -107,7 +107,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     incompartible_verses: string[] | null;
   } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
-
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedChapters, setSelectedChapters] = useState<SelectedChapter[]>(
@@ -274,10 +274,47 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   }, [projectId, loading]);
 
+  const uploadBookWithProgress = (
+    file: File,
+    projectId: number,
+    token: string,
+    onProgress: (progress: number) => void
+  ): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append("file", file);
+
+      xhr.open("POST", `${BASE_URL}/projects/${projectId}/add-book`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = (event.loaded / event.total) * 100;
+          onProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          resolve(JSON.parse(xhr.responseText));
+        } else {
+          reject(
+            new Error(
+              JSON.parse(xhr.responseText).detail || "Failed to upload book"
+            )
+          );
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(formData);
+    });
+  };
+
   const handleFileUpload = async (file: File) => {
     const bookName = file.name.replace(".zip", "").toUpperCase();
 
-    // Check if the book is currently being processed
     const isBookProcessing = project?.books.some(
       (book) =>
         book.book === bookName &&
@@ -299,27 +336,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
 
     const token = useAuthStore.getState().token;
-    const formData = new FormData();
-    formData.append("file", file);
 
     try {
-      const response = await fetch(
-        `${BASE_URL}/projects/${projectId}/add-book`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
+      setUploadProgress(1);
+      const responseData = await uploadBookWithProgress(
+        file,
+        projectId,
+        token!,
+        setUploadProgress
       );
 
-      const responseData = await response.json();
-      // console.log("response data", responseData);
-
-      if (!response.ok) {
-        throw new Error(responseData.detail || "Failed to upload book");
-      }
+      setUploadProgress(0);
 
       if (responseData.message === "Book added successfully") {
         let succcessDescription = "";
@@ -339,6 +366,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       await fetchProjectDetails(projectId);
     } catch (error) {
+      setUploadProgress(0);
       toast({
         variant: "destructive",
         title: error instanceof Error ? error.message : "Failed to upload book",
@@ -768,6 +796,19 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               </Button>
             </div>
           </div>
+          {uploadProgress > 0 && (
+            <div className="px-4 my-4">
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-green-500 h-2 rounded-full"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <p className="text-sm text-center text-gray-600 mt-1">{`Uploading: ${Math.round(
+                uploadProgress
+              )}%`}</p>
+            </div>
+          )}
 
           {/* Table Section */}
           <div
