@@ -824,9 +824,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           </div>
           {uploadProgress > 0 && (
             <div className="px-4 my-4">
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="w-full bg-gray-200 rounded-full h-1">
                 <div
-                  className="bg-green-500 h-2 rounded-full"
+                  className="bg-green-500 h-1 rounded-full"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
