@@ -167,7 +167,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           const storedData = JSON.parse(convertingBook);
 
           if (storedData?.projectName === project?.name) {
-            console.log("Restoring from session", storedData?.selectedChapters);
             setSelectedChapters(storedData?.selectedChapters || []);
             setSelectedBook(storedData?.bookId || "");
           } else {
@@ -391,6 +390,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           error instanceof Error ? error?.message : "Failed to transcribe book",
       });
       console.error("Error transcribing book:", error);
+      sessionStorage.removeItem("ConvertingBook");
     }
   };
 
@@ -498,57 +498,83 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
+    const allowedStatuses = [
+      "transcribed",
+      "approved",
+      "converted",
+      "converting",
+      "conversionError",
+      "modified",
+    ];
+
     const isConvertProcessing = sessionStorage.getItem("ConvertingBook");
+
     if (isConvertProcessing) {
       const convertProcessingObj = JSON.parse(isConvertProcessing);
-      toast({
-        variant: "destructive",
-        title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until the conversion is complete.`,
-      });
-      return;
-    }
-    if (
-      [
-        "transcribed",
-        "approved",
-        "converted",
-        "converting",
-        "conversionError",
-        "modified",
-      ].includes(chapter.status || "")
-    ) {
-      setSelectedChapter({ ...chapter, bookName: book.book });
-      setModalOpen(true);
-    } else {
-      // Toggle chapter selection in the array
-      const chapterWithBookName = { ...chapter, bookName: book.book };
-      const isChapterSelected = selectedChapters.some(
-        (c: any) => c.chapter_id === chapter.chapter_id
-      );
-      if (selectedBook === "" || book.book === selectedBook) {
-        if (isChapterSelected) {
-          setSelectedChapters((prev) => {
-            const updatedChapters = prev.filter(
-              (c) => c.chapter_id !== chapter.chapter_id
-            );
-            if (updatedChapters.length === 0) {
-              setSelectedBook(""); // Reset selectedBook when all chapters are deselected
-            }
-            return updatedChapters;
-          });
-        } else {
-          setSelectedChapters((prev) => [...prev, chapterWithBookName]);
-          if (selectedChapters.length === 0 && selectedBook === "") {
-            setSelectedBook(book.book);
-          }
-        }
-      } else {
+
+      const isDifferentProject =
+        convertProcessingObj.projectName !== project?.name;
+      const isDifferentBook = convertProcessingObj.bookId !== book.book_id;
+
+      if (
+        isDifferentProject ||
+        (!allowedStatuses.includes(chapter.status || "") && isDifferentBook)
+      ) {
         toast({
           variant: "destructive",
-          title: `Cannot select chapters from different books at the same time`,
+          title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
         });
         return;
       }
+    }
+
+    if (allowedStatuses.includes(chapter.status || "")) {
+      setSelectedChapter({ ...chapter, bookName: book.book });
+      setModalOpen(true);
+      return;
+    }
+
+    const bookHasInProgressTranscription = book.chapters.some((ch) =>
+      ["inProgress"].includes(ch.status || "")
+    );
+
+    if (bookHasInProgressTranscription) {
+      toast({
+        variant: "destructive",
+        title: `Chapter ${chapter.chapter} cannot be selected while conversion in ${book.book} is in progress.`,
+      });
+      return;
+    }
+
+    // Toggle chapter selection for notTranscribed
+    const chapterWithBookName = { ...chapter, bookName: book.book };
+    const isChapterSelected = selectedChapters.some(
+      (c: any) => c.chapter_id === chapter.chapter_id
+    );
+
+    if (selectedBook === "" || book.book_id.toString() === selectedBook) {
+      if (isChapterSelected) {
+        setSelectedChapters((prev) => {
+          const updatedChapters = prev.filter(
+            (c) => c.chapter_id !== chapter.chapter_id
+          );
+          if (updatedChapters.length === 0) {
+            setSelectedBook(""); // Reset selectedBook when all chapters are deselected
+          }
+          return updatedChapters;
+        });
+      } else {
+        setSelectedChapters((prev) => [...prev, chapterWithBookName]);
+        if (selectedChapters.length === 0 && selectedBook === "") {
+          setSelectedBook(book.book_id.toString());
+        }
+      }
+    } else {
+      toast({
+        variant: "destructive",
+        title: `Cannot select chapters from different books at the same time`,
+      });
+      return;
     }
   };
 
