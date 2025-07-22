@@ -114,6 +114,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     []
   );
   const [selectedBook, setSelectedBook] = useState("");
+  const hasRestoredSessionRef = useRef(false);
 
   useEffect(() => {
     const loadProject = async () => {
@@ -160,26 +161,55 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       }
 
       setLoading(false);
-      if (!isLoading) {
+      if (!isLoading && !hasRestoredSessionRef.current) {
         const convertingBook = sessionStorage.getItem("ConvertingBook");
 
         if (convertingBook) {
           const storedData = JSON.parse(convertingBook);
 
           if (storedData?.projectName === project?.name) {
-            setSelectedChapters(storedData?.selectedChapters || []);
-            setSelectedBook(storedData?.bookId || "");
-          } else {
+            const storedBookId = String(storedData?.bookId || "");
+            const storedChapters = storedData?.selectedChapters || [];
+
+            setSelectedBook(storedBookId);
+            setSelectedChapters(storedChapters);
+          }
+        } else {
+          if (selectedChapters.length > 0 || selectedBook !== "") {
             setSelectedChapters([]);
             setSelectedBook("");
           }
-        } else {
-          setSelectedChapters([]);
-          setSelectedBook("");
         }
+
+        hasRestoredSessionRef.current = true;
       }
     }
-  }, [project, projectId]);
+  }, [project, projectId, isLoading]);
+
+  useEffect(() => {
+    if (!project || !selectedBook || selectedChapters.length === 0) return;
+
+    const book = project.books.find(
+      (b) => b.book_id.toString() === selectedBook
+    );
+
+    if (!book) return;
+
+    const transcribedIds = new Set(
+      book.chapters
+        .filter((ch) => ["transcribed"].includes(ch.status || ""))
+        .map((ch) => ch.chapter_id)
+    );
+
+    const updated = selectedChapters.filter(
+      (ch) => !transcribedIds.has(ch.chapter_id)
+    );
+
+    if (updated.length !== selectedChapters.length) {
+      setSelectedChapters(updated);
+      if (updated.length === 0) setSelectedBook("");
+    }
+  }, [project, selectedBook, selectedChapters]);
 
   useEffect(() => {
     console.log("selected chapters updated:", selectedChapters);
@@ -418,6 +448,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           error instanceof Error ? error?.message : "Failed to transcribe book",
       });
       console.error("Error transcribing book:", error);
+    } finally {
       sessionStorage.removeItem("ConvertingBook");
     }
   };
@@ -535,6 +566,24 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       "modified",
     ];
 
+    if (allowedStatuses.includes(chapter.status || "")) {
+      setSelectedChapter({ ...chapter, bookName: book.book });
+      setModalOpen(true);
+      return;
+    }
+
+    const hasTranscriptionInProgress = project?.books?.some((b) =>
+      b.chapters.some((ch) => ch.status === "inProgress")
+    );
+
+    if (hasTranscriptionInProgress) {
+      toast({
+        variant: "destructive",
+        title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
+      });
+      return;
+    }
+
     const isConvertProcessing = sessionStorage.getItem("ConvertingBook");
 
     if (isConvertProcessing) {
@@ -554,24 +603,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         });
         return;
       }
-    }
-
-    if (allowedStatuses.includes(chapter.status || "")) {
-      setSelectedChapter({ ...chapter, bookName: book.book });
-      setModalOpen(true);
-      return;
-    }
-
-    const bookHasInProgressTranscription = book.chapters.some((ch) =>
-      ["inProgress"].includes(ch.status || "")
-    );
-
-    if (bookHasInProgressTranscription) {
-      toast({
-        variant: "destructive",
-        title: `Chapter ${chapter.chapter} cannot be selected while conversion in ${book.book} is in progress.`,
-      });
-      return;
     }
 
     // Toggle chapter selection for notTranscribed
@@ -915,8 +946,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 onClick={() => openChapterModal(chapter, book)}
                               >
                                 {chapter.missing_verses?.length > 0 &&
-                                  chapter.status === "notTranscribed" &&
-                                  book.status === "notTranscribed" &&
                                   book.progress !== "processing" && (
                                     <span className="absolute -top-2 -right-2 w-4 h-4 flex items-center justify-center bg-red-600 text-white text-sm font-bold rounded-full shadow-md">
                                       !
@@ -936,8 +965,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             );
 
                             return chapter.missing_verses?.length > 0 &&
-                              chapter.status === "notTranscribed" &&
-                              book.status === "notTranscribed" &&
                               book.progress !== "processing" ? (
                               <TooltipProvider key={chapter.chapter_id}>
                                 <Tooltip>

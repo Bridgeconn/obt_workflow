@@ -812,7 +812,7 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
             
            
             # Get available verses after duplicate removal
-            available_verses = {verse: data['file'] for verse, data in verse_files.items()}          
+            available_verses = {verse: data['file'] for verse, data in verse_files.items()}
                      
             # If no verses are found, delete the empty chapter folder
             if not available_verses:
@@ -821,10 +821,20 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                 continue
                  
             max_verses_in_chapter = max_verses_per_chapter.get(chapter_number, 0)
+  
+            existing_verse_numbers = set()
+            
+            if chapter_number in existing_chapters:
+                chapter_entry = existing_chapters[chapter_number]
+                existing_verse_numbers = {
+                    verse.verse for verse in db.query(Verse).filter(Verse.chapter_id == chapter_entry.chapter_id)
+                }
+            
+            combined_verse_numbers = set(available_verses.keys()).union(existing_verse_numbers)
             
             # Determine missing verses
             expected_verses = set(range(1, max_verses_in_chapter + 1))
-            missing_verses = list(expected_verses - set(available_verses.keys()))
+            missing_verses = sorted(expected_verses - combined_verse_numbers)
                       
             # Check if verses exceed the maximum allowed
             if available_verses and max(available_verses.keys()) > max_verses_in_chapter:
