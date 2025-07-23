@@ -51,6 +51,16 @@ services:
       - BASE_URL=${BASE_URL}
       - STT_DEVICE=${STT_DEVICE}
       - LOG_LEVEL=${LOG_LEVEL}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_SERVER=${MAIL_SERVER}
+      - MAIL_FROM_NAME=${MAIL_FROM_NAME}
+      - MAIL_STARTTLS=${MAIL_STARTTLS}
+      - MAIL_SSL_TLS=${MAIL_SSL_TLS}
+      - USE_CREDENTIALS=${USE_CREDENTIALS}
+      - VALIDATE_CERTS=${VALIDATE_CERTS}
+      - TIMEOUT=${TIMEOUT}
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     volumes:
       - logs-vol:/app/logs

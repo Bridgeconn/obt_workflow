@@ -104,13 +104,25 @@ Alternatively, log out and log back in to refresh the `.bashrc` file.
 #### Configuration
 
 1. Create and update the `.env` file with the following variables:
-   - `BASE_DIRECTORY` path. (e.g., `BASE_DIRECTORY=/home/user/Desktop/obt-workflow`)
-   - `FRONTEND_URL` (e.g., `FRONTEND_URL=http://localhost:3000`)
-   - `SENDGRID_API_KEY` (e.g., `SENDGRID_API_KEY=your_sendgrid_api_key`)
-   - `MAIL_FROM` (e.g., `MAIL_FROM=your_sendgrid_email`)
-   - `API_TOKEN`(e.g.,`API_TOKEN`)
-   - `BASE_URL`(e.g.,`/ai/api`)
-   - `STT_DEVICE`(e.g.,`devicename`)
+```bash
+   
+BASE_DIRECTORY=/home/user/Desktop/obt-workflow
+FRONTEND_URL=http://localhost:3000
+API_TOKEN=your_api_token
+BASE_URL=/ai/api
+STT_DEVICE=devicename
+LOG_LEVEL=INFO
+MAIL_USERNAME=your_email_username@example.com
+MAIL_PASSWORD=your_email_password
+MAIL_PORT=587
+MAIL_SERVER=smtp.yourdomain.com
+MAIL_FROM_NAME=Your Name or AppName
+MAIL_STARTTLS=True
+MAIL_SSL_TLS=False
+USE_CREDENTIALS=True
+VALIDATE_CERTS=True
+TIMEOUT=60
+```
 2. Ensure the database is configured and accessible.
 
 
@@ -153,11 +165,21 @@ Ensure `.env` file is created in the docker folder with following variables.
    AI_OBT_DOMAIN=http://localhost
    AI_OBT_DATA_PATH=<base_directory_path>
    FRONTEND_URL=http://localhost
-   SENDGRID_API_KEY=<sendgrid_api_key>
-   MAIL_FROM=<sendgrid_registered_mail>
    API_TOKEN=API_TOKEN
    BASE_URL=BASE_URL
    STT_DEVICE=<devicename>
+   LOG_LEVEL=INFO # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+   MAIL_USERNAME=MAIL_USERNAME
+   MAIL_PASSWORD=MAIL_PASSWO
+   MAIL_PORT=MAIL_PORT
+   MAIL_SERVER=MAIL_SERVER
+   MAIL_FROM_NAME=MAIL_FROM_NAME
+   MAIL_STARTTLS=MAIL_STARTTLS
+   MAIL_SSL_TLS=MAIL_SSL_TLS
+   USE_CREDENTIALS=USE_CREDENTIALS
+   VALIDATE_CERTS=VALIDATE_CERTS
+   TIMEOUT=TIMEOUT
+   
 
    ```
 
