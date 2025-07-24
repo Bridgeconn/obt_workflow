@@ -112,6 +112,10 @@ Alternatively, log out and log back in to refresh the `.bashrc` file.
    - `BASE_URL`(e.g.,`/ai/api`)
    - `STT_DEVICE`(e.g.,`devicename`)
    - `S3_BUCKET`(e.g.,`bucketname`)
+   - `AWS_ACCESS_KEY_ID`(e.g.,`randomkeys`)
+   - `AWS_SECRET_ACCESS_KEY`(e.g.,`randomkeys`)
+   - `AWS_DEFAULT_REGION`(e.g.,`randomkeys`)
+
 2. Ensure the database is configured and accessible.
 
 
@@ -159,6 +163,10 @@ Ensure `.env` file is created in the docker folder with following variables.
    API_TOKEN=API_TOKEN
    BASE_URL=BASE_URL
    STT_DEVICE=<devicename>
+   S3_BUCKET=<S3_BUCKET>
+   AWS_ACCESS_KEY_ID=<AWS_ACCESS_KEY_ID>
+   AWS_SECRET_ACCESS_KEY=<AWS_ACCESS_KEY_ID>
+   AWS_DEFAULT_REGION=<AWS_DEFAULT_REGION>
 
    ```
 

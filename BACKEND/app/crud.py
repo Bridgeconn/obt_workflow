@@ -245,6 +245,8 @@ def get_project_response(db: Session, project: Project) -> dict:
         "script_lang": project.script_lang,
         "audio_lang": project.audio_lang,
         "archive": project.archive,
+        "exported": project.exported,            
+        "exported_date": project.exported_date, 
         "books": [
             {
                 "book_id": book.book_id,
@@ -326,6 +328,8 @@ def get_project_summary(db: Session, project: Project, current_user: User) -> di
         "user_name": owner.username if owner else current_user.username,
         "archive": project.archive,
         "created_date": project.created_date,
+        "exported": project.exported,             
+        "exported_date": project.exported_date, 
         "books": [get_book_summary(db, book) for book in books],
     }
 
