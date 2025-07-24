@@ -1,51 +1,61 @@
-import { useForm } from 'react-hook-form';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormMessage,
+} from "@/components/ui/form";
 import useAuthStore from "@/store/useAuthStore";
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
-import { Link } from 'react-router-dom';
+import { Link } from "react-router-dom";
 
 interface SignupForm {
   username: string;
   email: string;
   password: string;
-  confirm_password: string; 
+  confirm_password: string;
 }
 
 const SignupPage = () => {
+  const [loading, setLoading] = useState(false);
   const { signup } = useAuthStore();
-  const { toast } = useToast()
+  const { toast } = useToast();
   const navigate = useNavigate();
 
   const form = useForm<SignupForm>({
     defaultValues: {
-      username: '',
-      email: '',
-      password: '',
-      confirm_password: '',
+      username: "",
+      email: "",
+      password: "",
+      confirm_password: "",
     },
   });
 
   const onSubmit = async (data: SignupForm) => {
-  try {
-    await signup(data.username, data.email, data.password);
-    toast({
-      variant: "success",
-      title: "Signup successful!",
-    })
-
-    navigate('/login');
-  } catch (error) {
-    console.error('Signup failed', error);
-    toast({
-      variant: "destructive",
-      title: error instanceof Error ? error?.message : "Signup failed",
-    })
-  }
-};
+    try {
+      setLoading(true);
+      await signup(data.username, data.email, data.password);
+      toast({
+        variant: "success",
+        title: "Signup successful!",
+      });
+      setLoading(false);
+      navigate("/login");
+    } catch (error) {
+      console.error("Signup failed", error);
+      toast({
+        variant: "destructive",
+        title: error instanceof Error ? error?.message : "Signup failed",
+      });
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col justify-center items-center h-screen bg-gray-100">
@@ -60,21 +70,21 @@ const SignupPage = () => {
               <FormField
                 control={form.control}
                 name="username"
-                rules={{ 
-                  required: 'Username is required',
+                rules={{
+                  required: "Username is required",
                   minLength: {
                     value: 3,
-                    message: 'Username must be at least 3 characters'
-                  }
+                    message: "Username must be at least 3 characters",
+                  },
                 }}
                 render={({ field }) => (
                   <FormItem>
                     {/* <FormLabel>Username</FormLabel> */}
                     <FormControl>
-                      <Input 
-                        type="text" 
-                        placeholder = "Enter your username"
-                        {...field} 
+                      <Input
+                        type="text"
+                        placeholder="Enter your username"
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -85,21 +95,21 @@ const SignupPage = () => {
               <FormField
                 control={form.control}
                 name="email"
-                rules={{ 
-                  required: 'Email is required',
+                rules={{
+                  required: "Email is required",
                   pattern: {
                     value: /\S+@\S+\.\S+/,
-                    message: "Invalid email address"
-                  }
+                    message: "Invalid email address",
+                  },
                 }}
                 render={({ field }) => (
                   <FormItem>
                     {/* <FormLabel>Email</FormLabel> */}
                     <FormControl>
                       <Input
-                        type="email" 
-                        placeholder= "Enter your email"
-                        {...field} 
+                        type="email"
+                        placeholder="Enter your email"
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -110,21 +120,21 @@ const SignupPage = () => {
               <FormField
                 control={form.control}
                 name="password"
-                rules={{ 
-                  required: 'Password is required',
+                rules={{
+                  required: "Password is required",
                   minLength: {
                     value: 6,
-                    message: 'Password must be at least 6 characters'
-                  }
+                    message: "Password must be at least 6 characters",
+                  },
                 }}
                 render={({ field }) => (
                   <FormItem>
                     {/* <FormLabel>Password</FormLabel> */}
                     <FormControl>
-                      <Input 
-                        type="password" 
-                        placeholder='Enter your password' 
-                        {...field} 
+                      <Input
+                        type="password"
+                        placeholder="Enter your password"
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
@@ -135,35 +145,38 @@ const SignupPage = () => {
               <FormField
                 control={form.control}
                 name="confirm_password"
-                rules={{ 
-                  required: 'Please confirm your password',
-                  validate: (value) => 
-                    value === form.getValues('password') || 'Passwords do not match'
+                rules={{
+                  required: "Please confirm your password",
+                  validate: (value) =>
+                    value === form.getValues("password") ||
+                    "Passwords do not match",
                 }}
                 render={({ field }) => (
                   <FormItem>
                     {/* <FormLabel>Confirm Password</FormLabel> */}
                     <FormControl>
-                      <Input 
+                      <Input
                         type="password"
                         placeholder="Confirm your password"
-                        {...field} 
+                        {...field}
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
-              <Button type="submit" className="w-full">Signup</Button>
+
+              <Button type="submit" className={`w-full ${loading ? "opacity-50 cursor-not-allowed" : ""}`}>
+                {loading ? "Please wait..." : "Signup"}
+              </Button>
             </form>
           </Form>
         </CardContent>
       </Card>
       <div className="text-center mt-4">
-          <Link to="/login" className="text-blue-500 hover:underline">
-             Back to login page {` > `}
-          </Link>
+        <Link to="/login" className="text-blue-500 hover:underline">
+          Back to login page {` > `}
+        </Link>
       </div>
     </div>
   );
