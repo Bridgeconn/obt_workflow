@@ -111,6 +111,7 @@ Alternatively, log out and log back in to refresh the `.bashrc` file.
    - `API_TOKEN`(e.g.,`API_TOKEN`)
    - `BASE_URL`(e.g.,`/ai/api`)
    - `STT_DEVICE`(e.g.,`devicename`)
+   - `S3_BUCKET`(e.g.,`bucketname`)
 2. Ensure the database is configured and accessible.
 
 
