@@ -116,6 +116,12 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [selectedBook, setSelectedBook] = useState("");
   const hasRestoredSessionRef = useRef(false);
 
+  const [isNewBook, setIsNewBook] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedBookCode, setUploadedBookCode] = useState<string | null>(null);
+  const [dialogDescription, setDialogDescription] = useState("");
+  const [isFailedUploading, setIsFailedUploading] = useState(false);
+
   useEffect(() => {
     const loadProject = async () => {
       try {
@@ -343,7 +349,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const handleFileUpload = async (file: File) => {
     const bookName = file.name.replace(".zip", "").toUpperCase();
-
+    setUploadedBookCode(bookName);
     const isBookProcessing = project?.books.some(
       (book) =>
         book.book === bookName &&
@@ -367,7 +373,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     const token = useAuthStore.getState().token;
 
     try {
+      setUploading(true);
       setUploadProgress(1);
+      setUploadDialogOpen(true);
+      setIsFailedUploading(false);
+      setIsNewBook(false);
+      setDialogDescription("");
+      setUploadedBookData(null);
       const responseData = await uploadBookWithProgress(
         file,
         projectId,
@@ -375,22 +387,23 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         setUploadProgress
       );
 
-      setUploadProgress(0);
-
       if (responseData.message === "Book added successfully") {
+        setIsNewBook(true);
         let succcessDescription = "";
         if (responseData?.incompartible_verses.length > 0) {
           succcessDescription = `${responseData?.incompartible_verses.length} verse file(s) skipped due to file incompatibility`;
         }
+        setDialogDescription(succcessDescription);
         toast({
           title: `Book ${responseData.book} added successfully`,
           variant: "success",
           description: succcessDescription,
         });
       } else {
+        setIsNewBook(false);
         setUploadedBookData(responseData);
-        setUploadDialogOpen(true);
       }
+      setUploading(false);
       // Invalidate and refetch project details
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       await fetchProjectDetails(projectId);
@@ -400,6 +413,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         variant: "destructive",
         title: error instanceof Error ? error.message : "Failed to upload book",
       });
+      setUploading(false);
+      setDialogDescription(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong during upload."
+      );
+      setIsFailedUploading(true);
     }
   };
 
@@ -853,7 +873,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               </Button>
             </div>
           </div>
-          {uploadProgress > 0 && (
+          {/* {uploadProgress > 0 && (
             <div className="px-4 my-4">
               <div className="w-full bg-gray-200 rounded-full h-1">
                 <div
@@ -865,7 +885,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 uploadProgress
               )}%`}</p>
             </div>
-          )}
+          )} */}
 
           {/* Table Section */}
           <div
@@ -1145,20 +1165,29 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 </TableBody>
               </Table>
             )}
-            {uploadedBookData && (
+            {uploadDialogOpen && (
               <UploadDialog
                 isOpen={uploadDialogOpen}
                 onClose={() => {
                   setUploadDialogOpen(false);
                   setUploadedBookData(null);
+                  setIsNewBook(false);
+                  setUploadProgress(0);
+                  setDialogDescription("");
+                  setIsFailedUploading(false);
                 }}
-                bookCode={uploadedBookData?.book}
-                addedChapters={uploadedBookData?.added_chapters}
-                skippedChapters={uploadedBookData?.skipped_chapters}
-                modifiedChapters={uploadedBookData?.modified_chapters}
-                addedVerses={uploadedBookData?.added_verses}
-                modifiedVerses={uploadedBookData?.modified_verses}
-                skippedVerses={uploadedBookData?.incompartible_verses}
+                bookCode={uploadedBookData?.book || uploadedBookCode || ""}
+                progress={uploadProgress}
+                isUploading={uploading}
+                isNewBook={isNewBook}
+                dialogDescription={dialogDescription}
+                isFailedUploading={isFailedUploading}
+                addedChapters={uploadedBookData?.added_chapters || []}
+                skippedChapters={uploadedBookData?.skipped_chapters || []}
+                modifiedChapters={uploadedBookData?.modified_chapters || []}
+                addedVerses={uploadedBookData?.added_verses || []}
+                modifiedVerses={uploadedBookData?.modified_verses || []}
+                skippedVerses={uploadedBookData?.incompartible_verses || []}
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (
