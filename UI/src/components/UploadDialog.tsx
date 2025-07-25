@@ -53,7 +53,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader className="mb-2">
           <DialogTitle className="text-2xl font-bold text-gray-900">
-            Upload Book Status
+            Book upload status
           </DialogTitle>
         </DialogHeader>
 
@@ -76,7 +76,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
         {!isUploading && isNewBook && (
           <div className="text-center">
             <p className="font-medium text-green-700 mb-1">
-              Book {bookCode && getBookName(bookCode)} uploaded successfully
+              {bookCode && getBookName(bookCode)} uploaded successfully
             </p>
             {dialogDescription && (
               <>
@@ -87,8 +87,11 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
           </div>
         )}
         {isFailedUploading && (
-          <div className="font-medium text-red-700">
-            {dialogDescription && <p>{dialogDescription}</p>}
+          <div>
+            {dialogDescription && <p className="mb-1 font-medium text-red-700">{dialogDescription}</p>}
+            <p>
+              Please upload a single book zip file with a valid book code.
+            </p>
           </div>
         )}
         {!isUploading && !isNewBook && !isFailedUploading && (
