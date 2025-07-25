@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useTranscriptionTrackingStore } from "./useProjectStore";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -70,7 +71,6 @@ const useAuthStore = create<AuthState>()(
         }
       },
 
-
       signup: async (username, email, password) => {
         try {
           const response = await fetch(
@@ -116,7 +116,13 @@ const useAuthStore = create<AuthState>()(
           if (!response.ok) {
             throw new Error("Logout failed");
           }
-
+          localStorage.removeItem("active_transcriptions");
+          sessionStorage.removeItem("ConvertingBook");
+          useTranscriptionTrackingStore.getState().clear();
+          if (window.activePollingTimeouts) {
+            window.activePollingTimeouts.forEach(clearTimeout);
+            window.activePollingTimeouts = [];
+          }
           set({ user: null, token: null });
           if (queryClient) {
             queryClient.clear();
