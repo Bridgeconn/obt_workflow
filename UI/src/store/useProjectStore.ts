@@ -14,7 +14,6 @@ if (!window.activePollingTimeouts) {
   window.activePollingTimeouts = [];
 }
 
-
 interface ProjectDetailsState {
   project: Project | null;
   isLoading: boolean;
@@ -277,10 +276,18 @@ const updateChapterStatus = (
     modifiedVerses.every((verse) => verse.tts && verse.stt);
   const checkChapterOnlyModified =
     modifiedVerses.length > 0 && allTranscribed && !allModifiedConverted;
+  const hasTranscriptionError = verses.some(
+    (verse) => verse.stt_msg && verse.stt_msg !== "Transcription successful"
+  );
+  const hasConversionError = verses.some(
+    (verse) => verse.tts_msg && verse.tts_msg !== "Conversion successful"
+  )
   if (allModifiedConverted) return "converted";
   if (checkChapterOnlyModified) return "modified";
   if (allTranscribed) return "transcribed";
   if (isInProgress) return "inProgress";
+  if(hasTranscriptionError) return "transcriptionError";
+  if(hasConversionError) return "conversionError";
   return "notTranscribed";
 };
 
@@ -738,7 +745,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                       "inProgress",
                       `${completed} out of ${total} done`
                     );
-                    const timeoutId = setTimeout(pollChapterStatus, 5000) as unknown as number;
+                    const timeoutId = setTimeout(
+                      pollChapterStatus,
+                      5000
+                    ) as unknown as number;
                     window.activePollingTimeouts =
                       window.activePollingTimeouts || [];
                     window.activePollingTimeouts.push(timeoutId);
@@ -1142,9 +1152,11 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
             } else {
               //Still converting
               updateChapterStatus("converting", "Converting", details);
-              const timeoutId = setTimeout(pollTTSStatus, 5000) as unknown as number;
+              const timeoutId = setTimeout(
+                pollTTSStatus,
+                5000
+              ) as unknown as number;
               window.activePollingTimeouts.push(timeoutId);
-
             }
           } catch (error) {
             updateChapterStatus("conversionError", "Conversion failed");
