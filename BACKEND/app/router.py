@@ -71,7 +71,7 @@ async def get_logs(current_user: dict = Depends(auth.get_current_user)):
 
 # Create User API
 @router.post("/user/signup/", tags=["User"])
-def user_signup(
+async def user_signup(
     username: str,
     password: str,
     email: EmailStr,
@@ -108,6 +108,28 @@ def user_signup(
     db.commit()
     db.refresh(new_user)
     logger.info(f"User created successfully: {username}")
+     # --- Send welcome/signup email ---
+    subject = "Welcome to AIOBT!"
+    body = f"""
+    <html>
+    <body>
+        <h4>Hello {username},</h4>
+        <p>Welcome to AIOBT! Your account has been created successfully.</p>
+        <p>If you have any questions or need help, please contact our support team.</p>
+        <br>
+        <p>Best regards,<br>The AIOBT Team</p>
+    </body>
+    </html>
+    """
+    try:
+        await send_email(
+            subject=subject,
+            recipient=email,
+            body=body,
+        )
+        logger.info(f"Signup email sent to {email}")
+    except Exception as e:
+        logger.error(f"Could not send signup email to {email}: {str(e)}")
     return {"message": "User created successfully", "user_id": new_user.user_id}
 
 
@@ -169,47 +191,49 @@ async def forgot_password(email: EmailStr, db: Session = Depends(dependency.get_
     Generate a password reset link and send it to the user's email using SendGrid.
     """
     logger.info(f"Forgot password request initiated for email: {email}")
+    
     user = db.query(User).filter(User.email == email).first()
     if not user:
         logger.warning(f"Forgot password failed: Email '{email}' not found")
         raise HTTPException(status_code=404, detail="Email not registered")
-    # Generate reset token
-    reset_token = auth.create_reset_token(email)
-    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
-
-    # Email body
-    email_body = f"""
-        <html>
-        <body>
-            <h4>Hello {user.username},</h4>
-            <p>We received a request to reset your password. You can reset your password by clicking the link below:</p>
-            
-            <p><strong><a href="{reset_link}">Reset Password</a></strong></p>
-            
-            <p>Alternatively, you can copy and paste this link into your browser:</p>
-            
-            <blockquote>{reset_link}</blockquote>
-
-            <p>If you didn’t request a password reset, please ignore this email.</p>
-            
-            <footer>
-                <small>If you need help, please reach out to our support team.</small>
-            </footer>
-        </body>
-        </html>
-    """
-
-    # Send the email
-    send_email(
-        subject="Password Reset Request",
-        recipient=email,
-        body=email_body,
-    )
-    logger.info(f"Password reset email sent to {email}")
-    return {"message": "Password reset email sent successfully"}
-
-
-
+    
+    try:
+        # Generate reset token
+        reset_token = auth.create_reset_token(email)
+        reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+        
+        email_body = f"""
+            <html>
+            <body>
+                <h4>Hello {user.username},</h4>
+                <p>We received a request to reset your password. You can reset your password by clicking the link below:</p>
+                <p><strong><a href="{reset_link}">Reset Password</a></strong></p>
+                <p>Alternatively, you can copy and paste this link into your browser:</p>
+                <blockquote>{reset_link}</blockquote>
+                <p>If you didn't request a password reset, please ignore this email.</p>
+                <footer>
+                    <small>If you need help, please reach out to our support team.</small>
+                </footer>
+            </body>
+            </html>
+        """
+        
+        # Send email with proper error handling
+        await send_email(
+            subject="Password Reset Request",
+            recipient=email,
+            body=email_body,
+        )
+        
+        logger.info(f"Password reset email sent to {email}")
+        return {"message": "Password reset email sent successfully"}
+        
+    except Exception as e:
+        logger.error(f"Failed to send password reset email to {email}: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to send password reset email. Please try again later."
+        )
 
 @router.post("/user/reset_password/", tags=["User"])
 async def reset_password(
