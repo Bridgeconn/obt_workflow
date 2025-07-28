@@ -14,7 +14,6 @@ if (!window.activePollingTimeouts) {
   window.activePollingTimeouts = [];
 }
 
-
 interface ProjectDetailsState {
   project: Project | null;
   isLoading: boolean;
@@ -738,7 +737,10 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                       "inProgress",
                       `${completed} out of ${total} done`
                     );
-                    const timeoutId = setTimeout(pollChapterStatus, 5000) as unknown as number;
+                    const timeoutId = setTimeout(
+                      pollChapterStatus,
+                      5000
+                    ) as unknown as number;
                     window.activePollingTimeouts =
                       window.activePollingTimeouts || [];
                     window.activePollingTimeouts.push(timeoutId);
@@ -1142,9 +1144,11 @@ export const useChapterDetailsStore = create<ChapterDetailsState>((set) => ({
             } else {
               //Still converting
               updateChapterStatus("converting", "Converting", details);
-              const timeoutId = setTimeout(pollTTSStatus, 5000) as unknown as number;
+              const timeoutId = setTimeout(
+                pollTTSStatus,
+                5000
+              ) as unknown as number;
               window.activePollingTimeouts.push(timeoutId);
-
             }
           } catch (error) {
             updateChapterStatus("conversionError", "Conversion failed");
