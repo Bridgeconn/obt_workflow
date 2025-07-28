@@ -276,18 +276,10 @@ const updateChapterStatus = (
     modifiedVerses.every((verse) => verse.tts && verse.stt);
   const checkChapterOnlyModified =
     modifiedVerses.length > 0 && allTranscribed && !allModifiedConverted;
-  const hasTranscriptionError = verses.some(
-    (verse) => verse.stt_msg && verse.stt_msg !== "Transcription successful"
-  );
-  const hasConversionError = verses.some(
-    (verse) => verse.tts_msg && verse.tts_msg !== "Conversion successful"
-  )
   if (allModifiedConverted) return "converted";
   if (checkChapterOnlyModified) return "modified";
   if (allTranscribed) return "transcribed";
   if (isInProgress) return "inProgress";
-  if(hasTranscriptionError) return "transcriptionError";
-  if(hasConversionError) return "conversionError";
   return "notTranscribed";
 };
 
