@@ -11,7 +11,7 @@ import {
   FilterFn,
 } from "@tanstack/react-table";
 import { useNavigate } from "react-router-dom";
-import { Download } from "lucide-react";
+import { Download, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -21,8 +21,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label"
+import { Label } from "@/components/ui/label";
 import useAuthStore from "@/store/useAuthStore";
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -52,6 +59,8 @@ interface Project {
   approved: number;
   archive: boolean;
   createdDate: DateInfo;
+  exported?: boolean;
+  exported_date?: string;
 }
 
 interface ProjectResponse {
@@ -62,6 +71,8 @@ interface ProjectResponse {
   audio_lang: string;
   archive: boolean;
   created_date: string;
+  exported?: boolean;
+  exported_date?: string;
   books: Book[];
 }
 
@@ -145,8 +156,20 @@ const fetchProjects = async (): Promise<Project[]> => {
         display: displayDate,
         full: fullDateTime,
       },
+      exported: project.exported ?? false,
+      exported_date: project.exported_date,
     };
   });
+};
+
+const exportToS3 = async (projectId: string): Promise<any> => {
+  const token = useAuthStore.getState().token;
+  const res = await fetch(`${BASE_URL}/export_to_s3/${projectId}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error((await res.json()).detail || "Upload failed");
+  return res.json();
 };
 
 const uploadProject = async (
@@ -228,6 +251,9 @@ const ProjectsPage: React.FC = () => {
     pageIndex: 0,
     pageSize: 5,
   });
+  const [showDialog, setShowDialog] = useState(false);
+  const [dialogProjectId, setDialogProjectId] = useState<string | null>(null);
+
   // Add state for dynamic height
   // const [containerHeight, setContainerHeight] = useState<string>("auto");
   const { user } = useAuthStore();
@@ -283,6 +309,17 @@ const ProjectsPage: React.FC = () => {
         variant: "destructive",
       });
       setUploadProgress(0);
+    },
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: exportToS3,
+    onSuccess: (data) => {
+      toast({ variant: "success", title: data.message });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (err: Error) => {
+      toast({ variant: "destructive", title: err.message });
     },
   });
 
@@ -393,6 +430,42 @@ const ProjectsPage: React.FC = () => {
       ),
       size: 50,
     }),
+    ...(user && user?.role === "AI"
+      ? [
+          columnHelper.display({
+            id: "action",
+            header: "Action",
+            cell: ({ row }) => (
+              <div className="flex justify-center text-center items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDialogProjectId(row.original.id);
+                    setShowDialog(true);
+                  }}
+                  title="Upload to S3"
+                  disabled = {row.original.approved === 0}
+                >
+                  {exportMutation.isPending &&
+                  exportMutation.variables === row.original.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload size={18} />
+                  )}
+                </Button>
+                {row.original.exported && (
+                  <span title={`Uploaded: ${row.original.exported_date ?? "Not found"}`}>
+                    ✅
+                  </span>
+                )}
+              </div>
+            ),
+            size: 50,
+          }),
+        ]
+      : []),
   ];
 
   const table = useReactTable({
@@ -532,6 +605,7 @@ const ProjectsPage: React.FC = () => {
                               "approved",
                               "actions",
                               "createdDate",
+                              "action"
                             ].includes(header.id)
                               ? "text-center"
                               : "text-left justify-start"
@@ -586,6 +660,7 @@ const ProjectsPage: React.FC = () => {
                                 "approved",
                                 "actions",
                                 "createdDate",
+                                "action"
                               ].includes(cell.column.id)
                                 ? "center"
                                 : "start",
@@ -620,6 +695,32 @@ const ProjectsPage: React.FC = () => {
                 {`>`}
               </Button>
             </div>
+            <Dialog open={showDialog} onOpenChange={setShowDialog}>
+              <DialogContent className="max-w-sm">
+                <DialogHeader>
+                  <DialogTitle>Upload to S3</DialogTitle>
+                </DialogHeader>
+                <p>Are you sure you want to upload this project to S3?</p>
+                <DialogFooter className="mt-4">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowDialog(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (dialogProjectId) {
+                        exportMutation.mutate(dialogProjectId);
+                      }
+                      setShowDialog(false);
+                    }}
+                  >
+                    Confirm
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </>
         )}
       </div>
