@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ interface ForgotPasswordForm {
 
 const ForgotPassword: React.FC = () => {
   const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
 
   const form = useForm<ForgotPasswordForm>({
     defaultValues: {
@@ -30,6 +31,7 @@ const ForgotPassword: React.FC = () => {
 
   const onSubmit = async (data: ForgotPasswordForm) => {
     console.log("data", data);
+    setLoading(true);
     try {
       const response = await fetch(
         `${BASE_URL}/user/forgot_password/?email=${data.email}`,
@@ -45,17 +47,18 @@ const ForgotPassword: React.FC = () => {
         const errResp = await response.json();
         throw new Error(errResp.detail);
       }
-
       toast({
         variant: "success",
         title: "Password reset link sent to your email",
       });
+      setLoading(false);
     } catch (error) {
       toast({
         variant: "destructive",
         title:
           error instanceof Error ? error?.message : "Password reset failed",
       });
+      setLoading(false);
     }
   };
 
@@ -92,8 +95,8 @@ const ForgotPassword: React.FC = () => {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full">
-                Submit
+              <Button type="submit" className={`w-full ${loading ? "opacity-50 cursor-not-allowed" : ""}`}>
+                {loading ? "Please wait..." : "Submit"}
               </Button>
             </form>
           </Form>
