@@ -942,10 +942,12 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                         skipped_chapters.append(chapter_number)
                 
                 # Update missing verses if needed
-                if missing_verses:
+                if len(missing_verses) > 0:
                     chapter_entry.missing_verses = missing_verses
                     db.commit()
-                    
+                else:
+                    chapter_entry.missing_verses = None
+                    db.commit()   
             else:
                 # This is a new chapter - create it
                 # Move the chapter folder to target path
