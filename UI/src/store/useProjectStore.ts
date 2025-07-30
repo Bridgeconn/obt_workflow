@@ -661,6 +661,11 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             );
             if (!transcribeResponse.ok) {
               const errorResp = await transcribeResponse.json();
+              updateChapterStatusInState(
+                chapter.chapter_id,
+                "transcriptionError",
+                "Transcription failed"
+              );
               throw new Error(`${errorResp.detail}`);
             }
             await new Promise<void>((resolve, reject) => {

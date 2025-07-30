@@ -39,6 +39,7 @@ import { useServedModels } from "@/hooks/use-served-models";
 import LanguageSelect from "@/components/LanguageSelect";
 import UploadDialog from "@/components/UploadDialog";
 import ArchiveDialog from "@/components/ArchiveDialog";
+import TranscriptionDialog from "@/components/TranscriptionDialog";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -115,6 +116,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   );
   const [selectedBook, setSelectedBook] = useState("");
   const hasRestoredSessionRef = useRef(false);
+
+  const [isNewBook, setIsNewBook] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedBookCode, setUploadedBookCode] = useState<string | null>(null);
+  const [dialogDescription, setDialogDescription] = useState("");
+  const [isFailedUploading, setIsFailedUploading] = useState(false);
+  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
+  const [dialogBook, setDialogBook] = useState<Book | null>(null);
 
   useEffect(() => {
     const loadProject = async () => {
@@ -343,7 +352,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const handleFileUpload = async (file: File) => {
     const bookName = file.name.replace(".zip", "").toUpperCase();
-
+    setUploadedBookCode(bookName);
     const isBookProcessing = project?.books.some(
       (book) =>
         book.book === bookName &&
@@ -367,7 +376,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     const token = useAuthStore.getState().token;
 
     try {
+      setUploading(true);
       setUploadProgress(1);
+      setUploadDialogOpen(true);
+      setIsFailedUploading(false);
+      setIsNewBook(false);
+      setDialogDescription("");
+      setUploadedBookData(null);
       const responseData = await uploadBookWithProgress(
         file,
         projectId,
@@ -375,22 +390,23 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         setUploadProgress
       );
 
-      setUploadProgress(0);
-
       if (responseData.message === "Book added successfully") {
+        setIsNewBook(true);
         let succcessDescription = "";
         if (responseData?.incompartible_verses.length > 0) {
           succcessDescription = `${responseData?.incompartible_verses.length} verse file(s) skipped due to file incompatibility`;
         }
+        setDialogDescription(succcessDescription);
         toast({
           title: `Book ${responseData.book} added successfully`,
           variant: "success",
           description: succcessDescription,
         });
       } else {
+        setIsNewBook(false);
         setUploadedBookData(responseData);
-        setUploadDialogOpen(true);
       }
+      setUploading(false);
       // Invalidate and refetch project details
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       await fetchProjectDetails(projectId);
@@ -400,6 +416,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         variant: "destructive",
         title: error instanceof Error ? error.message : "Failed to upload book",
       });
+      setUploading(false);
+      setDialogDescription(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong during upload."
+      );
+      setIsFailedUploading(true);
     }
   };
 
@@ -428,19 +451,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const handleTranscribe = async (bookId: number, selectedChapters: any) => {
-    if (selectedBook !== String(bookId)) {
+    const book = project?.books.find((b) => b.book_id === bookId);
+    if (!book) return;
+    const validChapterIds = new Set(book.chapters.map((ch) => ch.chapter_id));
+    const filteredChapters = selectedChapters.filter((ch) =>
+      validChapterIds.has(ch.chapter_id)
+    );
+    if (String(bookId) !== selectedBook || filteredChapters.length === 0) {
       toast({
         variant: "destructive",
-        title: `You have not selected chapters for ${
-          project?.books.find((b) => b.book_id === bookId)?.book
-        }.`,
-      });
-      return;
-    }
-    if (selectedChapters.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Please select at least one chapter to transcribe",
+        title: "Please select at least one valid chapter to transcribe.",
       });
       return;
     }
@@ -458,6 +478,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       });
       console.error("Error transcribing book:", error);
     } finally {
+      const projectState = useProjectDetailsStore.getState().project;
+      const updatedBook = projectState?.books.find((b) => b.book_id === bookId);
+      const failedChapterIds = updatedBook?.chapters
+        .filter((ch) => ch.status === "transcriptionError")
+        .map((ch) => ch.chapter_id);
+
+      if (failedChapterIds && failedChapterIds?.length > 0) {
+        const remainingChapters = selectedChapters.filter(
+          (ch) => !failedChapterIds.includes(ch.chapter_id)
+        );
+        setSelectedChapters(remainingChapters);
+        if (remainingChapters.length === 0) {
+          setSelectedBook("");
+        }
+      }
       sessionStorage.removeItem("ConvertingBook");
     }
   };
@@ -578,70 +613,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     if (allowedStatuses.includes(chapter.status || "")) {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
-      return;
-    }
-
-    const hasTranscriptionInProgress = project?.books?.some((b) =>
-      b.chapters.some((ch) => ch.status === "inProgress")
-    );
-
-    if (hasTranscriptionInProgress) {
-      toast({
-        variant: "destructive",
-        title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
-      });
-      return;
-    }
-
-    const isConvertProcessing = sessionStorage.getItem("ConvertingBook");
-
-    if (isConvertProcessing) {
-      const convertProcessingObj = JSON.parse(isConvertProcessing);
-
-      const isDifferentProject =
-        convertProcessingObj.projectName !== project?.name;
-      const isDifferentBook = convertProcessingObj.bookId !== book.book_id;
-
-      if (
-        isDifferentProject ||
-        (!allowedStatuses.includes(chapter.status || "") && isDifferentBook)
-      ) {
-        toast({
-          variant: "destructive",
-          title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
-        });
-        return;
-      }
-    }
-
-    // Toggle chapter selection for notTranscribed
-    const chapterWithBookName = { ...chapter, bookName: book.book };
-    const isChapterSelected = selectedChapters.some(
-      (c: any) => c.chapter_id === chapter.chapter_id
-    );
-
-    if (selectedBook === "" || book.book_id.toString() === selectedBook) {
-      if (isChapterSelected) {
-        setSelectedChapters((prev) => {
-          const updatedChapters = prev.filter(
-            (c) => c.chapter_id !== chapter.chapter_id
-          );
-          if (updatedChapters.length === 0) {
-            setSelectedBook(""); // Reset selectedBook when all chapters are deselected
-          }
-          return updatedChapters;
-        });
-      } else {
-        setSelectedChapters((prev) => [...prev, chapterWithBookName]);
-        if (selectedChapters.length === 0 && selectedBook === "") {
-          setSelectedBook(book.book_id.toString());
-        }
-      }
-    } else {
-      toast({
-        variant: "destructive",
-        title: `Cannot select chapters from different books at the same time`,
-      });
       return;
     }
   };
@@ -862,7 +833,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               </Button>
             </div>
           </div>
-          {uploadProgress > 0 && (
+          {/* {uploadProgress > 0 && (
             <div className="px-4 my-4">
               <div className="w-full bg-gray-200 rounded-full h-1">
                 <div
@@ -874,7 +845,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 uploadProgress
               )}%`}</p>
             </div>
-          )}
+          )} */}
 
           {/* Table Section */}
           <div
@@ -1086,7 +1057,54 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               ) {
                                 return;
                               }
-                              handleTranscribe(book.book_id, selectedChapters);
+                              const allowedStatuses = [
+                                "notTranscribed",
+                                "error",
+                                "transcriptionError",
+                              ];
+                              const hasTranscriptionInProgress =
+                                project?.books?.some((b) =>
+                                  b.chapters.some(
+                                    (ch) => ch.status === "inProgress"
+                                  )
+                                );
+
+                              if (hasTranscriptionInProgress) {
+                                toast({
+                                  variant: "destructive",
+                                  title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
+                                });
+                                return;
+                              }
+                              const isConvertProcessing =
+                                sessionStorage.getItem("ConvertingBook");
+
+                              if (isConvertProcessing) {
+                                const convertProcessingObj =
+                                  JSON.parse(isConvertProcessing);
+
+                                const isDifferentProject =
+                                  convertProcessingObj.projectName !==
+                                  project?.name;
+                                const isDifferentBook =
+                                  convertProcessingObj.bookId !== book.book_id;
+
+                                if (
+                                  isDifferentProject ||
+                                  (!allowedStatuses.includes(
+                                    book.status || ""
+                                  ) &&
+                                    isDifferentBook)
+                                ) {
+                                  toast({
+                                    variant: "destructive",
+                                    title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
+                                  });
+                                  return;
+                                }
+                              }
+                              setDialogBook(book);
+                              setTranscriptionDialogOpen(true);
                             }}
                           >
                             {book.status === "inProgress" ||
@@ -1114,9 +1132,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 "transcriptionError",
                                 "conversionError",
                               ].includes(book.status || "") &&
-                                ["Conversion failed", "Transcription failed", ""].includes(
-                                  book.progress || ""
-                                )) ? (
+                                [
+                                  "Conversion failed",
+                                  "Transcription failed",
+                                  "",
+                                ].includes(book.progress || "")) ? (
                               "Retry"
                             ) : book.status === "notTranscribed" &&
                               book.progress === "" ? (
@@ -1150,20 +1170,58 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 </TableBody>
               </Table>
             )}
-            {uploadedBookData && (
+            {dialogBook && (
+              <TranscriptionDialog
+                isOpen={transcriptionDialogOpen}
+                onClose={() => {
+                  setTranscriptionDialogOpen(false);
+                  if (
+                    selectedBook &&
+                    dialogBook?.book_id.toString() === selectedBook
+                  ) {
+                    setSelectedBook("");
+                    setSelectedChapters([]);
+                  }
+                }}
+                selectedBook={dialogBook}
+                selectedChapters={selectedChapters}
+                onChapterToggle={(updatedList) => {
+                  setSelectedChapters(updatedList);
+                  if (updatedList.length > 0) {
+                    setSelectedBook(dialogBook.book_id.toString());
+                  } else {
+                    setSelectedBook("");
+                  }
+                }}
+                onTranscribe={() => {
+                  setTranscriptionDialogOpen(false);
+                  handleTranscribe(dialogBook.book_id, selectedChapters);
+                }}
+              />
+            )}
+            {uploadDialogOpen && (
               <UploadDialog
                 isOpen={uploadDialogOpen}
                 onClose={() => {
                   setUploadDialogOpen(false);
                   setUploadedBookData(null);
+                  setIsNewBook(false);
+                  setUploadProgress(0);
+                  setDialogDescription("");
+                  setIsFailedUploading(false);
                 }}
-                bookCode={uploadedBookData?.book}
-                addedChapters={uploadedBookData?.added_chapters}
-                skippedChapters={uploadedBookData?.skipped_chapters}
-                modifiedChapters={uploadedBookData?.modified_chapters}
-                addedVerses={uploadedBookData?.added_verses}
-                modifiedVerses={uploadedBookData?.modified_verses}
-                skippedVerses={uploadedBookData?.incompartible_verses}
+                bookCode={uploadedBookData?.book || uploadedBookCode || ""}
+                progress={uploadProgress}
+                isUploading={uploading}
+                isNewBook={isNewBook}
+                dialogDescription={dialogDescription}
+                isFailedUploading={isFailedUploading}
+                addedChapters={uploadedBookData?.added_chapters || []}
+                skippedChapters={uploadedBookData?.skipped_chapters || []}
+                modifiedChapters={uploadedBookData?.modified_chapters || []}
+                addedVerses={uploadedBookData?.added_verses || []}
+                modifiedVerses={uploadedBookData?.modified_verses || []}
+                skippedVerses={uploadedBookData?.incompartible_verses || []}
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (

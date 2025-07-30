@@ -946,10 +946,12 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                         skipped_chapters.append(chapter_number)
                 
                 # Update missing verses if needed
-                if missing_verses:
+                if len(missing_verses) > 0:
                     chapter_entry.missing_verses = missing_verses
                     db.commit()
-                    
+                else:
+                    chapter_entry.missing_verses = None
+                    db.commit()   
             else:
                 # This is a new chapter - create it
                 # Move the chapter folder to target path
@@ -1171,7 +1173,7 @@ def save_book_to_project(
     book_max_verses = max_verses_data.get(book, [])  
     # Initialize has_valid_chapters to track valid chapters
     has_valid_chapters = False   
-    incompartible_verses = []
+    incompartible_verses_list = []
     # Filter out invalid chapters first
     for chapter_dir in target_book_path.iterdir():
         if chapter_dir.is_dir() and chapter_dir.name.isdigit():
@@ -1232,6 +1234,7 @@ def save_book_to_project(
             )
             # Process verses, tracking and removing duplicates
             verse_files, incompartible_verses = process_verse_files(chapter_dir, chapter_number)
+            incompartible_verses_list.extend(incompartible_verses)
             # Finalize verse files after prioritization
             selected_files = {verse: data['file'] for verse, data in verse_files.items()}         
             # Get available verses after duplicate removal
@@ -1282,7 +1285,7 @@ def save_book_to_project(
     # Clean up the temporary extraction folder
     if temp_extract_path:
         shutil.rmtree(temp_extract_path, ignore_errors=True)
-    return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book, "incompartible_verses": incompartible_verses}
+    return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book, "incompartible_verses": incompartible_verses_list}
 def get_chapter_book_project(db: Session, chapter_id: int, current_user: User):
     """
     Fetch the chapter, associated book, and project.
