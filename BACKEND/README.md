@@ -122,6 +122,10 @@ MAIL_SSL_TLS=False
 USE_CREDENTIALS=True
 VALIDATE_CERTS=True
 TIMEOUT=60
+S3_BUCKET=your_s3_bucket
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+AWS_DEFAULT_REGION=your_aws_default_region
 ```
 2. Ensure the database is configured and accessible.
 
@@ -179,6 +183,11 @@ Ensure `.env` file is created in the docker folder with following variables.
    USE_CREDENTIALS=USE_CREDENTIALS
    VALIDATE_CERTS=VALIDATE_CERTS
    TIMEOUT=TIMEOUT
+   S3_BUCKET=S3_BUCKET
+   AWS_ACCESS_KEY_ID=AWS_ACCESS_KEY_ID
+   AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY
+   AWS_DEFAULT_REGION=AWS_DEFAULT_REGION
+
    
 
    ```

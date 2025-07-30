@@ -964,12 +964,20 @@ def export_to_s3(project_id: int, db: Session = Depends(dependency.get_db),
         s3_zip_name = f"{project_name}_{current_time}.zip"
         s3_key = f"Obt_data/{audio_lang}/{s3_zip_name}"
         s3_path = f"s3://{S3_BUCKET}/{s3_key}"
- 
-        # Step 4: Upload using AWS CLI
+         # Step 4: Setup AWS environment
+        aws_env = os.environ.copy()
+        aws_env["AWS_ACCESS_KEY_ID"] = os.environ.get("AWS_ACCESS_KEY_ID")
+        aws_env["AWS_SECRET_ACCESS_KEY"] = os.environ.get("AWS_SECRET_ACCESS_KEY")
+        aws_env["AWS_DEFAULT_REGION"] = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        logger.info(f"Uploading {zip_path} to {s3_path}")
+
+        # Step 5: Upload using AWS CLI
         result = subprocess.run(
             ["aws", "s3", "cp", zip_path, s3_path],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            env=aws_env,
+            timeout=300
         )
 
  
@@ -978,7 +986,11 @@ def export_to_s3(project_id: int, db: Session = Depends(dependency.get_db),
                 status_code=500,
                 detail=f"S3 upload failed: {result.stderr.decode().strip()}"
             )
- 
+        # Update the exported status and exported_date after successful upload
+        project.exported = True
+        project.exported_date = datetime.datetime.utcnow()
+        db.commit()
+        db.refresh(project)
         return {
             "message": "Upload successful",
             "s3_path": s3_path,
