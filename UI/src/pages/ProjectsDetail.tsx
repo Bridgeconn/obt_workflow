@@ -39,6 +39,7 @@ import { useServedModels } from "@/hooks/use-served-models";
 import LanguageSelect from "@/components/LanguageSelect";
 import UploadDialog from "@/components/UploadDialog";
 import ArchiveDialog from "@/components/ArchiveDialog";
+import TranscriptionDialog from "@/components/TranscriptionDialog";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -121,6 +122,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [uploadedBookCode, setUploadedBookCode] = useState<string | null>(null);
   const [dialogDescription, setDialogDescription] = useState("");
   const [isFailedUploading, setIsFailedUploading] = useState(false);
+  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
+  const [dialogBook, setDialogBook] = useState<Book | null>(null);
 
   useEffect(() => {
     const loadProject = async () => {
@@ -448,19 +451,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const handleTranscribe = async (bookId: number, selectedChapters: any) => {
-    if (selectedBook !== String(bookId)) {
+    const book = project?.books.find((b) => b.book_id === bookId);
+    if (!book) return;
+    const validChapterIds = new Set(book.chapters.map((ch) => ch.chapter_id));
+    const filteredChapters = selectedChapters.filter((ch) =>
+      validChapterIds.has(ch.chapter_id)
+    );
+    if (String(bookId) !== selectedBook || filteredChapters.length === 0) {
       toast({
         variant: "destructive",
-        title: `You have not selected chapters for ${
-          project?.books.find((b) => b.book_id === bookId)?.book
-        }.`,
-      });
-      return;
-    }
-    if (selectedChapters.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Please select at least one chapter to transcribe",
+        title: "Please select at least one valid chapter to transcribe.",
       });
       return;
     }
@@ -478,6 +478,21 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       });
       console.error("Error transcribing book:", error);
     } finally {
+      const projectState = useProjectDetailsStore.getState().project;
+      const updatedBook = projectState?.books.find((b) => b.book_id === bookId);
+      const failedChapterIds = updatedBook?.chapters
+        .filter((ch) => ch.status === "transcriptionError")
+        .map((ch) => ch.chapter_id);
+
+      if (failedChapterIds && failedChapterIds?.length > 0) {
+        const remainingChapters = selectedChapters.filter(
+          (ch) => !failedChapterIds.includes(ch.chapter_id)
+        );
+        setSelectedChapters(remainingChapters);
+        if (remainingChapters.length === 0) {
+          setSelectedBook("");
+        }
+      }
       sessionStorage.removeItem("ConvertingBook");
     }
   };
@@ -598,70 +613,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     if (allowedStatuses.includes(chapter.status || "")) {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
-      return;
-    }
-
-    const hasTranscriptionInProgress = project?.books?.some((b) =>
-      b.chapters.some((ch) => ch.status === "inProgress")
-    );
-
-    if (hasTranscriptionInProgress) {
-      toast({
-        variant: "destructive",
-        title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
-      });
-      return;
-    }
-
-    const isConvertProcessing = sessionStorage.getItem("ConvertingBook");
-
-    if (isConvertProcessing) {
-      const convertProcessingObj = JSON.parse(isConvertProcessing);
-
-      const isDifferentProject =
-        convertProcessingObj.projectName !== project?.name;
-      const isDifferentBook = convertProcessingObj.bookId !== book.book_id;
-
-      if (
-        isDifferentProject ||
-        (!allowedStatuses.includes(chapter.status || "") && isDifferentBook)
-      ) {
-        toast({
-          variant: "destructive",
-          title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
-        });
-        return;
-      }
-    }
-
-    // Toggle chapter selection for notTranscribed
-    const chapterWithBookName = { ...chapter, bookName: book.book };
-    const isChapterSelected = selectedChapters.some(
-      (c: any) => c.chapter_id === chapter.chapter_id
-    );
-
-    if (selectedBook === "" || book.book_id.toString() === selectedBook) {
-      if (isChapterSelected) {
-        setSelectedChapters((prev) => {
-          const updatedChapters = prev.filter(
-            (c) => c.chapter_id !== chapter.chapter_id
-          );
-          if (updatedChapters.length === 0) {
-            setSelectedBook(""); // Reset selectedBook when all chapters are deselected
-          }
-          return updatedChapters;
-        });
-      } else {
-        setSelectedChapters((prev) => [...prev, chapterWithBookName]);
-        if (selectedChapters.length === 0 && selectedBook === "") {
-          setSelectedBook(book.book_id.toString());
-        }
-      }
-    } else {
-      toast({
-        variant: "destructive",
-        title: `Cannot select chapters from different books at the same time`,
-      });
       return;
     }
   };
@@ -1106,7 +1057,54 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               ) {
                                 return;
                               }
-                              handleTranscribe(book.book_id, selectedChapters);
+                              const allowedStatuses = [
+                                "notTranscribed",
+                                "error",
+                                "transcriptionError",
+                              ];
+                              const hasTranscriptionInProgress =
+                                project?.books?.some((b) =>
+                                  b.chapters.some(
+                                    (ch) => ch.status === "inProgress"
+                                  )
+                                );
+
+                              if (hasTranscriptionInProgress) {
+                                toast({
+                                  variant: "destructive",
+                                  title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
+                                });
+                                return;
+                              }
+                              const isConvertProcessing =
+                                sessionStorage.getItem("ConvertingBook");
+
+                              if (isConvertProcessing) {
+                                const convertProcessingObj =
+                                  JSON.parse(isConvertProcessing);
+
+                                const isDifferentProject =
+                                  convertProcessingObj.projectName !==
+                                  project?.name;
+                                const isDifferentBook =
+                                  convertProcessingObj.bookId !== book.book_id;
+
+                                if (
+                                  isDifferentProject ||
+                                  (!allowedStatuses.includes(
+                                    book.status || ""
+                                  ) &&
+                                    isDifferentBook)
+                                ) {
+                                  toast({
+                                    variant: "destructive",
+                                    title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
+                                  });
+                                  return;
+                                }
+                              }
+                              setDialogBook(book);
+                              setTranscriptionDialogOpen(true);
                             }}
                           >
                             {book.status === "inProgress" ||
@@ -1134,9 +1132,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 "transcriptionError",
                                 "conversionError",
                               ].includes(book.status || "") &&
-                                ["Conversion failed", "Transcription failed", ""].includes(
-                                  book.progress || ""
-                                )) ? (
+                                [
+                                  "Conversion failed",
+                                  "Transcription failed",
+                                  "",
+                                ].includes(book.progress || "")) ? (
                               "Retry"
                             ) : book.status === "notTranscribed" &&
                               book.progress === "" ? (
@@ -1169,6 +1169,35 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                   ))}
                 </TableBody>
               </Table>
+            )}
+            {dialogBook && (
+              <TranscriptionDialog
+                isOpen={transcriptionDialogOpen}
+                onClose={() => {
+                  setTranscriptionDialogOpen(false);
+                  if (
+                    selectedBook &&
+                    dialogBook?.book_id.toString() === selectedBook
+                  ) {
+                    setSelectedBook("");
+                    setSelectedChapters([]);
+                  }
+                }}
+                selectedBook={dialogBook}
+                selectedChapters={selectedChapters}
+                onChapterToggle={(updatedList) => {
+                  setSelectedChapters(updatedList);
+                  if (updatedList.length > 0) {
+                    setSelectedBook(dialogBook.book_id.toString());
+                  } else {
+                    setSelectedBook("");
+                  }
+                }}
+                onTranscribe={() => {
+                  setTranscriptionDialogOpen(false);
+                  handleTranscribe(dialogBook.book_id, selectedChapters);
+                }}
+              />
             )}
             {uploadDialogOpen && (
               <UploadDialog
