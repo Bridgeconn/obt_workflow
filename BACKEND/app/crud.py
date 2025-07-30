@@ -1704,16 +1704,15 @@ def call_stt_api(file_path: str, script_lang: str) -> dict:
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
  
     # Prepare API URL
-    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}"
+    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}&transcription_language={lang_code}"
     file_name = os.path.basename(file_path)
     try:
         with open(file_path, "rb") as audio_file:
             files_payload = {"files": (file_name, audio_file, "audio/wav")}
-            data_payload = {"transcription_language": lang_code}
             headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
             # Send batch request
-            response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+            response = requests.post(ai_api_url, files=files_payload, headers=headers)
             logger.info(f"AI API Response: {response.status_code} - {response.text}")  
             # Handle API response
             if response.status_code == 201:
@@ -1917,8 +1916,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     
     # AI API Base URL
     TTS_API_URL = f"{BASE_URL}/model/audio/generate"
-    # API Token
-    api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
+    device_type = os.getenv("TTS_DEVICE", "cpu")
  
     # Map audio_lang to source_language
     source_language = None
@@ -1948,18 +1946,19 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
     
-    # Prepare API parameters and headers
-    params = {
-        "model_name": model_name,
-        "language": lang_code,  # Dynamically mapped language code
-        "output_format": output_format, 
-    }
-    data_payload = [text]
-    headers = {"Authorization": f"Bearer {api_token}"}
+
+    ai_api_url = f"{TTS_API_URL}?device={device_type}&model_name={model_name}&language={lang_code}&output_format={output_format}&enhance=False"
+    # Flatten input if accidentally passed as a list
+    if isinstance(text, list):
+        text = " ".join(text)
+ 
+    data_payload = [text]  # correct format: List[str]
+ 
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
  
     try:
         # Make the API request
-        response = requests.post(TTS_API_URL, params=params, json=data_payload, headers=headers)
+        response = requests.post(ai_api_url,  json=data_payload, headers=headers)
         logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
         # Handle API response
