@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from dependency import logger, LOG_FOLDER
 from utils import send_email
 import json
+import subprocess
 
 
 def current_time():
@@ -34,7 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("fastapi_app")
 
-
+S3_BUCKET = os.getenv("S3_BUCKET")
 FRONTEND_URL = os.getenv("FRONTEND_URL")
 # Regex pattern for valid verse file formats (ignores extension)
 VALID_VERSE_PATTERN = re.compile(r"^\d+_\d+(?:_\d+)?(?:_default)?$")
@@ -70,7 +71,7 @@ async def get_logs(current_user: dict = Depends(auth.get_current_user)):
 
 # Create User API
 @router.post("/user/signup/", tags=["User"])
-def user_signup(
+async def user_signup(
     username: str,
     password: str,
     email: EmailStr,
@@ -107,6 +108,28 @@ def user_signup(
     db.commit()
     db.refresh(new_user)
     logger.info(f"User created successfully: {username}")
+     # --- Send welcome/signup email ---
+    subject = "Welcome to AIOBT!"
+    body = f"""
+    <html>
+    <body>
+        <h4>Hello {username},</h4>
+        <p>Welcome to AIOBT! Your account has been created successfully.</p>
+        <p>If you have any questions or need help, please contact our support team.</p>
+        <br>
+        <p>Best regards,<br>The AIOBT Team</p>
+    </body>
+    </html>
+    """
+    try:
+        await send_email(
+            subject=subject,
+            recipient=email,
+            body=body,
+        )
+        logger.info(f"Signup email sent to {email}")
+    except Exception as e:
+        logger.error(f"Could not send signup email to {email}: {str(e)}")
     return {"message": "User created successfully", "user_id": new_user.user_id}
 
 
@@ -168,47 +191,49 @@ async def forgot_password(email: EmailStr, db: Session = Depends(dependency.get_
     Generate a password reset link and send it to the user's email using SendGrid.
     """
     logger.info(f"Forgot password request initiated for email: {email}")
+    
     user = db.query(User).filter(User.email == email).first()
     if not user:
         logger.warning(f"Forgot password failed: Email '{email}' not found")
         raise HTTPException(status_code=404, detail="Email not registered")
-    # Generate reset token
-    reset_token = auth.create_reset_token(email)
-    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
-
-    # Email body
-    email_body = f"""
-        <html>
-        <body>
-            <h4>Hello {user.username},</h4>
-            <p>We received a request to reset your password. You can reset your password by clicking the link below:</p>
-            
-            <p><strong><a href="{reset_link}">Reset Password</a></strong></p>
-            
-            <p>Alternatively, you can copy and paste this link into your browser:</p>
-            
-            <blockquote>{reset_link}</blockquote>
-
-            <p>If you didn’t request a password reset, please ignore this email.</p>
-            
-            <footer>
-                <small>If you need help, please reach out to our support team.</small>
-            </footer>
-        </body>
-        </html>
-    """
-
-    # Send the email
-    send_email(
-        subject="Password Reset Request",
-        recipient=email,
-        body=email_body,
-    )
-    logger.info(f"Password reset email sent to {email}")
-    return {"message": "Password reset email sent successfully"}
-
-
-
+    
+    try:
+        # Generate reset token
+        reset_token = auth.create_reset_token(email)
+        reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+        
+        email_body = f"""
+            <html>
+            <body>
+                <h4>Hello {user.username},</h4>
+                <p>We received a request to reset your password. You can reset your password by clicking the link below:</p>
+                <p><strong><a href="{reset_link}">Reset Password</a></strong></p>
+                <p>Alternatively, you can copy and paste this link into your browser:</p>
+                <blockquote>{reset_link}</blockquote>
+                <p>If you didn't request a password reset, please ignore this email.</p>
+                <footer>
+                    <small>If you need help, please reach out to our support team.</small>
+                </footer>
+            </body>
+            </html>
+        """
+        
+        # Send email with proper error handling
+        await send_email(
+            subject="Password Reset Request",
+            recipient=email,
+            body=email_body,
+        )
+        
+        logger.info(f"Password reset email sent to {email}")
+        return {"message": "Password reset email sent successfully"}
+        
+    except Exception as e:
+        logger.error(f"Failed to send password reset email to {email}: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to send password reset email. Please try again later."
+        )
 
 @router.post("/user/reset_password/", tags=["User"])
 async def reset_password(
@@ -903,3 +928,74 @@ async def download_processed_project_zip(
     final_dir, zip_path =crud.prepare_project_for_zipping(project)
     # Create and return the ZIP file
     return crud.create_zip_and_return_response(final_dir, zip_path, project.name)
+
+
+
+
+@router.post("/export_to_s3/{project_id}")
+def export_to_s3(project_id: int, db: Session = Depends(dependency.get_db),
+                     current_user: User = Depends(auth.get_current_user)):
+    if current_user.role != "AI":
+        raise HTTPException(status_code=403, detail="Only AI users can upload  files to s3")
+    try:
+        
+        # Step 1: Fetch project details
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+ 
+        project_name = project.name
+        audio_lang = project.audio_lang
+ 
+        # Step 2: Locate ZIP file in the project folder
+        project_dir = os.path.join(BASE_DIR, str(project_id))
+        if not os.path.isdir(project_dir):
+            raise HTTPException(status_code=404, detail="Project directory not found")
+ 
+        zip_files = [f for f in os.listdir(project_dir) if f.endswith(".zip")]
+        if not zip_files:
+            raise HTTPException(status_code=404, detail="No ZIP file found in the project directory")
+ 
+        zip_file = zip_files[0]
+        zip_path = os.path.join(project_dir, zip_file)
+ 
+        # Step 3: Prepare S3 file name 
+        current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        s3_zip_name = f"{project_name}_{current_time}.zip"
+        s3_key = f"Obt_data/{audio_lang}/{s3_zip_name}"
+        s3_path = f"s3://{S3_BUCKET}/{s3_key}"
+         # Step 4: Setup AWS environment
+        aws_env = os.environ.copy()
+        aws_env["AWS_ACCESS_KEY_ID"] = os.environ.get("AWS_ACCESS_KEY_ID")
+        aws_env["AWS_SECRET_ACCESS_KEY"] = os.environ.get("AWS_SECRET_ACCESS_KEY")
+        aws_env["AWS_DEFAULT_REGION"] = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+        logger.info(f"Uploading {zip_path} to {s3_path}")
+
+        # Step 5: Upload using AWS CLI
+        result = subprocess.run(
+            ["aws", "s3", "cp", zip_path, s3_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=aws_env,
+            timeout=300
+        )
+
+ 
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"S3 upload failed: {result.stderr.decode().strip()}"
+            )
+        # Update the exported status and exported_date after successful upload
+        project.exported = True
+        project.exported_date = datetime.datetime.utcnow()
+        db.commit()
+        db.refresh(project)
+        return {
+            "message": "Upload successful",
+            "s3_path": s3_path,
+            "project_name": project_name
+        }
+ 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")

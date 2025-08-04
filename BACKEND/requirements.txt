@@ -11,3 +11,4 @@
  librosa
  sendgrid
  alembic
+ fastapi_mail

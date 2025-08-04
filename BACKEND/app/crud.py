@@ -245,6 +245,8 @@ def get_project_response(db: Session, project: Project) -> dict:
         "script_lang": project.script_lang,
         "audio_lang": project.audio_lang,
         "archive": project.archive,
+        "exported": project.exported,            
+        "exported_date": project.exported_date, 
         "books": [
             {
                 "book_id": book.book_id,
@@ -326,6 +328,8 @@ def get_project_summary(db: Session, project: Project, current_user: User) -> di
         "user_name": owner.username if owner else current_user.username,
         "archive": project.archive,
         "created_date": project.created_date,
+        "exported": project.exported,             
+        "exported_date": project.exported_date, 
         "books": [get_book_summary(db, book) for book in books],
     }
 
@@ -812,7 +816,7 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
             
            
             # Get available verses after duplicate removal
-            available_verses = {verse: data['file'] for verse, data in verse_files.items()}          
+            available_verses = {verse: data['file'] for verse, data in verse_files.items()}
                      
             # If no verses are found, delete the empty chapter folder
             if not available_verses:
@@ -821,10 +825,20 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                 continue
                  
             max_verses_in_chapter = max_verses_per_chapter.get(chapter_number, 0)
+  
+            existing_verse_numbers = set()
+            
+            if chapter_number in existing_chapters:
+                chapter_entry = existing_chapters[chapter_number]
+                existing_verse_numbers = {
+                    verse.verse for verse in db.query(Verse).filter(Verse.chapter_id == chapter_entry.chapter_id)
+                }
+            
+            combined_verse_numbers = set(available_verses.keys()).union(existing_verse_numbers)
             
             # Determine missing verses
             expected_verses = set(range(1, max_verses_in_chapter + 1))
-            missing_verses = list(expected_verses - set(available_verses.keys()))
+            missing_verses = sorted(expected_verses - combined_verse_numbers)
                       
             # Check if verses exceed the maximum allowed
             if available_verses and max(available_verses.keys()) > max_verses_in_chapter:
@@ -932,10 +946,12 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                         skipped_chapters.append(chapter_number)
                 
                 # Update missing verses if needed
-                if missing_verses:
+                if len(missing_verses) > 0:
                     chapter_entry.missing_verses = missing_verses
                     db.commit()
-                    
+                else:
+                    chapter_entry.missing_verses = None
+                    db.commit()   
             else:
                 # This is a new chapter - create it
                 # Move the chapter folder to target path
@@ -1157,7 +1173,7 @@ def save_book_to_project(
     book_max_verses = max_verses_data.get(book, [])  
     # Initialize has_valid_chapters to track valid chapters
     has_valid_chapters = False   
-    incompartible_verses = []
+    incompartible_verses_list = []
     # Filter out invalid chapters first
     for chapter_dir in target_book_path.iterdir():
         if chapter_dir.is_dir() and chapter_dir.name.isdigit():
@@ -1218,6 +1234,7 @@ def save_book_to_project(
             )
             # Process verses, tracking and removing duplicates
             verse_files, incompartible_verses = process_verse_files(chapter_dir, chapter_number)
+            incompartible_verses_list.extend(incompartible_verses)
             # Finalize verse files after prioritization
             selected_files = {verse: data['file'] for verse, data in verse_files.items()}         
             # Get available verses after duplicate removal
@@ -1268,7 +1285,7 @@ def save_book_to_project(
     # Clean up the temporary extraction folder
     if temp_extract_path:
         shutil.rmtree(temp_extract_path, ignore_errors=True)
-    return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book, "incompartible_verses": incompartible_verses}
+    return {"message": "Book added successfully", "book_id": book_entry.book_id, "book": book, "incompartible_verses": incompartible_verses_list}
 def get_chapter_book_project(db: Session, chapter_id: int, current_user: User):
     """
     Fetch the chapter, associated book, and project.
@@ -1690,16 +1707,15 @@ def call_stt_api(file_path: str, script_lang: str) -> dict:
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
  
     # Prepare API URL
-    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}"
+    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}&transcription_language={lang_code}"
     file_name = os.path.basename(file_path)
     try:
         with open(file_path, "rb") as audio_file:
             files_payload = {"files": (file_name, audio_file, "audio/wav")}
-            data_payload = {"transcription_language": lang_code}
             headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
             # Send batch request
-            response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+            response = requests.post(ai_api_url, files=files_payload, headers=headers)
             logger.info(f"AI API Response: {response.status_code} - {response.text}")  
             # Handle API response
             if response.status_code == 201:
@@ -1903,8 +1919,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     
     # AI API Base URL
     TTS_API_URL = f"{BASE_URL}/model/audio/generate"
-    # API Token
-    api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
+    device_type = os.getenv("TTS_DEVICE", "cpu")
  
     # Map audio_lang to source_language
     source_language = None
@@ -1934,18 +1949,19 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
     
-    # Prepare API parameters and headers
-    params = {
-        "model_name": model_name,
-        "language": lang_code,  # Dynamically mapped language code
-        "output_format": output_format, 
-    }
-    data_payload = [text]
-    headers = {"Authorization": f"Bearer {api_token}"}
+
+    ai_api_url = f"{TTS_API_URL}?device={device_type}&model_name={model_name}&language={lang_code}&output_format={output_format}&enhance=False"
+    # Flatten input if accidentally passed as a list
+    if isinstance(text, list):
+        text = " ".join(text)
+ 
+    data_payload = [text]  # correct format: List[str]
+ 
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
  
     try:
         # Make the API request
-        response = requests.post(TTS_API_URL, params=params, json=data_payload, headers=headers)
+        response = requests.post(ai_api_url,  json=data_payload, headers=headers)
         logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
         # Handle API response
