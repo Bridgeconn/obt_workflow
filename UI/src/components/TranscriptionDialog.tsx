@@ -87,7 +87,7 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl overflow-auto">
         <DialogHeader>
           <DialogTitle>
             Transcribe {selectedBook.book} audio to text
@@ -96,9 +96,9 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
             Select chapters to transcribe
           </p>
         </DialogHeader>
-        <div className="flex overflow-x-auto items-center space-x-6 mt-2">
-          <span className="font-semibold pb-2">{selectedBook.book}</span>
-          <div className="flex overflow-x-auto space-x-2 max-w-full">
+        <div className="flex overflow-auto space-x-6 mt-2">
+          <span className="font-semibold pt-2">{selectedBook.book}</span>
+          <div className="flex items-center overflow-auto gap-2 max-w-full flex-wrap">
             {selectedBook.chapters
               .filter(
                 (chapter) =>
