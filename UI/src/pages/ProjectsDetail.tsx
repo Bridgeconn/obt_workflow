@@ -597,6 +597,12 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       console.log("error", error);
     } finally {
       setScriptLanguage(String(selectedScriptLanguage?.id));
+      toast({
+        title: "Language set successfully",
+        variant: "success",
+        description:
+          "Please reach out to your Admin if you need to change the language.",
+      });
     }
   };
 
@@ -774,6 +780,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 <LanguageSelect
                   onLanguageChange={handleLanguageChange}
                   selectedLanguageId={audioLanguage}
+                  selectedScriptLanguage={scriptLanguage}
                 />
 
                 {/* Script Language */}

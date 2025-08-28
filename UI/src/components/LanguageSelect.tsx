@@ -15,20 +15,25 @@ import {
 } from "@/components/ui/popover";
 import { Check, ChevronDown } from "lucide-react";
 import languages from "../data/source_languages.json";
+import useAuthStore from "@/store/useAuthStore";
 
 
 interface LanguageSelectProps {
   onLanguageChange: (selectedId: string) => void;
   selectedLanguageId?: string;
+  selectedScriptLanguage?: string;
 }
 
 const LanguageSelect: React.FC<LanguageSelectProps> = ({
   onLanguageChange,
   selectedLanguageId = "",
+  selectedScriptLanguage = "",
 }) => {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(selectedLanguageId);
   const [searchQuery, setSearchQuery] = useState("");
+
+  const { user } = useAuthStore();
 
   // Get unique source languages
   const sourceLanguages = [...new Set(languages.map(lang => lang.script_language))];
@@ -62,13 +67,15 @@ const LanguageSelect: React.FC<LanguageSelectProps> = ({
       .filter(group => group.languages.length > 0);
   };
 
+  const isDisabled = selectedScriptLanguage !== "" && !["", undefined].includes(value) && user?.role !== "Admin"
+
   return (
     <div className="flex flex-col md:flex-row items-start md:items-center space-y-2 md:space-y-0 md:space-x-4 w-auto md:w-auto">
       <label className="text-lg font-semibold text-gray-700 whitespace-nowrap">
         Audio Language
       </label>
       <Popover modal open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
+        <PopoverTrigger asChild disabled = {isDisabled} className="disabled:cursor-not-allowed">
           <button
             role="combobox"
             aria-expanded={open}
