@@ -70,7 +70,7 @@ def get_project(project_id: int, db: Session, current_user: User):
     project = db.query(Project).filter(
         Project.owner_id == current_user.user_id, Project.project_id == project_id
     ).first()
-
+    print("currentuser.role",current_user.role)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found for the user")
     
@@ -256,6 +256,79 @@ def get_project_response(db: Session, project: Project) -> dict:
             }
             for book in books
         ],
+    }
+
+
+
+def delete_book_from_project(project_id: int, book: str, db: Session):
+    """
+    Admin-only delete: remove a book from DB and project directory.
+    Resolves project access here (Admins can access any project).
+    """
+
+    # --- Admins can fetch any project by id ---
+    project = db.query(Project).filter(Project.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # --- locate the book inside this project ---
+    book_entry = (
+        db.query(Book)
+          .filter(Book.project_id == project.project_id, Book.book == book)
+          .first()
+    )
+    if not book_entry:
+        raise HTTPException(status_code=404, detail=f"Book '{book}' not found in project {project_id}")
+
+    # --- compute filesystem path (same logic as save_book_to_project) ---
+    base_name = (project.name or "").split("(")[0].strip() or str(project.project_id)
+    project_root_path = BASE_DIR / str(project.project_id) / "input" / base_name
+
+    if (project_root_path / "ingredients").exists():
+        ingredients_path = project_root_path / "ingredients"
+    elif (project_root_path / "audio" / "ingredients").exists():
+        ingredients_path = project_root_path / "audio" / "ingredients"
+    else:
+        ingredients_path = None
+
+    target_book_path = ingredients_path / book if ingredients_path else None
+
+    # --- delete DB rows (jobs -> verses -> chapters -> book) ---
+    try:
+        chapters = db.query(Chapter).filter(Chapter.book_id == book_entry.book_id).all()
+        chapter_ids = [c.chapter_id for c in chapters]
+
+        verses = db.query(Verse).filter(Verse.chapter_id.in_(chapter_ids)).all() if chapter_ids else []
+        verse_ids = [v.verse_id for v in verses]
+
+        if verse_ids:
+            db.query(Job).filter(Job.verse_id.in_(verse_ids)).delete(synchronize_session=False)
+            db.query(Verse).filter(Verse.verse_id.in_(verse_ids)).delete(synchronize_session=False)
+
+        if chapter_ids:
+            db.query(Chapter).filter(Chapter.chapter_id.in_(chapter_ids)).delete(synchronize_session=False)
+
+        db.delete(book_entry)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database deletion failed: {e}")
+
+    # --- delete filesystem folder ---
+    fs_status = "no_folder_found"
+    try:
+        if target_book_path and target_book_path.exists():
+            shutil.rmtree(target_book_path)
+            fs_status = "deleted"
+    except Exception as e:
+        logger.error(f"Book '{book}' DB deleted but folder removal failed: {e}")
+        fs_status = "delete_failed"
+
+    return {
+        "message": "Book deleted",
+        "project_id": project_id,
+        "book": book,
+        "fs_status": fs_status,
     }
 
 

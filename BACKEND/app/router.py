@@ -20,6 +20,13 @@ from dependency import logger, LOG_FOLDER
 from utils import send_email
 import json
 import subprocess
+from crud import prepare_project_for_zipping 
+import shutil, time, uuid, os
+from pathlib import Path
+from typing import List, Optional, Tuple
+from typing import List, Optional, Literal
+from fastapi import APIRouter, Body, Depends, HTTPException, File, UploadFile, Form, Query
+from pydantic import BaseModel,Field
 
 
 def current_time():
@@ -442,6 +449,20 @@ async def add_new_book_zip(
         raise HTTPException(status_code=500, detail="An error occurred while adding the book")
 
  
+@router.delete("/projects/{project_id}/books/{book}", tags=["Project"])
+async def delete_book(
+    project_id: int,
+    book: str,
+    db: Session = Depends(dependency.get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    # Admin-only
+    if getattr(current_user, "role", None) not in ["Admin"]:
+        raise HTTPException(status_code=403, detail="Only Admins can delete books")
+
+    return crud.delete_book_from_project(project_id=project_id, book=book, db=db)
+
+
 
 
 
@@ -582,15 +603,55 @@ async def convert_to_text(
     script_lang = crud.get_script_lang(db,project_id, current_user)
     verses = crud.get_verses(db,chapter.chapter_id)
     
-    for verse in verses:
-        if verse.stt_msg != "Transcription successful":
-                logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
-                verse.stt_msg = ""
-                verse.stt = False# Resetting stt flag as well
-                db.add(verse)
-                db.commit()
+    # for verse in verses:
+    #     if verse.stt_msg != "Transcription successful":
+    #             logger.info(f"Resetting stt_msg for verse {verse.verse_id}.")
+    #             verse.stt_msg = ""
+    #             verse.stt = False# Resetting stt flag as well
+    #             db.add(verse)
+    #             db.commit()
         
-    file_paths = [verse.path for verse in verses]
+    # file_paths = [verse.path for verse in verses]
+     # ONLY re-run verses that are NOT manually modified
+    to_process = []
+
+    for v in verses:
+        if not getattr(v, "modified", False):
+            # Force a fresh run: clear flags/messages for the selected verses only
+            # (Do NOT touch edited/modified verses)
+            v.stt = False
+            v.stt_msg = ""
+            to_process.append(v)
+
+    if not to_process:
+        logger.info(f"[{current_time()}] No verses queued: all verses are marked modified. Nothing to transcribe.")
+        return {
+            "message": "No verses queued. All verses are manually modified; skipping re-transcription.",
+            "project_id": project_id,
+            "book": book,
+            "chapter": chapter,
+            "script_lang": script_lang,
+            "queued_count": 0,
+        }
+
+    # Single commit for flag resets
+    db.add_all(to_process)
+    db.commit()
+    ids = [v.verse_id for v in to_process]
+    print("TO_PROCESS verse_ids:", ids)
+    # Build clean path list (ignore missing paths)
+    file_paths = [v.path for v in to_process if getattr(v, "path", None)]
+    if not file_paths:
+        logger.warning(f"[{current_time()}] No audio paths found to process after filtering.")
+        return {
+            "message": "No audio paths found to process after filtering.",
+            "project_id": project_id,
+            "book": book,
+            "chapter": chapter,
+            "script_lang": script_lang,
+            "queued_count": 0,
+        }
+
     crud.is_model_served(script_lang, "stt")
     # Call the separate function to test STT API
     crud.test_stt_api(file_paths, script_lang)
@@ -999,3 +1060,141 @@ def export_to_s3(project_id: int, db: Session = Depends(dependency.get_db),
  
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    
+
+
+# def _all_chapters_approved(db: Session, project_id: int) -> bool:
+#     total = (
+#         db.query(Chapter)
+#           .join(Book, Book.book_id == Chapter.book_id)
+#           .filter(Book.project_id == project_id)
+#           .count()
+#     )
+#     unapproved = (
+#         db.query(Chapter)
+#           .join(Book, Book.book_id == Chapter.book_id)
+#           .filter(Book.project_id == project_id, Chapter.approved == False)
+#           .count()
+#     )
+#     return total > 0 and unapproved == 0
+
+
+
+# def merge_projects_zip(
+#     project_ids: List[int],
+#     # merge_strategy: str,
+#     # filename: Optional[str],
+#     db: Session,
+#     current_user,
+# ) -> Tuple[Path, str, str]:
+#     """
+#     Build a merged folder from multiple approved projects (same audio_lang) and return:
+#       (final_dir, zip_path, display_name)
+#     Router will call create_zip_and_return_response(final_dir, zip_path, display_name).
+#     """
+#     # 1) Load and validate projects
+#     if len(project_ids) < 2:
+#         raise HTTPException(status_code=400, detail="Provide at least two project_ids")
+
+#     projects = []
+#     for pid in project_ids:
+#         p = db.query(Project).filter(Project.project_id == pid).first()
+#         if not p:
+#             raise HTTPException(status_code=404, detail=f"Project {pid} not found")
+#         projects.append(p)
+
+#     # 2) Same audio language
+#     langs = { (p.audio_lang or "").strip() for p in projects }
+#     if "" in langs:
+#         raise HTTPException(status_code=400, detail="All projects must have a non-empty audio language")
+#     if len(langs) != 1:
+#         raise HTTPException(status_code=400, detail=f"All projects must share the same audio language. Found: {sorted(langs)}")
+#     audio_lang = next(iter(langs))
+#     # 3) All approved (all chapters approved)
+#     not_approved = [p.project_id for p in projects if not _all_chapters_approved(db, p.project_id)]
+#     if not_approved:
+#         raise HTTPException(status_code=400, detail=f"All selected projects must be approved. Not approved: {not_approved}")
+
+#     # 4) Prepare a merged workspace
+#     ts = time.strftime("%Y%m%d_%H%M%S")
+#     # merge_name = filename or f"Merged_{ts}"
+#     display_name = audio_lang 
+#     merge_root = BASE_DIR / "tmp" / f"merge_{ts}_{uuid.uuid4().hex[:8]}"
+#     final_dir = merge_root / display_name
+#     audio_dst = final_dir / "audio" / "ingredients"
+#     text_dst  = final_dir / "text-1" / "ingredients"
+#     audio_dst.mkdir(parents=True, exist_ok=True)
+#     text_dst.mkdir(parents=True, exist_ok=True)
+
+#      # Track what we've already copied to enforce "first wins"
+#     seen_books = set()        # e.g., {"GEN", "EXO"}
+#     seen_text_files = set()   # e.g., {"GEN.usfm", "readme.md"}
+#     copied_metadata = False
+
+#     for p in projects:
+#         # Build per-project export folder using your existing helper
+#         export_dir, _ = prepare_project_for_zipping(p)
+
+#         # --- copy ALL books under audio/ingredients ---
+#         src_audio_ing = export_dir / "audio" / "ingredients"
+#         if src_audio_ing.exists():
+#             for book_dir in sorted(d for d in src_audio_ing.iterdir() if d.is_dir()):
+#                 book_name = book_dir.name
+#                 if book_name in seen_books:
+#                     # duplicate book → skip (first wins)
+#                     continue
+#                 dst_book_dir = audio_dst / book_name
+#                 shutil.copytree(book_dir, dst_book_dir)
+#                 seen_books.add(book_name)
+
+#         # --- copy text-1/ingredients files (USFM, extras) with first-wins on filename ---
+#         src_text_ing = export_dir / "text-1" / "ingredients"
+#         if src_text_ing.exists():
+#             for f in sorted(src_text_ing.iterdir()):
+#                 if not f.is_file():
+#                     continue
+#                 if f.name in seen_text_files:
+#                     # duplicate filename → skip (first wins)
+#                     continue
+#                 shutil.copy2(f, text_dst / f.name)
+#                 seen_text_files.add(f.name)
+
+#         # --- copy metadata.json once (root + text-1) ---
+#         if not copied_metadata and (export_dir / "metadata.json").exists():
+#             final_dir.mkdir(parents=True, exist_ok=True)
+#             shutil.copy2(export_dir / "metadata.json", final_dir / "metadata.json")
+#             (final_dir / "text-1").mkdir(parents=True, exist_ok=True)
+#             shutil.copy2(export_dir / "metadata.json", final_dir / "text-1" / "metadata.json")
+#             copied_metadata = True
+
+#     zip_path = f"{final_dir}.zip"
+#     logger.info(f"Merged projects {project_ids} into {final_dir} (download name: {display_name}.zip)")
+#     return final_dir, zip_path, display_name
+
+
+# class MergeProjectsRequest(BaseModel):
+#     project_ids: List[int] = Field(..., min_items=2)
+#     merge_strategy: Literal["error", "skip", "overwrite"] = "error"  # duplicates policy
+#     filename: Optional[str] = None  # optional zip display name
+
+# @router.post("/projects/merge-zip", tags=["Project"])
+# async def merge_projects_zip_route(
+#     project_ids: List[int] = Query(..., description="Repeat like ?project_ids=1&project_ids=2"),
+#     # payload: MergeProjectsRequest = Body(...),
+#     db: Session = Depends(dependency.get_db),
+#     current_user: User = Depends(auth.get_current_user),
+# ):
+#     # Admin-only
+#     if getattr(current_user, "role", None) not in ["Admin"]:
+#         raise HTTPException(status_code=403, detail="Only Admins can merge projects")
+
+#     final_dir, zip_path, display_name = merge_projects_zip(
+#         project_ids=project_ids,
+#         # merge_strategy=payload.merge_strategy,
+#         # filename=payload.filename,
+#         db=db,
+#         current_user=current_user,
+#     )
+
+#     # Reuse your existing zipper/response helper
+#     return crud.create_zip_and_return_response(final_dir, zip_path, display_name)
