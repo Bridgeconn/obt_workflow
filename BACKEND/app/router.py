@@ -711,8 +711,14 @@ async def get_chapter_status(
     """
     Get the status of each verse in a chapter.
     """
-    # Validate project
-    project = crud.get_project(project_id, db, current_user)
+    # Access control
+    if getattr(current_user, "role", None) == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        # Owner-gated for non-admin users
+        project = crud.get_project(project_id, db, current_user)
     book=crud.get_book(db, project_id, book)
     chapter = crud.get_chapter(db ,book.book_id,chapter)
     # Retrieve verse statuses
