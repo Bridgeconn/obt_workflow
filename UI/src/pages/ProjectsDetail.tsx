@@ -41,6 +41,7 @@ import LanguageSelect from "@/components/LanguageSelect";
 import UploadDialog from "@/components/UploadDialog";
 import ArchiveDialog from "@/components/ArchiveDialog";
 import TranscriptionDialog from "@/components/TranscriptionDialog";
+import { hasPendingChanges } from "@/utils/chapterStorage";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -118,6 +119,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   );
   const [selectedBook, setSelectedBook] = useState("");
   const hasRestoredSessionRef = useRef(false);
+  const hasShownPendingRef = useRef(false);
 
   const [isNewBook, setIsNewBook] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -196,6 +198,37 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         }
 
         hasRestoredSessionRef.current = true;
+      }
+      if (!hasShownPendingRef.current) {
+        hasShownPendingRef.current = true;
+        const chaptersWithPending: string[] = [];
+
+        project.books.forEach((book) => {
+          book.chapters.forEach((chapter) => {
+            if (hasPendingChanges(projectId, book.book, chapter.chapter)) {
+              chaptersWithPending.push(
+                `${book.book} - Chapter ${chapter.chapter}`
+              );
+            }
+          });
+        });
+
+        if (chaptersWithPending.length > 0) {
+          const MAX_DISPLAY = 5; // show at most 5 chapters in toast
+          const displayedChapters = chaptersWithPending.slice(0, MAX_DISPLAY);
+          const remainingCount =
+            chaptersWithPending.length - displayedChapters.length;
+
+          toast({
+            title: "Unsaved verse changes",
+            description: `You have unsaved verse modifications in the following chapter${
+              displayedChapters.length > 1 ? "s" : ""
+            }: ${displayedChapters.join(", ")}${
+              remainingCount > 0 ? `, and ${remainingCount} more...` : ""
+            }`,
+            variant: "destructive",
+          });
+        }
       }
     }
   }, [project, projectId, isLoading]);
