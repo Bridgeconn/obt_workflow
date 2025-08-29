@@ -651,6 +651,13 @@ async def convert_to_text(
             "script_lang": script_lang,
             "queued_count": 0,
         }
+    #  Reset approval only if we're actually going to re-transcribe
+    if getattr(chapter, "approved", False):
+        chapter.approved = False
+        db.add(chapter)
+        db.commit()
+        logger.info(f"[{current_time()}] Chapter {chapter.chapter_id} approval reset to False due to re-transcription.")
+
 
     crud.is_model_served(script_lang, "stt")
     # Call the separate function to test STT API
