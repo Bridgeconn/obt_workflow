@@ -638,7 +638,7 @@ const ProjectsPage: React.FC = () => {
                       <TableRow
                         key={row.id}
                         onClick={() => {
-                          if (user?.username === row.original.owner) {
+                          if (user?.username === row.original.owner || isAdmin) {
                             navigate(`/projects/${row.original.id}`);
                           } else {
                             toast({
