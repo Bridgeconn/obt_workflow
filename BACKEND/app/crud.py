@@ -960,28 +960,48 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                             logger.info(f"Verse {verse_number} in chapter {chapter_number} has been modified")
                             target_verse_path = target_chapter_path / verse_file_name
                             # Update the existing verse record
-                            existing_verse.size = verse_file_size
-                            existing_verse.name = verse_file_name
-                            existing_verse.text = ""
-                            existing_verse.tts = False
-                            existing_verse.stt = False
-                            existing_verse.modified = False
-                            existing_verse.format = verse_file.suffix.lstrip('.')
-                            existing_verse.stt_msg = ""
-                            existing_verse.tts_msg = ""
-                            existing_verse.tts_path = ""
+                            # existing_verse.size = verse_file_size
+                            # existing_verse.name = verse_file_name
+                            # existing_verse.text = ""
+                            # existing_verse.tts = False
+                            # existing_verse.stt = False
+                            # existing_verse.modified = False
+                            # existing_verse.format = verse_file.suffix.lstrip('.')
+                            # existing_verse.stt_msg = ""
+                            # existing_verse.tts_msg = ""
+                            # existing_verse.tts_path = ""
                             
                             # Replace the file in target path
-                            target_verse_path = target_chapter_path / verse_file_name
+                            # target_verse_path = target_chapter_path / verse_file_name
                             if target_verse_path.exists():
                                 os.remove(target_verse_path)
                             shutil.copy2(str(verse_file), str(target_verse_path))
                             
-                            # Add to tracking lists
+                              # Always update file metadata
+                            existing_verse.size = verse_file_size
+                            existing_verse.name = verse_file_name
+                            existing_verse.path = str(target_verse_path)
+                            existing_verse.format = verse_file.suffix.lstrip(".")
+
+                            if getattr(existing_verse, "modified", False):
+                                # ✅ PRESERVE manual edits/flags: do not touch text, modified, stt/tts flags & messages, tts_path
+                                logger.info(
+                                    f"Preserving manual text/flags for verse {verse_number} (modified=True)."
+                                )
+                            else:
+                                # 🔄 Not manually modified: reset for clean reprocessing
+                                existing_verse.text = ""
+                                existing_verse.stt = False
+                                existing_verse.stt_msg = ""
+                                existing_verse.tts = False
+                                existing_verse.tts_msg = ""
+                                existing_verse.tts_path = ""
+                                existing_verse.modified = False
+
                             chapter_verses_modified.append(verse_number)
                             chapter_modified = True
                         else:
-                            # Skip if file size matches (no changes)
+                            # Audio unchanged
                             skipped_verse_count += 1
                     else:
                         # New verse found, create new record

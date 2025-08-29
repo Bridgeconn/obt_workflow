@@ -651,6 +651,13 @@ async def convert_to_text(
             "script_lang": script_lang,
             "queued_count": 0,
         }
+    #  Reset approval only if we're actually going to re-transcribe
+    if getattr(chapter, "approved", False):
+        chapter.approved = False
+        db.add(chapter)
+        db.commit()
+        logger.info(f"[{current_time()}] Chapter {chapter.chapter_id} approval reset to False due to re-transcription.")
+
 
     crud.is_model_served(script_lang, "stt")
     # Call the separate function to test STT API
@@ -704,8 +711,14 @@ async def get_chapter_status(
     """
     Get the status of each verse in a chapter.
     """
-    # Validate project
-    project = crud.get_project(project_id, db, current_user)
+    # Access control
+    if getattr(current_user, "role", None) == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        # Owner-gated for non-admin users
+        project = crud.get_project(project_id, db, current_user)
     book=crud.get_book(db, project_id, book)
     chapter = crud.get_chapter(db ,book.book_id,chapter)
     # Retrieve verse statuses
