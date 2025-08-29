@@ -26,6 +26,7 @@ import {
   X,
   Archive,
   PackageOpen,
+  Trash2,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,6 +41,7 @@ import LanguageSelect from "@/components/LanguageSelect";
 import UploadDialog from "@/components/UploadDialog";
 import ArchiveDialog from "@/components/ArchiveDialog";
 import TranscriptionDialog from "@/components/TranscriptionDialog";
+import { DeleteDialog } from "@/components/DeleteDialog";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -85,6 +87,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     transcribeBook,
     archiveProject,
   } = useProjectDetailsStore();
+  const { user } = useAuthStore();
   const { servedModels, refetch } = useServedModels();
   const [scriptLanguage, setScriptLanguage] = useState("");
   const [audioLanguage, setAudioLanguage] = useState("");
@@ -124,6 +127,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [isFailedUploading, setIsFailedUploading] = useState(false);
   const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
   const [dialogBook, setDialogBook] = useState<Book | null>(null);
+  const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isTranscriptionStarted, setIsTranscriptionStarted] = useState(false);
 
   useEffect(() => {
@@ -613,6 +618,39 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   };
 
+  const handleDeleteBook = async (book: Book) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/projects/${project?.project_id}/books/${book.book}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const responseData = await response.json();
+        throw new Error(responseData.detail || "Failed to delete book");
+      }
+      toast({
+        variant: "success",
+        title: `Book ${book.book} deleted successfully`,
+      });
+    } catch (error) {
+      console.error("Error deleting book:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to delete book",
+        description: "Please try again later.",
+      });
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      await fetchProjectDetails(projectId);
+    }
+  };
+
   const handleDownloadUSFM = async (projectId: number, book: Book) => {
     try {
       const response = await fetch(
@@ -1080,7 +1118,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                         )}
                       </TableCell>
 
-                      <TableCell className="text-center">
+                      <TableCell className="text-center flex gap-4 items-center justify-center">
                         <Button
                           className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                             book.status === "inProgress" ||
@@ -1091,10 +1129,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               ? "opacity-50 cursor-not-allowed"
                               : "hover:bg-gray-700"
                           }`}
-                          disabled = {
+                          disabled={
                             book.status === "inProgress" ||
                             book.status === "converting" ||
-                            book.progress === "processing" || isTranscriptionStarted
+                            book.progress === "processing" ||
+                            isTranscriptionStarted
                           }
                           onClick={() => {
                             if (!scriptLanguage || !audioLanguage) {
@@ -1174,6 +1213,25 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             ? "Retry"
                             : "Convert to Text"}
                         </Button>
+                        {user?.role === "Admin" && (
+                          <button
+                            disabled={
+                              book.status === "inProgress" ||
+                              book.status === "converting" ||
+                              book.progress === "processing"
+                            }
+                            onClick={() => {
+                              setBookToDelete(book);
+                              setDeleteDialogOpen(true);
+                            }}
+                            title={`Delete Book ${book.book}`}
+                          >
+                            <Trash2
+                              size={20}
+                              className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                          </button>
+                        )}
                       </TableCell>
 
                       {/* USFM Download */}
@@ -1267,6 +1325,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 onClose={() => setArchiveDialogOpen(false)}
                 handleArchiveProject={handleArchiveProject}
               />
+            )}
+            {deleteDialogOpen && (
+            <DeleteDialog
+              isOpen={deleteDialogOpen}
+              onClose={() => setDeleteDialogOpen(false)}
+              book={bookToDelete}
+              handleDeleteBook={handleDeleteBook}
+            />
             )}
           </div>
         </>
