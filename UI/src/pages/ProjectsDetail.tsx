@@ -599,7 +599,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           description:
             "Please reach out to your Admin if you need to change the language.",
         });
-      }else{
+      } else {
         toast({
           title: "Language set successfully",
           variant: "success",
@@ -830,14 +830,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       {matchedLanguage && matchedLanguage.language_name}
                     </label>
                   </label>
-                  <button
-                    onClick={handleScriptLock}
-                    className="p-1.5 rounded-full text-green-600 hover:bg-green-100 transition-colors disabled:cursor-not-allowed"
-                    title="Confirm languages"
-                    disabled={user?.role !== "Admin" && scriptLocked}
-                  >
-                    <CheckCheck className="font-bold" />
-                  </button>
+                  {audioLanguage && scriptLanguage && (
+                    <button
+                      onClick={handleScriptLock}
+                      className="p-1.5 rounded-full text-green-600 hover:bg-green-100 transition-colors disabled:cursor-not-allowed"
+                      title="Confirm languages"
+                      disabled={user?.role !== "Admin" && scriptLocked}
+                    >
+                      <CheckCheck className="font-bold" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
