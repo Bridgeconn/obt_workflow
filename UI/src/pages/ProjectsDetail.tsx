@@ -141,6 +141,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     null
   );
 
+  const isOtherAdmin =
+    user?.role === "Admin" && project?.owner_id !== Number(user.user_id);
+
   useEffect(() => {
     const loadProject = async () => {
       try {
@@ -928,6 +931,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 className="flex items-center gap-2"
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload a book"
+                disabled={isOtherAdmin}
               >
                 <Upload className="w-4 h-4" />
                 {/* Upload Book */}
@@ -954,6 +958,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                   !archive ? setArchiveDialogOpen(true) : handleArchiveProject()
                 }
                 title={archive ? "Restore" : "Delete"}
+                disabled={isOtherAdmin}
               >
                 {archive ? <PackageOpen size={20} /> : <Archive size={20} />}
               </Button>
@@ -1036,7 +1041,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             const chapterContent = (
                               <div
                                 key={chapter.chapter_id}
-                                className={`relative w-9 h-9 flex items-center cursor-pointer justify-center rounded-full text-lg  font-medium 
+                                className={`relative w-9 h-9 flex items-center cursor-pointer justify-center rounded-full text-lg font-medium 
                                   ${
                                     chapter.status === "approved"
                                       ? "text-blue-700 border border-blue-600 bg-blue-200 cursor-pointer"
@@ -1059,8 +1064,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                       ? "bg-red-300 text-white border-red-600"
                                       : "text-gray-700 border border-gray-300"
                                   }
+                                  ${
+                                    isOtherAdmin
+                                      ? "!cursor-default"
+                                      : "cursor-pointer"
+                                  }
                                 `}
-                                onClick={() => openChapterModal(chapter, book)}
+                                onClick={() => {
+                                  if (!isOtherAdmin) {
+                                    openChapterModal(chapter, book);
+                                  }
+                                }}
                               >
                                 {chapter.missing_verses?.length > 0 &&
                                   book.progress !== "processing" && (
@@ -1233,7 +1247,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               book.status === "inProgress" ||
                               book.status === "converting" ||
                               book.progress === "processing" ||
-                              isTranscriptionStarted || !scriptLocked
+                              isTranscriptionStarted ||
+                              !scriptLocked ||
+                              isOtherAdmin
                             }
                             onClick={() => {
                               if (!scriptLanguage || !audioLanguage) {
@@ -1348,7 +1364,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                             !book.chapters.every(
                               (chapter) => chapter.approved
                             ) ||
-                            downloadingBookId === book.book_id
+                            downloadingBookId === book.book_id ||
+                            isOtherAdmin
                           }
                           onClick={() =>
                             handleDownloadUSFM(project.project_id, book)
