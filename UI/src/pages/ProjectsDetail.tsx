@@ -28,6 +28,7 @@ import {
   PackageOpen,
   CheckCheck,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -135,6 +136,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [isTranscriptionStarted, setIsTranscriptionStarted] = useState(false);
 
   const [scriptLocked, setScriptLocked] = useState(false);
+  const [downloadingProject, setDownloadingProject] = useState(false);
+  const [downloadingBookId, setDownloadingBookId] = useState<number | null>(
+    null
+  );
 
   useEffect(() => {
     const loadProject = async () => {
@@ -724,6 +729,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const handleDownloadUSFM = async (projectId: number, book: Book) => {
     try {
+      setDownloadingBookId(book.book_id);
       const response = await fetch(
         `${BASE_URL}/generate-usfm/?project_id=${projectId}&book=${book.book}`,
         {
@@ -765,6 +771,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         title:
           error instanceof Error ? error?.message : "Failed to generate USFM",
       });
+    } finally {
+      setDownloadingBookId(null);
     }
   };
 
@@ -791,6 +799,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const handleDownloadProject = async () => {
     try {
+      setDownloadingProject(true);
       const projectId = project?.project_id;
       if (!projectId) return;
 
@@ -838,6 +847,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
             ? error?.message
             : "Failed to download project",
       });
+    } finally {
+      setDownloadingProject(false);
     }
   };
 
@@ -925,10 +936,17 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 size="icon"
                 variant="outline"
                 onClick={handleDownloadProject}
-                disabled={!project.books.some((book) => book.approved)}
+                disabled={
+                  !project.books.some((book) => book.approved) ||
+                  downloadingProject
+                }
                 title="Download Project"
               >
-                <Download size={20} />
+                {downloadingProject ? (
+                  <Loader2 className="animate-spin w-5 h-5 text-gray-500" />
+                ) : (
+                  <Download size={20} />
+                )}
               </Button>
               <Button
                 variant="outline"
@@ -1215,7 +1233,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               book.status === "inProgress" ||
                               book.status === "converting" ||
                               book.progress === "processing" ||
-                              isTranscriptionStarted
+                              isTranscriptionStarted || !scriptLocked
                             }
                             onClick={() => {
                               if (!scriptLanguage || !audioLanguage) {
@@ -1327,13 +1345,20 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           className="w-full md:w-auto"
                           disabled={
                             book.chapters.length === 0 ||
-                            !book.chapters.every((chapter) => chapter.approved)
+                            !book.chapters.every(
+                              (chapter) => chapter.approved
+                            ) ||
+                            downloadingBookId === book.book_id
                           }
                           onClick={() =>
                             handleDownloadUSFM(project.project_id, book)
                           }
                         >
-                          <Download size={20} />
+                          {downloadingBookId === book.book_id ? (
+                            <Loader2 className="animate-spin w-5 h-5 text-gray-500" />
+                          ) : (
+                            <Download size={20} />
+                          )}
                         </Button>
                       </TableCell>
                     </TableRow>
