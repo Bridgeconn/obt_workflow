@@ -150,7 +150,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     (state) => state.chapterVerses[chapterKey]
   );
 
-  const [fontSize, setFontSize] = useState(16);
+  const [fontSize, setFontSize] = useState(24);
   const [currentVerse, setCurrentVerse] = useState<Verse | null>(null);
   const [approved, setApproved] = useState(chapter.approved);
   const [isConvertingChapters, setIsConvertingChapters] = useState<
@@ -450,8 +450,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   };
 
   const handleFontSizeChange = (value: number[]) => setFontSize(value[0]);
-  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 28));
-  const decreaseFontSize = () => setFontSize((prev) => Math.max(prev - 2, 12));
+  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 32));
+  const decreaseFontSize = () => setFontSize((prev) => Math.max(prev - 2, 14));
 
   const checkProgress = () => {
     if (!isConvertingChapters[chapter.chapter_id]) return null;
@@ -481,7 +481,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCloseModal()}>
-      <DialogContent className="max-w-6xl h-[80vh] flex flex-col">
+      <DialogContent className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] flex flex-col">
         <DialogHeader className="mt-4">
           <DialogTitle className="flex justify-between items-center gap-4 flex-wrap">
             <div className="flex items-center">
