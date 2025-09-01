@@ -100,12 +100,6 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
           <span className="font-semibold pt-2">{selectedBook.book}</span>
           <div className="flex items-center overflow-auto gap-2 max-w-full flex-wrap">
             {selectedBook.chapters
-              .filter(
-                (chapter) =>
-                  chapter.status === "notTranscribed" ||
-                  chapter.status === "transcriptionError" ||
-                  chapter.status === "error"
-              )
               .map((chapter) => {
                 const isSelected = selectedChapters.some(
                   (ch) => ch.chapter_id === chapter.chapter_id

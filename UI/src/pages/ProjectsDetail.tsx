@@ -27,6 +27,7 @@ import {
   Archive,
   PackageOpen,
   CheckCheck,
+  Trash2,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,6 +42,7 @@ import LanguageSelect from "@/components/LanguageSelect";
 import UploadDialog from "@/components/UploadDialog";
 import ArchiveDialog from "@/components/ArchiveDialog";
 import TranscriptionDialog from "@/components/TranscriptionDialog";
+import { DeleteDialog } from "@/components/DeleteDialog";
 import { hasPendingChanges } from "@/utils/chapterStorage";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
@@ -128,6 +130,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [isFailedUploading, setIsFailedUploading] = useState(false);
   const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
   const [dialogBook, setDialogBook] = useState<Book | null>(null);
+  const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isTranscriptionStarted, setIsTranscriptionStarted] = useState(false);
 
   const [scriptLocked, setScriptLocked] = useState(false);
 
@@ -319,8 +324,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           const updatedBooks = prevProject.books.map((b) => {
             if (b.book_id === book.book_id) {
               // Determine book status based on chapters
-              const allChaptersNotTranscribed = updatedChapters.every(
-                (ch) => ch.status === "notTranscribed" || ch.status === "error"
+              const allChaptersNotTranscribed = updatedChapters.some(
+                (ch) => ch.status === "notTranscribed"
               );
               const hasInProgressChapters = updatedChapters.some(
                 (ch) => ch.status === "inProgress"
@@ -489,6 +494,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const handleTranscribe = async (bookId: number, selectedChapters: any) => {
+    setIsTranscriptionStarted(true);
     const book = project?.books.find((b) => b.book_id === bookId);
     if (!book) return;
     const validChapterIds = new Set(book.chapters.map((ch) => ch.chapter_id));
@@ -516,22 +522,10 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       });
       console.error("Error transcribing book:", error);
     } finally {
-      const projectState = useProjectDetailsStore.getState().project;
-      const updatedBook = projectState?.books.find((b) => b.book_id === bookId);
-      const failedChapterIds = updatedBook?.chapters
-        .filter((ch) => ch.status === "transcriptionError")
-        .map((ch) => ch.chapter_id);
-
-      if (failedChapterIds && failedChapterIds?.length > 0) {
-        const remainingChapters = selectedChapters.filter(
-          (ch) => !failedChapterIds.includes(ch.chapter_id)
-        );
-        setSelectedChapters(remainingChapters);
-        if (remainingChapters.length === 0) {
-          setSelectedBook("");
-        }
-      }
+      setSelectedChapters([]);
+      setSelectedBook("");
       sessionStorage.removeItem("ConvertingBook");
+      setIsTranscriptionStarted(false);
     }
   };
 
@@ -632,7 +626,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           description:
             "Please reach out to your Admin if you need to change the language.",
         });
-      }else{
+      } else {
         toast({
           title: "Language set successfully",
           variant: "success",
@@ -692,6 +686,39 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       setSelectedChapter({ ...chapter, bookName: book.book });
       setModalOpen(true);
       return;
+    }
+  };
+
+  const handleDeleteBook = async (book: Book) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/projects/${project?.project_id}/books/${book.book}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const responseData = await response.json();
+        throw new Error(responseData.detail || "Failed to delete book");
+      }
+      toast({
+        variant: "success",
+        title: `Book ${book.book} deleted successfully`,
+      });
+    } catch (error) {
+      console.error("Error deleting book:", error);
+      toast({
+        variant: "destructive",
+        title: "Failed to delete book",
+        description: "Please try again later.",
+      });
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+      await fetchProjectDetails(projectId);
     }
   };
 
@@ -863,14 +890,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       {matchedLanguage && matchedLanguage.language_name}
                     </label>
                   </label>
-                  <button
-                    onClick={handleScriptLock}
-                    className="p-1.5 rounded-full text-green-600 hover:bg-green-100 transition-colors disabled:cursor-not-allowed"
-                    title="Confirm languages"
-                    disabled={user?.role !== "Admin" && scriptLocked}
-                  >
-                    <CheckCheck className="font-bold" />
-                  </button>
+                  {audioLanguage && scriptLanguage && (
+                    <button
+                      onClick={handleScriptLock}
+                      className="p-1.5 rounded-full text-green-600 hover:bg-green-100 transition-colors disabled:cursor-not-allowed"
+                      title="Confirm languages"
+                      disabled={user?.role !== "Admin" && scriptLocked}
+                    >
+                      <CheckCheck className="font-bold" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -961,6 +990,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                     </TableHead>
                     <TableHead className="font-semibold text-center text-primary px-3 py-3">
                       Status
+                    </TableHead>
+                    <TableHead className="font-semibold text-center text-primary px-3 py-3">
+                      Action
                     </TableHead>
                     <TableHead className="font-semibold text-center text-primary px-3 py-3">
                       USFM
@@ -1120,79 +1152,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                           </Button>
                         ) : (
                           <Button
-                            className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
-                              book.status === "inProgress" ||
-                              book.status === "converting" ||
-                              book.progress === "processing" ||
-                              !scriptLanguage ||
-                              !audioLanguage
-                                ? "opacity-50 cursor-not-allowed"
-                                : "hover:bg-gray-700"
-                            }`}
-                            onClick={() => {
-                              if (!scriptLanguage || !audioLanguage) {
-                                toast({
-                                  variant: "destructive",
-                                  title: "Please select the Audio Language",
-                                });
-                                return;
-                              }
-                              if (
-                                book.status === "inProgress" ||
-                                book.status === "converting" ||
-                                book.progress === "processing"
-                              ) {
-                                return;
-                              }
-                              const allowedStatuses = [
-                                "notTranscribed",
-                                "error",
-                                "transcriptionError",
-                              ];
-                              const hasTranscriptionInProgress =
-                                project?.books?.some((b) =>
-                                  b.chapters.some(
-                                    (ch) => ch.status === "inProgress"
-                                  )
-                                );
-
-                              if (hasTranscriptionInProgress) {
-                                toast({
-                                  variant: "destructive",
-                                  title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
-                                });
-                                return;
-                              }
-                              const isConvertProcessing =
-                                sessionStorage.getItem("ConvertingBook");
-
-                              if (isConvertProcessing) {
-                                const convertProcessingObj =
-                                  JSON.parse(isConvertProcessing);
-
-                                const isDifferentProject =
-                                  convertProcessingObj.projectName !==
-                                  project?.name;
-                                const isDifferentBook =
-                                  convertProcessingObj.bookId !== book.book_id;
-
-                                if (
-                                  isDifferentProject ||
-                                  (!allowedStatuses.includes(
-                                    book.status || ""
-                                  ) &&
-                                    isDifferentBook)
-                                ) {
-                                  toast({
-                                    variant: "destructive",
-                                    title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
-                                  });
-                                  return;
-                                }
-                              }
-                              setDialogBook(book);
-                              setTranscriptionDialogOpen(true);
-                            }}
+                            className="font-bold px-4 py-2 w-36 rounded-lg"
+                            variant="outline"
+                            disabled
                           >
                             {book.status === "inProgress" ||
                             book.status === "converting" ||
@@ -1218,20 +1180,138 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                 "error",
                                 "transcriptionError",
                                 "conversionError",
+                                "apiError",
                               ].includes(book.status || "") &&
                                 [
                                   "Conversion failed",
                                   "Transcription failed",
+                                  "Failed to fetch chapter status",
                                   "",
                                 ].includes(book.progress || "")) ? (
-                              "Retry"
+                              "Error"
                             ) : book.status === "notTranscribed" &&
                               book.progress === "" ? (
-                              "Convert to Text"
+                              "Not Transcribed"
                             ) : (
-                              "error"
+                              "Unknown Status"
                             )}
                           </Button>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="text-center flex gap-4 items-center justify-center">
+                        <Button
+                          className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
+                            book.status === "inProgress" ||
+                            book.status === "converting" ||
+                            book.progress === "processing" ||
+                            !scriptLanguage ||
+                            !audioLanguage
+                              ? "opacity-50 cursor-not-allowed"
+                              : "hover:bg-gray-700"
+                          }`}
+                          disabled={
+                            book.status === "inProgress" ||
+                            book.status === "converting" ||
+                            book.progress === "processing" ||
+                            isTranscriptionStarted
+                          }
+                          onClick={() => {
+                            if (!scriptLanguage || !audioLanguage) {
+                              toast({
+                                variant: "destructive",
+                                title: "Please select the Audio Language",
+                              });
+                              return;
+                            }
+                            if (
+                              book.status === "inProgress" ||
+                              book.status === "converting" ||
+                              book.progress === "processing"
+                            ) {
+                              return;
+                            }
+                            const allowedStatuses = [
+                              "notTranscribed",
+                              "error",
+                              "transcriptionError",
+                            ];
+                            const hasTranscriptionInProgress =
+                              project?.books?.some((b) =>
+                                b.chapters.some(
+                                  (ch) => ch.status === "inProgress"
+                                )
+                              );
+
+                            if (hasTranscriptionInProgress) {
+                              toast({
+                                variant: "destructive",
+                                title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
+                              });
+                              return;
+                            }
+                            const isConvertProcessing =
+                              sessionStorage.getItem("ConvertingBook");
+
+                            if (isConvertProcessing) {
+                              const convertProcessingObj =
+                                JSON.parse(isConvertProcessing);
+
+                              const isDifferentProject =
+                                convertProcessingObj.projectName !==
+                                project?.name;
+                              const isDifferentBook =
+                                convertProcessingObj.bookId !== book.book_id;
+
+                              if (
+                                isDifferentProject ||
+                                (!allowedStatuses.includes(book.status || "") &&
+                                  isDifferentBook)
+                              ) {
+                                toast({
+                                  variant: "destructive",
+                                  title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
+                                });
+                                return;
+                              }
+                            }
+                            setDialogBook(book);
+                            setTranscriptionDialogOpen(true);
+                          }}
+                        >
+                          {(book.status === "error" &&
+                            book.progress === "Transcription failed") ||
+                          ([
+                            "error",
+                            "transcriptionError",
+                            "conversionError",
+                          ].includes(book.status || "") &&
+                            [
+                              "Conversion failed",
+                              "Transcription failed",
+                              "",
+                            ].includes(book.progress || ""))
+                            ? "Retry"
+                            : "Convert to Text"}
+                        </Button>
+                        {user?.role === "Admin" && (
+                          <button
+                            disabled={
+                              book.status === "inProgress" ||
+                              book.status === "converting" ||
+                              book.progress === "processing"
+                            }
+                            onClick={() => {
+                              setBookToDelete(book);
+                              setDeleteDialogOpen(true);
+                            }}
+                            title={`Delete Book ${book.book}`}
+                          >
+                            <Trash2
+                              size={20}
+                              className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                          </button>
                         )}
                       </TableCell>
 
@@ -1326,6 +1406,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 onClose={() => setArchiveDialogOpen(false)}
                 handleArchiveProject={handleArchiveProject}
               />
+            )}
+            {deleteDialogOpen && (
+            <DeleteDialog
+              isOpen={deleteDialogOpen}
+              onClose={() => setDeleteDialogOpen(false)}
+              book={bookToDelete}
+              handleDeleteBook={handleDeleteBook}
+            />
             )}
           </div>
         </>

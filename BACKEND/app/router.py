@@ -518,7 +518,14 @@ async def update_script_lang(
     """
     Update the script_lang field in the Project table for a given project_id.
     """
-    project=crud.get_project(project_id,db,current_user)
+    # project=crud.get_project(project_id,db,current_user)
+    if getattr(current_user, "role", None) == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        project = crud.get_project(project_id, db, current_user)  # owner-gated
+
     project.script_lang = script_lang
     db.commit()
     db.refresh(project)
@@ -540,7 +547,13 @@ async def update_audio_lang(
     """
     Update the audio_lang field in the Project table for a given project_id.
     """
-    project=crud.get_project(project_id,db,current_user)
+    # project=crud.get_project(project_id,db,current_user)
+    if getattr(current_user, "role", None) == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        project = crud.get_project(project_id, db, current_user)
     # Update the audio_lang field
     project.audio_lang = audio_lang
     db.commit()
