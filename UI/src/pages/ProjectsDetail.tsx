@@ -26,6 +26,7 @@ import {
   X,
   Archive,
   PackageOpen,
+  CheckCheck,
   Trash2,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
@@ -131,6 +132,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isTranscriptionStarted, setIsTranscriptionStarted] = useState(false);
 
+  const [scriptLocked, setScriptLocked] = useState(false);
+
   useEffect(() => {
     const loadProject = async () => {
       try {
@@ -173,6 +176,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
           (language) => language.language_name === project.script_lang
         );
         setScriptLanguage(String(selectedScriptLanguage?.id));
+        setScriptLocked(true);
       }
 
       setLoading(false);
@@ -540,6 +544,71 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       });
     }
   };
+
+  const handleScriptLock = async () => {
+    if (!project || !audioLanguage || !scriptLanguage) return;
+
+    const token = useAuthStore.getState().token;
+    const selectedAudioLanguage = source_languages.find(
+      (lang) => String(lang.id) === audioLanguage
+    );
+    const selectedScriptLanguage = major_languages.find(
+      (lang) => String(lang.id) === scriptLanguage
+    );
+
+    if (!selectedAudioLanguage || !selectedScriptLanguage) {
+      console.error("Invalid language selection.");
+      return;
+    }
+    try {
+      //Update audio language
+      await fetch(
+        `${BASE_URL}/projects/${project.project_id}/audio_language/${selectedAudioLanguage.language_name}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      //Update script language
+      await fetch(
+        `${BASE_URL}/projects/${project.project_id}/script_language/${selectedScriptLanguage.major_language}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      setScriptLocked(true);
+      if (user?.role !== "Admin") {
+        toast({
+          title: "Language set successfully",
+          variant: "success",
+          description:
+            "Please reach out to your Admin if you need to change the language.",
+        });
+      } else {
+        toast({
+          title: "Language set successfully",
+          variant: "success",
+        });
+      }
+    } catch (error) {
+      console.error("Error updating languages:", error);
+      toast({
+        title: "Failed to update",
+        variant: "destructive",
+        description: "Could not update languages. Try again later.",
+      });
+    }
+  };
+
   const handleLanguageChange = async (selectedId: string) => {
     const id = Number(selectedId);
     const selectedAudioLanguage = source_languages.find(
@@ -559,6 +628,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       return;
     }
 
+    setScriptLanguage(String(selectedScriptLanguage.id));
+
     //fetch the served models
     await refetch();
 
@@ -566,39 +637,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       selectedAudioLanguage.script_language,
       selectedScriptLanguage.major_language
     );
-    const token = useAuthStore.getState().token;
-    try {
-      await fetch(
-        `${BASE_URL}/projects/${project?.project_id}/audio_language/${selectedAudioLanguage.language_name}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      await fetch(
-        `${BASE_URL}/projects/${project?.project_id}/script_language/${selectedScriptLanguage.major_language}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-    } catch (error) {
-      console.log("error", error);
-    } finally {
-      setScriptLanguage(String(selectedScriptLanguage?.id));
-      toast({
-        title: "Language set successfully",
-        variant: "success",
-        description:
-          "Please reach out to your Admin if you need to change the language.",
-      });
-    }
   };
 
   const openChapterModal = (chapter: Chapter, book: Book) => {
@@ -808,7 +846,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 <LanguageSelect
                   onLanguageChange={handleLanguageChange}
                   selectedLanguageId={audioLanguage}
-                  selectedScriptLanguage={scriptLanguage}
+                  disabled={scriptLocked && user?.role !== "Admin"}
                 />
 
                 {/* Script Language */}
@@ -819,6 +857,16 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       {matchedLanguage && matchedLanguage.language_name}
                     </label>
                   </label>
+                  {audioLanguage && scriptLanguage && (
+                    <button
+                      onClick={handleScriptLock}
+                      className="p-1.5 rounded-full text-green-600 hover:bg-green-100 transition-colors disabled:cursor-not-allowed"
+                      title="Confirm languages"
+                      disabled={user?.role !== "Admin" && scriptLocked}
+                    >
+                      <CheckCheck className="font-bold" />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

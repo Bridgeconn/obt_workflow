@@ -150,7 +150,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     (state) => state.chapterVerses[chapterKey]
   );
 
-  const [fontSize, setFontSize] = useState(20);
+  const [fontSize, setFontSize] = useState(24);
   const [currentVerse, setCurrentVerse] = useState<Verse | null>(null);
   const [approved, setApproved] = useState(chapter.approved);
   const [isConvertingChapters, setIsConvertingChapters] = useState<
