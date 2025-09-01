@@ -1199,120 +1199,124 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                         )}
                       </TableCell>
 
-                      <TableCell className="text-center flex gap-4 items-center justify-center">
-                        <Button
-                          className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
-                            book.status === "inProgress" ||
-                            book.status === "converting" ||
-                            book.progress === "processing" ||
-                            !scriptLanguage ||
-                            !audioLanguage
-                              ? "opacity-50 cursor-not-allowed"
-                              : "hover:bg-gray-700"
-                          }`}
-                          disabled={
-                            book.status === "inProgress" ||
-                            book.status === "converting" ||
-                            book.progress === "processing" ||
-                            isTranscriptionStarted
-                          }
-                          onClick={() => {
-                            if (!scriptLanguage || !audioLanguage) {
-                              toast({
-                                variant: "destructive",
-                                title: "Please select the Audio Language",
-                              });
-                              return;
-                            }
-                            if (
+                      <TableCell className="text-center align-middle">
+                        <div className="flex items-center justify-center h-full gap-4">
+                          <Button
+                            className={`text-white font-bold px-4 py-2 w-36 rounded-lg ${
                               book.status === "inProgress" ||
                               book.status === "converting" ||
-                              book.progress === "processing"
-                            ) {
-                              return;
-                            }
-                            const allowedStatuses = [
-                              "notTranscribed",
-                              "error",
-                              "transcriptionError",
-                            ];
-                            const hasTranscriptionInProgress =
-                              project?.books?.some((b) =>
-                                b.chapters.some(
-                                  (ch) => ch.status === "inProgress"
-                                )
-                              );
-
-                            if (hasTranscriptionInProgress) {
-                              toast({
-                                variant: "destructive",
-                                title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
-                              });
-                              return;
-                            }
-                            const isConvertProcessing =
-                              sessionStorage.getItem("ConvertingBook");
-
-                            if (isConvertProcessing) {
-                              const convertProcessingObj =
-                                JSON.parse(isConvertProcessing);
-
-                              const isDifferentProject =
-                                convertProcessingObj.projectName !==
-                                project?.name;
-                              const isDifferentBook =
-                                convertProcessingObj.bookId !== book.book_id;
-
-                              if (
-                                isDifferentProject ||
-                                (!allowedStatuses.includes(book.status || "") &&
-                                  isDifferentBook)
-                              ) {
-                                toast({
-                                  variant: "destructive",
-                                  title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
-                                });
-                                return;
-                              }
-                            }
-                            setDialogBook(book);
-                            setTranscriptionDialogOpen(true);
-                          }}
-                        >
-                          {(book.status === "error" &&
-                            book.progress === "Transcription failed") ||
-                          ([
-                            "error",
-                            "transcriptionError",
-                            "conversionError",
-                          ].includes(book.status || "") &&
-                            [
-                              "Conversion failed",
-                              "Transcription failed",
-                              "",
-                            ].includes(book.progress || ""))
-                            ? "Retry"
-                            : "Convert to Text"}
-                        </Button>
-                        {user?.role === "Admin" && (
-                          <button
+                              book.progress === "processing" ||
+                              !scriptLanguage ||
+                              !audioLanguage
+                                ? "opacity-50 cursor-not-allowed"
+                                : "hover:bg-gray-700"
+                            }`}
                             disabled={
                               book.status === "inProgress" ||
                               book.status === "converting" ||
-                              book.progress === "processing"
+                              book.progress === "processing" ||
+                              isTranscriptionStarted
                             }
                             onClick={() => {
-                              setBookToDelete(book);
-                              setDeleteDialogOpen(true);
+                              if (!scriptLanguage || !audioLanguage) {
+                                toast({
+                                  variant: "destructive",
+                                  title: "Please select the Audio Language",
+                                });
+                                return;
+                              }
+                              if (
+                                book.status === "inProgress" ||
+                                book.status === "converting" ||
+                                book.progress === "processing"
+                              ) {
+                                return;
+                              }
+                              const allowedStatuses = [
+                                "notTranscribed",
+                                "error",
+                                "transcriptionError",
+                              ];
+                              const hasTranscriptionInProgress =
+                                project?.books?.some((b) =>
+                                  b.chapters.some(
+                                    (ch) => ch.status === "inProgress"
+                                  )
+                                );
+
+                              if (hasTranscriptionInProgress) {
+                                toast({
+                                  variant: "destructive",
+                                  title: `Transcription is already in progress in this project. Please wait before selecting another chapter.`,
+                                });
+                                return;
+                              }
+                              const isConvertProcessing =
+                                sessionStorage.getItem("ConvertingBook");
+
+                              if (isConvertProcessing) {
+                                const convertProcessingObj =
+                                  JSON.parse(isConvertProcessing);
+
+                                const isDifferentProject =
+                                  convertProcessingObj.projectName !==
+                                  project?.name;
+                                const isDifferentBook =
+                                  convertProcessingObj.bookId !== book.book_id;
+
+                                if (
+                                  isDifferentProject ||
+                                  (!allowedStatuses.includes(
+                                    book.status || ""
+                                  ) &&
+                                    isDifferentBook)
+                                ) {
+                                  toast({
+                                    variant: "destructive",
+                                    title: `A book in ${convertProcessingObj.projectName} is currently being converted. Please wait until it is complete.`,
+                                  });
+                                  return;
+                                }
+                              }
+                              setDialogBook(book);
+                              setTranscriptionDialogOpen(true);
                             }}
-                            title={`Delete Book ${book.book}`}
                           >
-                            <Trash2
-                              size={20}
-                              className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                            />
-                          </button>
-                        )}
+                            {(book.status === "error" &&
+                              book.progress === "Transcription failed") ||
+                            ([
+                              "error",
+                              "transcriptionError",
+                              "conversionError",
+                            ].includes(book.status || "") &&
+                              [
+                                "Conversion failed",
+                                "Transcription failed",
+                                "",
+                              ].includes(book.progress || ""))
+                              ? "Retry"
+                              : "Convert to Text"}
+                          </Button>
+                          {user?.role === "Admin" && (
+                            <button
+                              disabled={
+                                book.status === "inProgress" ||
+                                book.status === "converting" ||
+                                book.progress === "processing"
+                              }
+                              onClick={() => {
+                                setBookToDelete(book);
+                                setDeleteDialogOpen(true);
+                              }}
+                              title={`Delete Book ${book.book}`}
+                            >
+                              <Trash2
+                                size={20}
+                                className="cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              />
+                            </button>
+                          )}
+                        </div>
                       </TableCell>
 
                       {/* USFM Download */}
@@ -1408,12 +1412,12 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
               />
             )}
             {deleteDialogOpen && (
-            <DeleteDialog
-              isOpen={deleteDialogOpen}
-              onClose={() => setDeleteDialogOpen(false)}
-              book={bookToDelete}
-              handleDeleteBook={handleDeleteBook}
-            />
+              <DeleteDialog
+                isOpen={deleteDialogOpen}
+                onClose={() => setDeleteDialogOpen(false)}
+                book={bookToDelete}
+                handleDeleteBook={handleDeleteBook}
+              />
             )}
           </div>
         </>
