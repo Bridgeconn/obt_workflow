@@ -598,6 +598,43 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
       try {
         const book = currentProject.books.find((b) => b.book_id === bookId);
         if (!book) throw new Error("Book not found");
+        // 🔹 Reset selected chapters before transcription starts
+        set((state) => {
+          if (!state.project) return {};
+
+          const updatedBooks = state.project.books.map((b) => {
+            if (b.book_id === bookId && b?.chapters.length) {
+              const updatedChapters = b.chapters.map((ch) => {
+                if (
+                  selectedChapters.some((sc) => sc.chapter_id === ch.chapter_id)
+                ) {
+                  return {
+                    ...ch,
+                    status: "inProgress",
+                    progress: "Calculating",
+                    approved: false,
+                  };
+                }
+                return ch;
+              });
+
+              return {
+                ...b,
+                chapters: updatedChapters,
+                status: calculateBookStatus(updatedChapters),
+                progress: "",
+              };
+            }
+            return b;
+          });
+
+          return {
+            project: {
+              ...state.project,
+              books: updatedBooks,
+            },
+          };
+        });
         let hasErrors = false;
         let totalChaptersProcessed = 0;
 
@@ -647,41 +684,6 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         // Sequential chapter transcription
         // for (const chapter of book.chapters) {  --> removing for now for adding chapter wise convertion
         for (const chapter of selectedChapters) {
-          // 🔹 Reset selected chapters before transcription starts
-          set((state) => {
-            if (!state.project) return {};
-
-            const updatedBooks = state.project.books.map((b) => {
-              if (b.book_id === bookId && b?.chapters.length) {
-                const updatedChapters = b.chapters.map((ch) => {
-                  if (chapter.chapter_id === ch.chapter_id) {
-                    return {
-                      ...ch,
-                      status: "inProgress",
-                      progress: "Calculating",
-                      approved: false,
-                    };
-                  }
-                  return ch;
-                });
-
-                return {
-                  ...b,
-                  chapters: updatedChapters,
-                  status: calculateBookStatus(updatedChapters),
-                  progress: "",
-                };
-              }
-              return b;
-            });
-
-            return {
-              project: {
-                ...state.project,
-                books: updatedBooks,
-              },
-            };
-          });
           // Set progress for current chapter
           useTranscriptionTrackingStore
             .getState()
