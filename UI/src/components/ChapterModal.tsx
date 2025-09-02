@@ -374,7 +374,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   };
 
   const handleFontSizeChange = (value: number[]) => setFontSize(value[0]);
-  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 32));
+  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 36));
   const decreaseFontSize = () => setFontSize((prev) => Math.max(prev - 2, 14));
 
   const checkProgress = () => {

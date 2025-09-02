@@ -255,19 +255,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
     if (!book) return;
 
-    const transcribedIds = new Set(
-      book.chapters
-        .filter((ch) => ["transcribed"].includes(ch.status || ""))
-        .map((ch) => ch.chapter_id)
-    );
-
-    const updated = selectedChapters.filter(
-      (ch) => !transcribedIds.has(ch.chapter_id)
-    );
-
-    if (updated.length !== selectedChapters.length) {
-      setSelectedChapters(updated);
-      if (updated.length === 0) setSelectedBook("");
+    if (selectedChapters.length > 0) {
+      setSelectedChapters(selectedChapters);
+      if (selectedChapters.length === 0) setSelectedBook("");
     }
   }, [project, selectedBook, selectedChapters]);
 
