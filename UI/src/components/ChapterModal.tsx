@@ -589,16 +589,30 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
             >
               {approved ? "Unapprove" : "Approve"}
             </Button>
-            <Button
-              onClick={handleConvertToSpeech}
-              disabled={
-                isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+            <div
+              onMouseEnter={() =>
+                toast({
+                  title: "Feature temporarily unavailable",
+                  description:
+                    "Convert to speech is currently disabled as requested.",
+                  variant: "destructive",
+                })
               }
+              className="cursor-not-allowed"
             >
-              {isConvertingChapters[chapter.chapter_id]
-                ? checkProgress()
-                : "Convert to Speech"}
-            </Button>
+              <Button
+                onClick={handleConvertToSpeech}
+                disabled
+                className="cursor-not-allowed"
+                // disabled={
+                //   isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+                // }
+              >
+                {isConvertingChapters[chapter.chapter_id]
+                  ? checkProgress()
+                  : "Convert to Speech"}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
