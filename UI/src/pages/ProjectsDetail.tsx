@@ -492,7 +492,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   };
 
   const handleTranscribe = async (bookId: number, selectedChapters: any) => {
-    setIsTranscriptionStarted(true);
     const book = project?.books.find((b) => b.book_id === bookId);
     if (!book) return;
     const validChapterIds = new Set(book.chapters.map((ch) => ch.chapter_id));
@@ -506,6 +505,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       });
       return;
     }
+    setIsTranscriptionStarted(true);
     try {
       sessionStorage.setItem(
         "ConvertingBook",
