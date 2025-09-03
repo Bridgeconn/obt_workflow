@@ -128,7 +128,7 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
           </div>
         </div>
         <DialogFooter className="mt-4">
-          <Button onClick={onTranscribe}>Proceed</Button>
+          <Button onClick={onTranscribe} disabled={selectedChapters.length === 0}>Proceed</Button>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
