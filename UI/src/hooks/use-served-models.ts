@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE_URL = import.meta.env.VITE_AI_BASE_URL;
+const API_TOKEN = import.meta.env.VITE_AI_API_TOKEN;
 
 interface ServedModel {
   modelName: string;
@@ -22,11 +23,10 @@ export const useServedModels = (): UseServedModelsReturn => {
   const { toast } = useToast();
 
   const fetchServedModels = async () => {
-    const api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3";
     const response = await fetch(`${BASE_URL}/model/served-models`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${api_token}`,
+        Authorization: `Bearer ${API_TOKEN}`,
         Accept: "application/json",
       },
     });

@@ -87,7 +87,7 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl overflow-auto">
         <DialogHeader>
           <DialogTitle>
             Transcribe {selectedBook.book} audio to text
@@ -96,16 +96,10 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
             Select chapters to transcribe
           </p>
         </DialogHeader>
-        <div className="flex items-center space-x-6 mt-2">
-          <span className="font-semibold">{selectedBook.book}</span>
-          <div className="flex space-x-2">
+        <div className="flex overflow-auto space-x-6 mt-2">
+          <span className="font-semibold pt-2">{selectedBook.book}</span>
+          <div className="flex items-center overflow-auto gap-2 max-w-full flex-wrap">
             {selectedBook.chapters
-              .filter(
-                (chapter) =>
-                  chapter.status === "notTranscribed" ||
-                  chapter.status === "transcriptionError" ||
-                  chapter.status === "error"
-              )
               .map((chapter) => {
                 const isSelected = selectedChapters.some(
                   (ch) => ch.chapter_id === chapter.chapter_id
@@ -117,7 +111,7 @@ const TranscriptionDialog: React.FC<TranscriptionDialogProps> = ({
                 return (
                   <button
                     key={chapter.chapter_id}
-                    className={`w-10 h-10 rounded-full border border-gray-300 text-base font-bold ${
+                    className={`w-10 h-10 rounded-full border border-gray-300 text-base font-bold flex-shrink-0 ${
                       isSelected
                         ? "bg-red-300 text-white border-red-600"
                         : disabled

@@ -13,6 +13,13 @@ import { Textarea } from "./ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { Slider } from "@/components/ui/slider";
 import AudioPlayer from "./AudioPlayer";
+import {
+  saveVerseToLocalStorage,
+  loadVersesFromLocalStorage,
+  removeVerseFromLocalStorage,
+  clearStoredVersesForChapter,
+  hasPendingChanges,
+} from "@/utils/chapterStorage";
 
 interface Verse {
   verse_id: number;
@@ -47,89 +54,6 @@ interface ChapterModalProps {
   chapter: Chapter;
 }
 
-// Define types for the parameters
-type ProjectId = number;
-type BookName = string;
-type ChapterNum = number;
-type VerseId = number;
-type VerseText = string;
-
-//function to generate storage key
-const getStorageKey = (
-  projectId: ProjectId,
-  bookName: BookName,
-  chapterNum: ChapterNum
-): string => {
-  return `verse-${projectId}-${bookName}-${chapterNum}`;
-};
-
-//Get stored verses as a typed object
-const getStoredVerses = (key: string): Record<VerseId, VerseText> => {
-  return JSON.parse(localStorage.getItem(key) || "{}");
-};
-
-//Save a verse to localStorage
-const saveVerseToLocalStorage = (
-  projectId: ProjectId,
-  bookName: BookName,
-  chapterNum: ChapterNum,
-  verseId: VerseId,
-  text: VerseText
-): void => {
-  const storageKey = getStorageKey(projectId, bookName, chapterNum);
-  const storedVerses = getStoredVerses(storageKey);
-
-  storedVerses[verseId] = text;
-  localStorage.setItem(storageKey, JSON.stringify(storedVerses));
-};
-
-//Load verses from localStorage
-const loadVersesFromLocalStorage = (
-  projectId: ProjectId,
-  bookName: BookName,
-  chapterNum: ChapterNum
-): Record<VerseId, VerseText> => {
-  const storageKey = getStorageKey(projectId, bookName, chapterNum);
-  return getStoredVerses(storageKey);
-};
-
-//Remove a verse from localStorage
-const removeVerseFromLocalStorage = (
-  projectId: ProjectId,
-  bookName: BookName,
-  chapterNum: ChapterNum,
-  verseId: VerseId
-): void => {
-  const storageKey = getStorageKey(projectId, bookName, chapterNum);
-  const storedVerses = getStoredVerses(storageKey);
-
-  if (storedVerses[verseId]) {
-    delete storedVerses[verseId];
-    localStorage.setItem(storageKey, JSON.stringify(storedVerses));
-  }
-};
-
-//Clear all stored verses for a chapter
-const clearStoredVersesForChapter = (
-  projectId: ProjectId,
-  bookName: BookName,
-  chapterNum: ChapterNum
-): void => {
-  const storageKey = getStorageKey(projectId, bookName, chapterNum);
-  localStorage.removeItem(storageKey);
-};
-
-//Check if there are pending changes
-const hasPendingChanges = (
-  projectId: ProjectId,
-  bookName: BookName,
-  chapterNum: ChapterNum
-): boolean => {
-  const storageKey = getStorageKey(projectId, bookName, chapterNum);
-  const storedVerses = getStoredVerses(storageKey);
-  return Object.keys(storedVerses).length > 0;
-};
-
 const ChapterModal: React.FC<ChapterModalProps> = ({
   isOpen,
   onClose,
@@ -150,7 +74,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     (state) => state.chapterVerses[chapterKey]
   );
 
-  const [fontSize, setFontSize] = useState(16);
+  const [fontSize, setFontSize] = useState(24);
   const [currentVerse, setCurrentVerse] = useState<Verse | null>(null);
   const [approved, setApproved] = useState(chapter.approved);
   const [isConvertingChapters, setIsConvertingChapters] = useState<
@@ -450,8 +374,8 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
   };
 
   const handleFontSizeChange = (value: number[]) => setFontSize(value[0]);
-  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 28));
-  const decreaseFontSize = () => setFontSize((prev) => Math.max(prev - 2, 12));
+  const increaseFontSize = () => setFontSize((prev) => Math.min(prev + 2, 36));
+  const decreaseFontSize = () => setFontSize((prev) => Math.max(prev - 2, 14));
 
   const checkProgress = () => {
     if (!isConvertingChapters[chapter.chapter_id]) return null;
@@ -467,13 +391,13 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
   const handleCloseModal = () => {
     // Save changes if needed
-    if (
-      !isConvertingChapters[chapter.chapter_id] &&
-      !isSyncingChanges &&
-      Object.keys(verseModifications).length > 0
-    ) {
-      handleVerseUpdate();
-    }
+    // if (
+    //   !isConvertingChapters[chapter.chapter_id] &&
+    //   !isSyncingChanges &&
+    //   Object.keys(verseModifications).length > 0
+    // ) {
+    //   handleVerseUpdate();
+    // }
     // Reset verse state
     setCurrentVerse(null);
     onClose();
@@ -481,7 +405,10 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleCloseModal()}>
-      <DialogContent className="max-w-6xl h-[80vh] flex flex-col">
+      <DialogContent
+        className="w-[90vw] max-w-[90vw] h-[90vh] max-h-[90vh] flex flex-col"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader className="mt-4">
           <DialogTitle className="flex justify-between items-center gap-4 flex-wrap">
             <div className="flex items-center">
@@ -493,22 +420,23 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
                     <span>Unsaved changes</span>
                   </div>
                   <Button
-                  variant="outline"
-                   onClick={handleVerseUpdate}
-                   disabled={
-                     isSyncingChanges || isConvertingChapters[chapter.chapter_id]
-                   }
-                   className="h-8"
-                 >
-                   {isSyncingChanges ? (
-                     <>
-                       <LoadingIcon className="mr-2 h-4 w-4 animate-spin" />
-                       Saving...
-                     </>
-                   ) : (
-                     "Save Changes"
-                   )}
-                 </Button>
+                    variant="outline"
+                    onClick={handleVerseUpdate}
+                    disabled={
+                      isSyncingChanges ||
+                      isConvertingChapters[chapter.chapter_id]
+                    }
+                    className="h-8"
+                  >
+                    {isSyncingChanges ? (
+                      <>
+                        <LoadingIcon className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
                 </div>
               )}
             </div>
@@ -661,16 +589,30 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
             >
               {approved ? "Unapprove" : "Approve"}
             </Button>
-            <Button
-              onClick={handleConvertToSpeech}
-              disabled={
-                isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+            <div
+              onMouseEnter={() =>
+                toast({
+                  title: "Feature temporarily unavailable",
+                  description:
+                    "Convert to speech is currently disabled as requested.",
+                  variant: "destructive",
+                })
               }
+              className="cursor-not-allowed"
             >
-              {isConvertingChapters[chapter.chapter_id]
-                ? checkProgress()
-                : "Convert to Speech"}
-            </Button>
+              <Button
+                onClick={handleConvertToSpeech}
+                disabled
+                className="cursor-not-allowed"
+                // disabled={
+                //   isConvertingChapters[chapter.chapter_id] || isSyncingChanges
+                // }
+              >
+                {isConvertingChapters[chapter.chapter_id]
+                  ? checkProgress()
+                  : "Convert to Speech"}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

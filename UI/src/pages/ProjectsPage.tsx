@@ -410,24 +410,33 @@ const ProjectsPage: React.FC = () => {
     columnHelper.display({
       id: "actions",
       header: "Download",
-      cell: ({ row }) => (
-        <div className="truncate text-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled={row.original.approved === 0}
-            onClick={(e) => {
-              e.stopPropagation();
-              downloadMutation.mutate({
-                projectId: row.original.id,
-                name: row.original.name,
-              });
-            }}
-          >
-            <Download size={20} />
-          </Button>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const isDownloading =
+          downloadMutation.isPending &&
+          downloadMutation.variables?.projectId === row.original.id;
+        return (
+          <div className="truncate text-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={row.original.approved === 0 || isDownloading}
+              onClick={(e) => {
+                e.stopPropagation();
+                downloadMutation.mutate({
+                  projectId: row.original.id,
+                  name: row.original.name,
+                });
+              }}
+            >
+              {isDownloading ? (
+                <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+              ) : (
+                <Download size={20} />
+              )}
+            </Button>
+          </div>
+        );
+      },
       size: 50,
     }),
     ...(user && user?.role === "AI"
@@ -446,7 +455,7 @@ const ProjectsPage: React.FC = () => {
                     setShowDialog(true);
                   }}
                   title="Upload to S3"
-                  disabled = {row.original.approved === 0}
+                  disabled={row.original.approved === 0}
                 >
                   {exportMutation.isPending &&
                   exportMutation.variables === row.original.id ? (
@@ -456,7 +465,11 @@ const ProjectsPage: React.FC = () => {
                   )}
                 </Button>
                 {row.original.exported && (
-                  <span title={`Uploaded: ${row.original.exported_date ?? "Not found"}`}>
+                  <span
+                    title={`Uploaded: ${
+                      row.original.exported_date ?? "Not found"
+                    }`}
+                  >
                     ✅
                   </span>
                 )}
@@ -605,7 +618,7 @@ const ProjectsPage: React.FC = () => {
                               "approved",
                               "actions",
                               "createdDate",
-                              "action"
+                              "action",
                             ].includes(header.id)
                               ? "text-center"
                               : "text-left justify-start"
@@ -638,7 +651,10 @@ const ProjectsPage: React.FC = () => {
                       <TableRow
                         key={row.id}
                         onClick={() => {
-                          if (user?.username === row.original.owner) {
+                          if (
+                            user?.username === row.original.owner ||
+                            isAdmin
+                          ) {
                             navigate(`/projects/${row.original.id}`);
                           } else {
                             toast({
@@ -660,7 +676,7 @@ const ProjectsPage: React.FC = () => {
                                 "approved",
                                 "actions",
                                 "createdDate",
-                                "action"
+                                "action",
                               ].includes(cell.column.id)
                                 ? "center"
                                 : "start",
