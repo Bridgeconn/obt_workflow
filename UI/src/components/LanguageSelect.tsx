@@ -20,11 +20,13 @@ import languages from "../data/source_languages.json";
 interface LanguageSelectProps {
   onLanguageChange: (selectedId: string) => void;
   selectedLanguageId?: string;
+  disabled?: boolean;
 }
 
 const LanguageSelect: React.FC<LanguageSelectProps> = ({
   onLanguageChange,
   selectedLanguageId = "",
+  disabled = false
 }) => {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(selectedLanguageId);
@@ -68,10 +70,11 @@ const LanguageSelect: React.FC<LanguageSelectProps> = ({
         Audio Language
       </label>
       <Popover modal open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
+        <PopoverTrigger asChild disabled={disabled} className="disabled:cursor-not-allowed">
           <button
             role="combobox"
             aria-expanded={open}
+            disabled={disabled}
             className="w-full md:w-[250px] flex items-center justify-between min-h-[40px] text-gray-800 font-medium border rounded-lg px-3 py-2 hover:border-gray-400 focus:ring-2 focus:ring-purple-500"
           >
             {selectedLanguage}

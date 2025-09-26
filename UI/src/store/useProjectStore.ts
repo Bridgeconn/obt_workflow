@@ -276,10 +276,18 @@ const updateChapterStatus = (
     modifiedVerses.every((verse) => verse.tts && verse.stt);
   const checkChapterOnlyModified =
     modifiedVerses.length > 0 && allTranscribed && !allModifiedConverted;
+  const hasTranscriptionError = verses.some(
+    (verse) => verse.stt_msg && verse.stt_msg !== "Transcription successful"
+  );
+  const hasConversionError = verses.some(
+    (verse) => verse.tts_msg && verse.tts_msg !== "Text-to-speech completed"
+  );
   if (allModifiedConverted) return "converted";
   if (checkChapterOnlyModified) return "modified";
   if (allTranscribed) return "transcribed";
   if (isInProgress) return "inProgress";
+  if (hasTranscriptionError) return "transcriptionError";
+  if (hasConversionError) return "conversionError";
   return "notTranscribed";
 };
 
@@ -639,6 +647,41 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
         // Sequential chapter transcription
         // for (const chapter of book.chapters) {  --> removing for now for adding chapter wise convertion
         for (const chapter of selectedChapters) {
+          // 🔹 Reset selected chapters before transcription starts
+          set((state) => {
+            if (!state.project) return {};
+
+            const updatedBooks = state.project.books.map((b) => {
+              if (b.book_id === bookId && b?.chapters.length) {
+                const updatedChapters = b.chapters.map((ch) => {
+                  if (chapter.chapter_id === ch.chapter_id) {
+                    return {
+                      ...ch,
+                      status: "inProgress",
+                      progress: "Calculating",
+                      approved: false,
+                    };
+                  }
+                  return ch;
+                });
+
+                return {
+                  ...b,
+                  chapters: updatedChapters,
+                  status: calculateBookStatus(updatedChapters),
+                  progress: "",
+                };
+              }
+              return b;
+            });
+
+            return {
+              project: {
+                ...state.project,
+                books: updatedBooks,
+              },
+            };
+          });
           // Set progress for current chapter
           useTranscriptionTrackingStore
             .getState()
@@ -661,6 +704,11 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
             );
             if (!transcribeResponse.ok) {
               const errorResp = await transcribeResponse.json();
+              updateChapterStatusInState(
+                chapter.chapter_id,
+                "transcriptionError",
+                "Transcription failed"
+              );
               throw new Error(`${errorResp.detail}`);
             }
             await new Promise<void>((resolve, reject) => {
@@ -694,6 +742,18 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                   const verses = data.data;
                   const allTranscribed =
                     verses.length > 0 && verses.every((verse) => verse.stt);
+                  const isConverted = verses.some((verse) => verse.tts);
+                  const modifiedVerses = verses.filter(
+                    (verse) => verse.modified
+                  );
+                  const allModifiedConverted =
+                    modifiedVerses.length > 0 &&
+                    allTranscribed &&
+                    modifiedVerses.every((verse) => verse.tts && verse.stt);
+                  const checkChapterOnlyModified =
+                    modifiedVerses.length > 0 &&
+                    allTranscribed &&
+                    !allModifiedConverted;
                   const completed = verses.filter((verse) => verse.stt).length;
                   const total = verses.length;
                   const hasTranscriptionError = verses.some(
@@ -710,6 +770,18 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
                         chapter.chapter_id,
                         "transcriptionError",
                         "Transcription failed"
+                      );
+                    } else if (isConverted) {
+                      updateChapterStatusInState(
+                        chapter.chapter_id,
+                        "converted",
+                        ""
+                      );
+                    } else if (checkChapterOnlyModified) {
+                      updateChapterStatusInState(
+                        chapter.chapter_id,
+                        "modified",
+                        ""
                       );
                     } else {
                       updateChapterStatusInState(

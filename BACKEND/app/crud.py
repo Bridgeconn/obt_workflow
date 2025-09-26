@@ -70,7 +70,7 @@ def get_project(project_id: int, db: Session, current_user: User):
     project = db.query(Project).filter(
         Project.owner_id == current_user.user_id, Project.project_id == project_id
     ).first()
-
+    print("currentuser.role",current_user.role)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found for the user")
     
@@ -245,6 +245,8 @@ def get_project_response(db: Session, project: Project) -> dict:
         "script_lang": project.script_lang,
         "audio_lang": project.audio_lang,
         "archive": project.archive,
+        "exported": project.exported,            
+        "exported_date": project.exported_date, 
         "books": [
             {
                 "book_id": book.book_id,
@@ -254,6 +256,79 @@ def get_project_response(db: Session, project: Project) -> dict:
             }
             for book in books
         ],
+    }
+
+
+
+def delete_book_from_project(project_id: int, book: str, db: Session):
+    """
+    Admin-only delete: remove a book from DB and project directory.
+    Resolves project access here (Admins can access any project).
+    """
+
+    # --- Admins can fetch any project by id ---
+    project = db.query(Project).filter(Project.project_id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # --- locate the book inside this project ---
+    book_entry = (
+        db.query(Book)
+          .filter(Book.project_id == project.project_id, Book.book == book)
+          .first()
+    )
+    if not book_entry:
+        raise HTTPException(status_code=404, detail=f"Book '{book}' not found in project {project_id}")
+
+    # --- compute filesystem path (same logic as save_book_to_project) ---
+    base_name = (project.name or "").split("(")[0].strip() or str(project.project_id)
+    project_root_path = BASE_DIR / str(project.project_id) / "input" / base_name
+
+    if (project_root_path / "ingredients").exists():
+        ingredients_path = project_root_path / "ingredients"
+    elif (project_root_path / "audio" / "ingredients").exists():
+        ingredients_path = project_root_path / "audio" / "ingredients"
+    else:
+        ingredients_path = None
+
+    target_book_path = ingredients_path / book if ingredients_path else None
+
+    # --- delete DB rows (jobs -> verses -> chapters -> book) ---
+    try:
+        chapters = db.query(Chapter).filter(Chapter.book_id == book_entry.book_id).all()
+        chapter_ids = [c.chapter_id for c in chapters]
+
+        verses = db.query(Verse).filter(Verse.chapter_id.in_(chapter_ids)).all() if chapter_ids else []
+        verse_ids = [v.verse_id for v in verses]
+
+        if verse_ids:
+            db.query(Job).filter(Job.verse_id.in_(verse_ids)).delete(synchronize_session=False)
+            db.query(Verse).filter(Verse.verse_id.in_(verse_ids)).delete(synchronize_session=False)
+
+        if chapter_ids:
+            db.query(Chapter).filter(Chapter.chapter_id.in_(chapter_ids)).delete(synchronize_session=False)
+
+        db.delete(book_entry)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database deletion failed: {e}")
+
+    # --- delete filesystem folder ---
+    fs_status = "no_folder_found"
+    try:
+        if target_book_path and target_book_path.exists():
+            shutil.rmtree(target_book_path)
+            fs_status = "deleted"
+    except Exception as e:
+        logger.error(f"Book '{book}' DB deleted but folder removal failed: {e}")
+        fs_status = "delete_failed"
+
+    return {
+        "message": "Book deleted",
+        "project_id": project_id,
+        "book": book,
+        "fs_status": fs_status,
     }
 
 
@@ -326,6 +401,8 @@ def get_project_summary(db: Session, project: Project, current_user: User) -> di
         "user_name": owner.username if owner else current_user.username,
         "archive": project.archive,
         "created_date": project.created_date,
+        "exported": project.exported,             
+        "exported_date": project.exported_date, 
         "books": [get_book_summary(db, book) for book in books],
     }
 
@@ -883,28 +960,48 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                             logger.info(f"Verse {verse_number} in chapter {chapter_number} has been modified")
                             target_verse_path = target_chapter_path / verse_file_name
                             # Update the existing verse record
-                            existing_verse.size = verse_file_size
-                            existing_verse.name = verse_file_name
-                            existing_verse.text = ""
-                            existing_verse.tts = False
-                            existing_verse.stt = False
-                            existing_verse.modified = False
-                            existing_verse.format = verse_file.suffix.lstrip('.')
-                            existing_verse.stt_msg = ""
-                            existing_verse.tts_msg = ""
-                            existing_verse.tts_path = ""
+                            # existing_verse.size = verse_file_size
+                            # existing_verse.name = verse_file_name
+                            # existing_verse.text = ""
+                            # existing_verse.tts = False
+                            # existing_verse.stt = False
+                            # existing_verse.modified = False
+                            # existing_verse.format = verse_file.suffix.lstrip('.')
+                            # existing_verse.stt_msg = ""
+                            # existing_verse.tts_msg = ""
+                            # existing_verse.tts_path = ""
                             
                             # Replace the file in target path
-                            target_verse_path = target_chapter_path / verse_file_name
+                            # target_verse_path = target_chapter_path / verse_file_name
                             if target_verse_path.exists():
                                 os.remove(target_verse_path)
                             shutil.copy2(str(verse_file), str(target_verse_path))
                             
-                            # Add to tracking lists
+                              # Always update file metadata
+                            existing_verse.size = verse_file_size
+                            existing_verse.name = verse_file_name
+                            existing_verse.path = str(target_verse_path)
+                            existing_verse.format = verse_file.suffix.lstrip(".")
+
+                            if getattr(existing_verse, "modified", False):
+                                # ✅ PRESERVE manual edits/flags: do not touch text, modified, stt/tts flags & messages, tts_path
+                                logger.info(
+                                    f"Preserving manual text/flags for verse {verse_number} (modified=True)."
+                                )
+                            else:
+                                # 🔄 Not manually modified: reset for clean reprocessing
+                                existing_verse.text = ""
+                                existing_verse.stt = False
+                                existing_verse.stt_msg = ""
+                                existing_verse.tts = False
+                                existing_verse.tts_msg = ""
+                                existing_verse.tts_path = ""
+                                existing_verse.modified = False
+
                             chapter_verses_modified.append(verse_number)
                             chapter_modified = True
                         else:
-                            # Skip if file size matches (no changes)
+                            # Audio unchanged
                             skipped_verse_count += 1
                     else:
                         # New verse found, create new record
@@ -942,10 +1039,12 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
                         skipped_chapters.append(chapter_number)
                 
                 # Update missing verses if needed
-                if missing_verses:
+                if len(missing_verses) > 0:
                     chapter_entry.missing_verses = missing_verses
                     db.commit()
-                    
+                else:
+                    chapter_entry.missing_verses = None
+                    db.commit()   
             else:
                 # This is a new chapter - create it
                 # Move the chapter folder to target path
@@ -1701,16 +1800,15 @@ def call_stt_api(file_path: str, script_lang: str) -> dict:
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
  
     # Prepare API URL
-    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}"
+    ai_api_url = f"{TRANSCRIBE_API_URL}?model_name={model_name}&device={device_type}&transcription_language={lang_code}"
     file_name = os.path.basename(file_path)
     try:
         with open(file_path, "rb") as audio_file:
             files_payload = {"files": (file_name, audio_file, "audio/wav")}
-            data_payload = {"transcription_language": lang_code}
             headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
             # Send batch request
-            response = requests.post(ai_api_url, files=files_payload, data=data_payload, headers=headers)
+            response = requests.post(ai_api_url, files=files_payload, headers=headers)
             logger.info(f"AI API Response: {response.status_code} - {response.text}")  
             # Handle API response
             if response.status_code == 201:
@@ -1914,8 +2012,7 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
     
     # AI API Base URL
     TTS_API_URL = f"{BASE_URL}/model/audio/generate"
-    # API Token
-    api_token = "ory_st_mby05AoClJAHhX9Xlnsg1s0nn6Raybb3"
+    device_type = os.getenv("TTS_DEVICE", "cpu")
  
     # Map audio_lang to source_language
     source_language = None
@@ -1945,18 +2042,19 @@ def call_tts_api(text: str, audio_lang: str ,output_format:str) -> dict:
         logger.error(f"Error retrieving model and language code: {str(e)}")
         return {"error": "Failed to retrieve model and language code", "details": str(e)}
     
-    # Prepare API parameters and headers
-    params = {
-        "model_name": model_name,
-        "language": lang_code,  # Dynamically mapped language code
-        "output_format": output_format, 
-    }
-    data_payload = [text]
-    headers = {"Authorization": f"Bearer {api_token}"}
+
+    ai_api_url = f"{TTS_API_URL}?device={device_type}&model_name={model_name}&language={lang_code}&output_format={output_format}&enhance=False"
+    # Flatten input if accidentally passed as a list
+    if isinstance(text, list):
+        text = " ".join(text)
+ 
+    data_payload = [text]  # correct format: List[str]
+ 
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
  
     try:
         # Make the API request
-        response = requests.post(TTS_API_URL, params=params, json=data_payload, headers=headers)
+        response = requests.post(ai_api_url,  json=data_payload, headers=headers)
         logger.info(f"AI API Response: {response.status_code} - {response.text}")
  
         # Handle API response
