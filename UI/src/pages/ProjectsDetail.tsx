@@ -45,6 +45,7 @@ import ArchiveDialog from "@/components/ArchiveDialog";
 import TranscriptionDialog from "@/components/TranscriptionDialog";
 import { DeleteDialog } from "@/components/DeleteDialog";
 import { hasPendingChanges } from "@/utils/chapterStorage";
+import LanguageConfirmDialog from "@/components/LanguageConfirmDialog";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
@@ -136,6 +137,12 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   const [isTranscriptionStarted, setIsTranscriptionStarted] = useState(false);
 
   const [scriptLocked, setScriptLocked] = useState(false);
+  const [languageDialogOpen, setLanguageDialogOpen] = useState(false);
+  const [pendingAudioLang, setPendingAudioLang] = useState<string | null>(null);
+  const [pendingScriptLang, setPendingScriptLang] = useState<string | null>(
+    null
+  );
+
   const [downloadingProject, setDownloadingProject] = useState(false);
   const [downloadingBookId, setDownloadingBookId] = useState<number | null>(
     null
@@ -576,15 +583,15 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     }
   };
 
-  const handleScriptLock = async () => {
-    if (!project || !audioLanguage || !scriptLanguage) return;
+  const handleScriptLock = async (audioLang: string, scriptLang: string) => {
+    if (!project || !audioLang || !scriptLang) return;
 
     const token = useAuthStore.getState().token;
     const selectedAudioLanguage = source_languages.find(
-      (lang) => String(lang.id) === audioLanguage
+      (lang) => String(lang.id) === audioLang
     );
     const selectedScriptLanguage = major_languages.find(
-      (lang) => String(lang.id) === scriptLanguage
+      (lang) => String(lang.id) === scriptLang
     );
 
     if (!selectedAudioLanguage || !selectedScriptLanguage) {
@@ -594,7 +601,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     try {
       //Update audio language
       await fetch(
-        `${BASE_URL}/projects/${project.project_id}/audio_language/${encodeURIComponent(selectedAudioLanguage.language_name)}`,
+        `${BASE_URL}/projects/${
+          project.project_id
+        }/audio_language/${encodeURIComponent(
+          selectedAudioLanguage.language_name
+        )}`,
         {
           method: "PUT",
           headers: {
@@ -606,7 +617,11 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
       //Update script language
       await fetch(
-        `${BASE_URL}/projects/${project.project_id}/script_language/${encodeURIComponent(selectedScriptLanguage.major_language)}`,
+        `${BASE_URL}/projects/${
+          project.project_id
+        }/script_language/${encodeURIComponent(
+          selectedScriptLanguage.major_language
+        )}`,
         {
           method: "PUT",
           headers: {
@@ -649,7 +664,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       console.error("Audio language not found.");
       return;
     }
-    setAudioLanguage(String(selectedAudioLanguage.id));
+
     const selectedScriptLanguage = major_languages.find(
       (language) =>
         language.language_name === selectedAudioLanguage.script_language
@@ -659,7 +674,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       return;
     }
 
-    setScriptLanguage(String(selectedScriptLanguage.id));
+    setPendingAudioLang(String(selectedAudioLanguage.id));
+    setPendingScriptLang(String(selectedScriptLanguage.id));
+    setLanguageDialogOpen(true);
 
     //fetch the served models
     await refetch();
@@ -894,16 +911,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                       {matchedLanguage && matchedLanguage.language_name}
                     </label>
                   </label>
-                  {audioLanguage && scriptLanguage && (
-                    <button
-                      onClick={handleScriptLock}
-                      className="p-1.5 rounded-full text-green-600 hover:bg-green-100 transition-colors disabled:cursor-not-allowed"
-                      title="Confirm languages"
-                      disabled={user?.role !== "Admin" && scriptLocked}
-                    >
-                      <CheckCheck className="font-bold" />
-                    </button>
-                  )}
                 </div>
               </div>
             </div>
@@ -1449,6 +1456,29 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 onClose={() => setDeleteDialogOpen(false)}
                 book={bookToDelete}
                 handleDeleteBook={handleDeleteBook}
+              />
+            )}
+            {languageDialogOpen && (
+              <LanguageConfirmDialog
+                isOpen={languageDialogOpen}
+                onClose={() => {
+                  setPendingAudioLang(null);
+                  setPendingScriptLang(null);
+                  setLanguageDialogOpen(false);
+                }}
+                onConfirm={() => {
+                  if (pendingAudioLang && pendingScriptLang) {
+                    setAudioLanguage(pendingAudioLang);
+                    setScriptLanguage(pendingScriptLang);
+                    setLanguageDialogOpen(false);
+                    handleScriptLock(pendingAudioLang, pendingScriptLang);
+                  }
+                }}
+                selectedLanguageName={
+                  source_languages.find(
+                    (lang) => String(lang.id) === pendingAudioLang
+                  )?.language_name || ""
+                }
               />
             )}
           </div>
