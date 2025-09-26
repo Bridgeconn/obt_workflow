@@ -594,7 +594,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     try {
       //Update audio language
       await fetch(
-        `${BASE_URL}/projects/${project.project_id}/audio_language/${selectedAudioLanguage.language_name}`,
+        `${BASE_URL}/projects/${project.project_id}/audio_language/${encodeURIComponent(selectedAudioLanguage.language_name)}`,
         {
           method: "PUT",
           headers: {
@@ -606,7 +606,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
       //Update script language
       await fetch(
-        `${BASE_URL}/projects/${project.project_id}/script_language/${selectedScriptLanguage.major_language}`,
+        `${BASE_URL}/projects/${project.project_id}/script_language/${encodeURIComponent(selectedScriptLanguage.major_language)}`,
         {
           method: "PUT",
           headers: {
