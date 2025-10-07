@@ -508,7 +508,7 @@ async def get_user_projects(
 
 
 
-@router.put("/projects/{project_id}/script_language/{script_lang}", tags=["Project"])
+@router.put("/projects/{project_id}/script_language/{script_lang:path}", tags=["Project"])
 async def update_script_lang(
     project_id: int,
     script_lang: str,
@@ -537,7 +537,7 @@ async def update_script_lang(
 
 
 
-@router.put("/projects/{project_id}/audio_language/{audio_lang}", tags=["Project"])
+@router.put("/projects/{project_id}/audio_language/{audio_lang:path}", tags=["Project"])
 async def update_audio_lang(
     project_id: int,
     audio_lang: str,
