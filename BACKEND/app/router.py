@@ -583,7 +583,12 @@ async def update_project_archive(
     # Returns:
     #     dict: Response message with project details.
     # """
-    project = crud.get_project(project_id, db, current_user)
+    if current_user.role == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        project = crud.get_project(project_id, db, current_user)
     # Update the archive status
     project.archive = archive
     db.commit()

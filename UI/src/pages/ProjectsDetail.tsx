@@ -24,11 +24,10 @@ import {
   ArrowLeft,
   Upload,
   X,
-  Archive,
-  PackageOpen,
-  CheckCheck,
+  Trash,
   Trash2,
   Loader2,
+  ArchiveRestore,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -148,8 +147,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     null
   );
 
-  const isOtherAdmin =
-    user?.role === "Admin" && project?.owner_id !== Number(user.user_id);
+  const isOtherUser = project?.owner_id !== Number(user?.user_id);
+  const isAdmin = user?.role === "Admin"
 
   useEffect(() => {
     const loadProject = async () => {
@@ -928,7 +927,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 className="flex items-center gap-2"
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload a book"
-                disabled={isOtherAdmin}
+                disabled={isOtherUser}
               >
                 <Upload className="w-4 h-4" />
                 {/* Upload Book */}
@@ -955,9 +954,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                   !archive ? setArchiveDialogOpen(true) : handleArchiveProject()
                 }
                 title={archive ? "Restore" : "Delete"}
-                disabled={isOtherAdmin}
+                disabled={!isAdmin}
               >
-                {archive ? <PackageOpen size={20} /> : <Archive size={20} />}
+                {archive ? <ArchiveRestore size={20} /> : <Trash size={20} />}
               </Button>
               <Button
                 variant="outline"
@@ -1062,13 +1061,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                       : "text-gray-700 border border-gray-300"
                                   }
                                   ${
-                                    isOtherAdmin
+                                    isOtherUser
                                       ? "!cursor-default"
                                       : "cursor-pointer"
                                   }
                                 `}
                                 onClick={() => {
-                                  if (!isOtherAdmin) {
+                                  if (!isOtherUser) {
                                     openChapterModal(chapter, book);
                                   }
                                 }}
@@ -1246,7 +1245,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               book.progress === "processing" ||
                               isTranscriptionStarted ||
                               !scriptLocked ||
-                              isOtherAdmin
+                              isOtherUser
                             }
                             onClick={() => {
                               if (!scriptLanguage || !audioLanguage) {
@@ -1362,7 +1361,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               (chapter) => chapter.approved
                             ) ||
                             downloadingBookId === book.book_id ||
-                            isOtherAdmin
+                            isOtherUser
                           }
                           onClick={() =>
                             handleDownloadUSFM(project.project_id, book)
