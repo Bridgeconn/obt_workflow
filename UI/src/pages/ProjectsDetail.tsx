@@ -105,13 +105,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadedBookData, setUploadedBookData] = useState<{
-    book: string;
-    added_chapters: number[];
-    skipped_chapters: number[];
-    modified_chapters: number[] | null;
-    added_verses: string[] | null;
-    modified_verses: string[] | null;
-    incompartible_verses: string[] | null;
+    book?: string;
+    added_chapters?: number[];
+    skipped_chapters?: number[];
+    modified_chapters?: number[] | null;
+    added_verses?: string[] | null;
+    modified_verses?: string[] | null;
+    incompartible_verses?: string[] | null;
+    invalidFiles?: string[] | null;
   } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -148,7 +149,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
   );
 
   const isOtherUser = project?.owner_id !== Number(user?.user_id);
-  const isAdmin = user?.role === "Admin"
+  const isAdmin = user?.role === "Admin";
 
   useEffect(() => {
     const loadProject = async () => {
@@ -384,11 +385,22 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         if (xhr.status === 200) {
           resolve(JSON.parse(xhr.responseText));
         } else {
-          reject(
-            new Error(
-              JSON.parse(xhr.responseText).detail || "Failed to upload book"
-            )
-          );
+          const errorResponse = JSON.parse(xhr.responseText);
+          const detail = errorResponse.detail;
+          if (typeof detail === "object" && detail.invalid_files) {
+            reject({
+              type: "invalid_files",
+              message: detail.message,
+              invalidFiles: detail.invalid_files,
+            });
+          } else if (typeof detail === "object" && detail.message) {
+            reject({ type: "generic", message: detail.message });
+          } else {
+            reject({
+              type: "unknown",
+              message: detail || "Failed to upload book",
+            });
+          }
         }
       };
 
@@ -457,19 +469,34 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       // Invalidate and refetch project details
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       await fetchProjectDetails(projectId);
-    } catch (error) {
+    } catch (error: any) {
       setUploadProgress(0);
-      toast({
-        variant: "destructive",
-        title: error instanceof Error ? error.message : "Failed to upload book",
-      });
       setUploading(false);
-      setDialogDescription(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong during upload."
-      );
-      setIsFailedUploading(true);
+      if (error.type === "invalid_files") {
+        // Show detailed dialog instead of short toast
+        setDialogDescription(error.message);
+        setUploadedBookData((prev) => ({
+          ...prev,
+          invalidFiles: error.invalidFiles,
+        }));
+
+        setIsFailedUploading(true);
+
+        toast({
+          variant: "destructive",
+          title: "Book upload failed",
+          description: error.message,
+        });
+      } else {
+        // fallback for generic errors
+        toast({
+          variant: "destructive",
+          title: "Book upload failed",
+          description: error?.message || "Something went wrong during upload.",
+        });
+        setDialogDescription(error?.message || "Something went wrong.");
+        setIsFailedUploading(true);
+      }
     }
   };
 
@@ -1431,6 +1458,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 addedVerses={uploadedBookData?.added_verses || []}
                 modifiedVerses={uploadedBookData?.modified_verses || []}
                 skippedVerses={uploadedBookData?.incompartible_verses || []}
+                invalidFiles={uploadedBookData?.invalidFiles || null}
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (

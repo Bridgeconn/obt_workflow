@@ -25,6 +25,7 @@ interface UploadDialogProps {
   addedVerses: string[] | null;
   modifiedVerses: string[] | null;
   skippedVerses: string[] | null;
+  invalidFiles?: string[] | null;
 }
 
 const UploadDialog: React.FC<UploadDialogProps> = ({
@@ -42,6 +43,7 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
   addedVerses,
   modifiedVerses,
   skippedVerses,
+  invalidFiles,
 }) => {
   const getBookName = (code: string): string => {
     const book = bookCodes.find((b) => b.abbreviation === code.toLowerCase());
@@ -88,12 +90,32 @@ const UploadDialog: React.FC<UploadDialogProps> = ({
         )}
         {isFailedUploading && (
           <div>
-            {dialogDescription && <p className="mb-1 font-medium text-red-700">{dialogDescription}</p>}
-            <p>
-              Please upload a single book zip file with a valid book code.
-            </p>
+            {dialogDescription && (
+              <p className="mb-2 font-medium text-red-700">
+                {dialogDescription}
+              </p>
+            )}
+            {invalidFiles && invalidFiles.length > 0 ? (
+              <>
+                <p className="font-semibold text-gray-700 mb-1">
+                  The following files exceed the allowed size:
+                </p>
+                <ScrollArea className="max-h-[200px] border border-gray-200 rounded-md p-2 bg-gray-50">
+                  <ul className="list-disc list-inside text-sm text-gray-700">
+                    {invalidFiles.map((file, idx) => (
+                      <li key={idx}>{file}</li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              </>
+            ) : (
+              <p>
+                Please upload a single book zip file with a valid book code.
+              </p>
+            )}
           </div>
         )}
+
         {!isUploading && !isNewBook && !isFailedUploading && (
           <ScrollArea className="pr-4 max-h-[400px]">
             <div className="space-y-6">
