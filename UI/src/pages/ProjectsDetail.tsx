@@ -975,16 +975,19 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                   <Download size={20} />
                 )}
               </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  !archive ? setArchiveDialogOpen(true) : handleArchiveProject()
-                }
-                title={archive ? "Restore" : "Delete"}
-                disabled={!isAdmin}
-              >
-                {archive ? <ArchiveRestore size={20} /> : <Trash size={20} />}
-              </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    !archive
+                      ? setArchiveDialogOpen(true)
+                      : handleArchiveProject()
+                  }
+                  title={archive ? "Restore" : "Delete"}
+                >
+                  {archive ? <ArchiveRestore size={20} /> : <Trash size={20} />}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleCloseProject}
