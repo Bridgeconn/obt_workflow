@@ -989,7 +989,7 @@ async def generate_usfm(
     # Prepare chapter map for downstream USFM generation
     chapter_map = {ch.chapter: ch for ch in chapters}
     # Generate USFM content
-    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db)
+    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db, single_chapter=chapter)
     return crud.save_and_return_usfm_file(project, book, usfm_text)
 
 

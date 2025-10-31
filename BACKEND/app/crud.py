@@ -2084,7 +2084,7 @@ def fetch_book_metadata(book: str, book_metadata: dict) -> dict:
         "long_title": book_metadata[book]["long"]["en"],
     }
 
-def generate_usfm_content(book, book_info, chapter_map, versification_data, db):
+def generate_usfm_content(book, book_info, chapter_map, versification_data, db, single_chapter: int = None):
     """
     Generate USFM formatted content with book metadata and verses.
     """
@@ -2099,6 +2099,28 @@ def generate_usfm_content(book, book_info, chapter_map, versification_data, db):
         raise HTTPException(
             status_code=404, detail=f"Versification data not found for book '{book}'."
         )
+    
+    # --- If single_chapter specified, process only that one ---
+    if single_chapter:
+        if single_chapter not in chapter_map:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Chapter {single_chapter} not found in book '{book}'.",
+            )
+
+        num_verses = int(max_verses[single_chapter - 1])
+        usfm_text += f"\\c {single_chapter}\n\\p\n"
+
+        chapter = chapter_map[single_chapter]
+        verses = db.query(Verse).filter(Verse.chapter_id == chapter.chapter_id).all()
+        verse_map = {verse.verse: verse.text for verse in verses}
+
+        for verse_number in range(1, num_verses + 1):
+            usfm_text += f"\\v {verse_number} {verse_map.get(verse_number, '...')}\n"
+
+        return usfm_text
+    
+    # --- Process all chapters ---
     for chapter_number, num_verses in enumerate(max_verses, start=1):
         try:
             num_verses = int(num_verses)
