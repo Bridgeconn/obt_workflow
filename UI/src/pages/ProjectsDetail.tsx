@@ -834,7 +834,9 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         variant: "success",
         title: archive ? "Project restored successfully!" : "Project deleted successfully!",
       });
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      await queryClient.cancelQueries({ queryKey: ["projects"] });
+      
+      queryClient.removeQueries({ queryKey: ["projects"] });
       navigate("/");
     } catch (error) {
       console.log("error", error);
