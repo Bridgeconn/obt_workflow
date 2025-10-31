@@ -304,7 +304,7 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
       });
     } finally {
       setCurrentVerse(null);
-      onClose();
+      // onClose();
     }
   };
 
