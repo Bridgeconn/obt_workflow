@@ -905,6 +905,7 @@ export const useProjectDetailsStore = create<ProjectDetailsState>(
       } catch (error) {
         console.error("Failed to archive project:", error);
         set({ error: "Error archiving project." });
+        throw error;
       } finally {
         set({ isLoading: false });
       }

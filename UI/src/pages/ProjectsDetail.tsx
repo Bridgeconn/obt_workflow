@@ -828,9 +828,22 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const handleArchiveProject = async () => {
     if (project?.project_id === undefined) return;
-    await archiveProject(project?.project_id, !archive);
-    queryClient.invalidateQueries({ queryKey: ["projects"] });
-    navigate("/");
+    try {
+      await archiveProject(project?.project_id, !archive);
+      toast({
+        variant: "success",
+        title: archive ? "Project restored successfully!" : "Project deleted successfully!",
+      });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      navigate("/");
+    } catch (error) {
+      console.log("error", error);
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error ? error?.message : "Failed to perform operation",
+      });
+    }
   };
 
   const handleDownloadProject = async () => {
