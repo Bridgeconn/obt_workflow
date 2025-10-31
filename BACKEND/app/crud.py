@@ -122,12 +122,13 @@ def get_script_lang(db: Session, project_id: int, current_user: User):
         )
     return script_lang
 
-
+MAX_AUDIO_FILE_SIZE_MB = 1  # limit to 1 MB per file
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a"}
 
 async def process_uploaded_zip(file: UploadFile) -> Path:
     """
     Validate, save, and extract a ZIP file to a temporary directory.
-
+    Also ensures no individual file exceeds 1MB.
     """
     # Validate ZIP file format
     if not file.filename.endswith(".zip"):
@@ -140,7 +141,33 @@ async def process_uploaded_zip(file: UploadFile) -> Path:
     # Extract the ZIP file
     temp_extract_path = BASE_DIR / "temp" / "extracted"
     temp_extract_path.mkdir(parents=True, exist_ok=True)
+    
+    invalid_audio_files = []
+    
     with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+        for zip_info in zip_ref.infolist():
+            if zip_info.is_dir():
+                continue
+
+            file_ext = Path(zip_info.filename).suffix.lower()
+            # Check only audio files
+            if file_ext in AUDIO_EXTENSIONS:
+                size_mb = zip_info.file_size / (1024 * 1024)
+                if size_mb > MAX_AUDIO_FILE_SIZE_MB:
+                    invalid_audio_files.append(
+                        f"{zip_info.filename} ({size_mb:.2f} MB)"
+                    )
+
+        if invalid_audio_files:
+            os.remove(temp_zip_path)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": f"Some audio files exceed the {MAX_AUDIO_FILE_SIZE_MB} MB limit",
+                    "invalid_files": invalid_audio_files,
+                },
+            )
+        # Extract only if validation passed
         zip_ref.extractall(temp_extract_path)
     # Remove ZIP file after extraction
     os.remove(temp_zip_path)
@@ -1079,7 +1106,7 @@ def process_chapters(book_folder, project, book_entry, db,book_name):
 async def extract_and_validate_zip(file: UploadFile):
     """
     Extracts and validates the structure of a ZIP file.
-
+    Checks audio files for 1MB size limit.
     Returns:
         dict: {
             "temp_extract_path": Path,
@@ -1101,15 +1128,35 @@ async def extract_and_validate_zip(file: UploadFile):
             buffer.write(await file.read())
             logger.debug(f"Saved uploaded file to {temp_zip_path}")
 
+        invalid_audio_files = []
 
         # Extract the ZIP file
-        try:
-            with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
-                logger.debug(f"ZIP file content: {zip_ref.namelist()}")
-                zip_ref.extractall(temp_extract_path)
-                logger.debug(f"ZIP file extracted to {temp_extract_path}")
-        except zipfile.BadZipFile:
-            raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
+        with zipfile.ZipFile(temp_zip_path, "r") as zip_ref:
+            for zip_info in zip_ref.infolist():
+                if zip_info.is_dir():
+                    continue
+                ext = Path(zip_info.filename).suffix.lower()
+                if ext in AUDIO_EXTENSIONS:
+                    size_mb = zip_info.file_size / (1024 * 1024)
+                    if size_mb > MAX_AUDIO_FILE_SIZE_MB:
+                        invalid_audio_files.append(
+                            f"{zip_info.filename} ({size_mb:.2f} MB)"
+                        )
+
+            if invalid_audio_files:
+                temp_zip_path.unlink(missing_ok=True)
+                shutil.rmtree(temp_extract_path, ignore_errors=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                    "message": f"Book Upload Failed: Some audio files exceed the {MAX_AUDIO_FILE_SIZE_MB} MB limit",
+                    "invalid_files": invalid_audio_files,
+                    },
+                )
+            logger.debug(f"ZIP file content: {zip_ref.namelist()}")
+            # Extract after validation passes
+            zip_ref.extractall(temp_extract_path)
+            logger.debug(f"ZIP file extracted to {temp_extract_path}")
 
         # Remove the ZIP file after extraction
         temp_zip_path.unlink()
@@ -1167,6 +1214,9 @@ async def extract_and_validate_zip(file: UploadFile):
         shutil.rmtree(temp_extract_path, ignore_errors=True)
         raise
 
+    except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="The file is not a valid ZIP archive")
+        
     except Exception as e:
         logger.error(f"Unexpected error during ZIP processing: {e}")
         shutil.rmtree(temp_extract_path, ignore_errors=True)

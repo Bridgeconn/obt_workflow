@@ -24,11 +24,10 @@ import {
   ArrowLeft,
   Upload,
   X,
-  Archive,
-  PackageOpen,
-  CheckCheck,
+  Trash,
   Trash2,
   Loader2,
+  ArchiveRestore,
 } from "lucide-react";
 import useAuthStore from "@/store/useAuthStore";
 import { useQueryClient } from "@tanstack/react-query";
@@ -106,13 +105,14 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
 
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploadedBookData, setUploadedBookData] = useState<{
-    book: string;
-    added_chapters: number[];
-    skipped_chapters: number[];
-    modified_chapters: number[] | null;
-    added_verses: string[] | null;
-    modified_verses: string[] | null;
-    incompartible_verses: string[] | null;
+    book?: string;
+    added_chapters?: number[];
+    skipped_chapters?: number[];
+    modified_chapters?: number[] | null;
+    added_verses?: string[] | null;
+    modified_verses?: string[] | null;
+    incompartible_verses?: string[] | null;
+    invalidFiles?: string[] | null;
   } | null>(null);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -148,8 +148,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
     null
   );
 
-  const isOtherAdmin =
-    user?.role === "Admin" && project?.owner_id !== Number(user.user_id);
+  const isOtherUser = project?.owner_id !== Number(user?.user_id);
+  const isAdmin = user?.role === "Admin";
 
   useEffect(() => {
     const loadProject = async () => {
@@ -385,11 +385,22 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         if (xhr.status === 200) {
           resolve(JSON.parse(xhr.responseText));
         } else {
-          reject(
-            new Error(
-              JSON.parse(xhr.responseText).detail || "Failed to upload book"
-            )
-          );
+          const errorResponse = JSON.parse(xhr.responseText);
+          const detail = errorResponse.detail;
+          if (typeof detail === "object" && detail.invalid_files) {
+            reject({
+              type: "invalid_files",
+              message: detail.message,
+              invalidFiles: detail.invalid_files,
+            });
+          } else if (typeof detail === "object" && detail.message) {
+            reject({ type: "generic", message: detail.message });
+          } else {
+            reject({
+              type: "unknown",
+              message: detail || "Failed to upload book",
+            });
+          }
         }
       };
 
@@ -458,19 +469,34 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
       // Invalidate and refetch project details
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       await fetchProjectDetails(projectId);
-    } catch (error) {
+    } catch (error: any) {
       setUploadProgress(0);
-      toast({
-        variant: "destructive",
-        title: error instanceof Error ? error.message : "Failed to upload book",
-      });
       setUploading(false);
-      setDialogDescription(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong during upload."
-      );
-      setIsFailedUploading(true);
+      if (error.type === "invalid_files") {
+        // Show detailed dialog instead of short toast
+        setDialogDescription(error.message);
+        setUploadedBookData((prev) => ({
+          ...prev,
+          invalidFiles: error.invalidFiles,
+        }));
+
+        setIsFailedUploading(true);
+
+        toast({
+          variant: "destructive",
+          title: "Book upload failed",
+          description: error.message,
+        });
+      } else {
+        // fallback for generic errors
+        toast({
+          variant: "destructive",
+          title: "Book upload failed",
+          description: error?.message || "Something went wrong during upload.",
+        });
+        setDialogDescription(error?.message || "Something went wrong.");
+        setIsFailedUploading(true);
+      }
     }
   };
 
@@ -928,7 +954,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 className="flex items-center gap-2"
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload a book"
-                disabled={isOtherAdmin}
+                disabled={isOtherUser}
               >
                 <Upload className="w-4 h-4" />
                 {/* Upload Book */}
@@ -949,16 +975,19 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                   <Download size={20} />
                 )}
               </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  !archive ? setArchiveDialogOpen(true) : handleArchiveProject()
-                }
-                title={archive ? "Restore" : "Delete"}
-                disabled={isOtherAdmin}
-              >
-                {archive ? <PackageOpen size={20} /> : <Archive size={20} />}
-              </Button>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    !archive
+                      ? setArchiveDialogOpen(true)
+                      : handleArchiveProject()
+                  }
+                  title={archive ? "Restore" : "Delete"}
+                >
+                  {archive ? <ArchiveRestore size={20} /> : <Trash size={20} />}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={handleCloseProject}
@@ -1062,13 +1091,13 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                                       : "text-gray-700 border border-gray-300"
                                   }
                                   ${
-                                    isOtherAdmin
+                                    isOtherUser
                                       ? "!cursor-default"
                                       : "cursor-pointer"
                                   }
                                 `}
                                 onClick={() => {
-                                  if (!isOtherAdmin) {
+                                  if (!isOtherUser) {
                                     openChapterModal(chapter, book);
                                   }
                                 }}
@@ -1246,7 +1275,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               book.progress === "processing" ||
                               isTranscriptionStarted ||
                               !scriptLocked ||
-                              isOtherAdmin
+                              isOtherUser
                             }
                             onClick={() => {
                               if (!scriptLanguage || !audioLanguage) {
@@ -1362,7 +1391,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                               (chapter) => chapter.approved
                             ) ||
                             downloadingBookId === book.book_id ||
-                            isOtherAdmin
+                            isOtherUser
                           }
                           onClick={() =>
                             handleDownloadUSFM(project.project_id, book)
@@ -1432,6 +1461,7 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
                 addedVerses={uploadedBookData?.added_verses || []}
                 modifiedVerses={uploadedBookData?.modified_verses || []}
                 skippedVerses={uploadedBookData?.incompartible_verses || []}
+                invalidFiles={uploadedBookData?.invalidFiles || null}
               />
             )}
             {project && project.project_id !== undefined && selectedChapter && (

@@ -413,6 +413,17 @@ async def upload_zip(
         raise HTTPException(
             status_code=400, detail="The file is not a valid ZIP archive"
         )
+        
+    except HTTPException as e:
+        # Clean up any partially created project folder or DB entries
+        if 'project' in locals() and project:
+            db.delete(project)
+            db.commit()
+            project_base_path = BASE_DIR / str(project.project_id)
+            if project_base_path.exists():
+                shutil.rmtree(project_base_path)
+        raise e
+    
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -583,7 +594,12 @@ async def update_project_archive(
     # Returns:
     #     dict: Response message with project details.
     # """
-    project = crud.get_project(project_id, db, current_user)
+    if current_user.role == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        project = crud.get_project(project_id, db, current_user)
     # Update the archive status
     project.archive = archive
     db.commit()
