@@ -834,6 +834,8 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         variant: "success",
         title: archive ? "Project restored successfully!" : "Project deleted successfully!",
       });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      navigate("/");
     } catch (error) {
       console.log("error", error);
       toast({
@@ -841,9 +843,6 @@ const ProjectDetailsPage: React.FC<{ projectId: number }> = ({ projectId }) => {
         title:
           error instanceof Error ? error?.message : "Failed to perform operation",
       });
-    } finally {
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
-      navigate("/");
     }
   };
 
