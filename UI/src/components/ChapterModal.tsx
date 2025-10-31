@@ -20,6 +20,9 @@ import {
   clearStoredVersesForChapter,
   hasPendingChanges,
 } from "@/utils/chapterStorage";
+import useAuthStore from "@/store/useAuthStore";
+
+const BASE_URL = import.meta.env.VITE_BASE_URL;
 
 interface Verse {
   verse_id: number;
@@ -389,6 +392,54 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
     return `${remaining} verse(s) left`;
   };
 
+  const handleDownloadChapter = async (
+    projectId: number,
+    bookName: string,
+    chapter: number
+  ) => {
+    try {
+      const response = await fetch(
+        `${BASE_URL}/generate-usfm/?project_id=${projectId}&book=${bookName}&chapter=${chapter}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${useAuthStore.getState().token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (!response.ok) {
+        const responseData = await response.json();
+        throw new Error(responseData.detail || "Failed to generate USFM");
+      }
+      const contentDisposition = response.headers.get("Content-Disposition");
+      let fileName = `${bookName}.usfm`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="([^"]+)"/);
+        if (match && match[1]) {
+          fileName = match[1];
+        }
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({
+        variant: "success",
+        title: "File downloaded successfully!",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title:
+          error instanceof Error ? error.message : "Error while downloading",
+      });
+    }
+  };
+
   const handleCloseModal = () => {
     // Save changes if needed
     // if (
@@ -588,6 +639,12 @@ const ChapterModal: React.FC<ChapterModalProps> = ({
               }
             >
               {approved ? "Unapprove" : "Approve"}
+            </Button>
+            <Button
+              onClick={() => handleDownloadChapter(projectId, bookName, chapter.chapter)}
+              disabled={!approved || isSyncingChanges}
+            >
+              Download Text
             </Button>
             <div
               onMouseEnter={() =>

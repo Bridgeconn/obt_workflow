@@ -988,10 +988,24 @@ async def generate_usfm(
     # Validate if the book exists in metadata
     
     # Fetch chapters and verses
-    chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
-    chapter_map = {chapter.chapter: chapter for chapter in chapters}
+    if chapter is not None:
+        chapters = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter == chapter)
+        .all()
+        )
+        if not chapters:
+            raise HTTPException(
+            status_code=404,
+            detail=f"Chapter {chapter} not found in book {book}"
+        )
+    else:
+        chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
+
+    # Prepare chapter map for downstream USFM generation
+    chapter_map = {ch.chapter: ch for ch in chapters}
     # Generate USFM content
-    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db)
+    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db, single_chapter=chapter)
     return crud.save_and_return_usfm_file(project, book, usfm_text)
 
 
