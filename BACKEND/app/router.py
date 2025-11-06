@@ -413,6 +413,17 @@ async def upload_zip(
         raise HTTPException(
             status_code=400, detail="The file is not a valid ZIP archive"
         )
+        
+    except HTTPException as e:
+        # Clean up any partially created project folder or DB entries
+        if 'project' in locals() and project:
+            db.delete(project)
+            db.commit()
+            project_base_path = BASE_DIR / str(project.project_id)
+            if project_base_path.exists():
+                shutil.rmtree(project_base_path)
+        raise e
+    
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -583,7 +594,12 @@ async def update_project_archive(
     # Returns:
     #     dict: Response message with project details.
     # """
-    project = crud.get_project(project_id, db, current_user)
+    if current_user.role == "Admin":
+        project = db.query(Project).filter(Project.project_id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found.")
+    else:
+        project = crud.get_project(project_id, db, current_user)
     # Update the archive status
     project.archive = archive
     db.commit()
@@ -972,10 +988,24 @@ async def generate_usfm(
     # Validate if the book exists in metadata
     
     # Fetch chapters and verses
-    chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
-    chapter_map = {chapter.chapter: chapter for chapter in chapters}
+    if chapter is not None:
+        chapters = (
+        db.query(Chapter)
+        .filter(Chapter.book_id == book_id, Chapter.chapter == chapter)
+        .all()
+        )
+        if not chapters:
+            raise HTTPException(
+            status_code=404,
+            detail=f"Chapter {chapter} not found in book {book}"
+        )
+    else:
+        chapters = db.query(Chapter).filter(Chapter.book_id == book_id).all()
+
+    # Prepare chapter map for downstream USFM generation
+    chapter_map = {ch.chapter: ch for ch in chapters}
     # Generate USFM content
-    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db)
+    usfm_text = crud.generate_usfm_content(book, book_info, chapter_map, versification_data, db, single_chapter=chapter)
     return crud.save_and_return_usfm_file(project, book, usfm_text)
 
 

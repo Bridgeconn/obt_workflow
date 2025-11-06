@@ -198,7 +198,13 @@ const uploadProject = async (
         resolve(response);
       } else {
         const errorResponse = JSON.parse(xhr.responseText);
-        reject(new Error(errorResponse.detail || "Failed to upload project"));
+        const detail = errorResponse.detail;
+        if (typeof detail === "object" && detail.invalid_files) {
+          const invalidList = detail.invalid_files.join(", ");
+          reject(new Error(`${detail.message}: ${invalidList}`));
+        } else {
+          reject(new Error(detail || "Failed to upload project"));
+        }
       }
     };
 
@@ -305,7 +311,8 @@ const ProjectsPage: React.FC = () => {
     },
     onError: (error: Error) => {
       toast({
-        title: error instanceof Error ? error?.message : "Upload failed",
+        title: "Upload failed",
+        description: error instanceof Error ? error?.message : "Something went wrong during upload",
         variant: "destructive",
       });
       setUploadProgress(0);
